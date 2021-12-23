@@ -2,7 +2,7 @@ import * as readline from 'readline'
 import {ReadStream} from "tty"
 import {List} from "immutable"
 import {MessageContent, parse_args, MessageType, SchemaMessageContent} from "singer-node"
-import {JsonSchemaInspectorContext} from "jsonSchemaInspector"
+import {buildMeta, JsonSchemaInspectorContext} from "jsonSchemaInspector"
 
 interface Config {
   max_batch_rows?: number
@@ -10,12 +10,12 @@ interface Config {
 }
 
 function processSchemaMessage(msg: SchemaMessageContent) {
-  const toto = new JsonSchemaInspectorContext(
+  buildMeta(new JsonSchemaInspectorContext(
     msg.stream,
     msg.schema,
     List(msg.key_properties),
     undefined,
-  )
+  ))
 }
 
 function processLine(line: string) {
@@ -51,17 +51,13 @@ export async function processStream(stream: ReadStream, config?: Config) {
 }
 
 (function () {
-  var oldLog = console.log
+  const oldLog = console.log
   console.log = function (message) {
     console.warn(message + "??")
     // DO MESSAGE HERE.
     oldLog.apply(console, arguments)
   }
 })()
-
-
-console.log("allo ?")
-
 
 const args = parse_args(List(["database"]))
 processStream(process.stdin, args.config)

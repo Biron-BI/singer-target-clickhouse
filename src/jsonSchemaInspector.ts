@@ -75,10 +75,10 @@ export interface ISimpleColumnType {
 export type PkMap = IPKMapping & ISimpleColumnType;
 
 export interface ISourceMeta {
-  children: ISourceMeta[];
+  children: List<ISourceMeta>;
   pkMappings: List<PkMap>;
   prop: string;
-  simpleColumnMappings: ColumnMap[];
+  simpleColumnMappings: List<ColumnMap>;
   sqlTableComment: string;
   sqlTableName: string;
   cleaningColumn?: string;
@@ -146,52 +146,62 @@ function createSubTable(propDef: IExtendedJSONSchema7, key: string, ctx: JsonSch
   ))
 }
 
-function buildMetaProps(ctx: JsonSchemaInspectorContext): { children: ISourceMeta[], simpleColumnMappings: ColumnMap[] } {
-  let simpleColumnsMappings: ColumnMap[] = []
-  let children: ISourceMeta[] = []
+type MetaProps = { children: List<ISourceMeta>, simpleColumnMappings: List<ColumnMap> }
 
+function buildMetaProps(ctx: JsonSchemaInspectorContext): MetaProps {
   if (ctx.isTypeObject()) {
-    Object.entries(ctx.schema.properties ?? {})
-      .filter(([key,]) => !ctx.isRoot() || !ctx.key_properties.includes(key))
-      .forEach(([key, propDef]) => {
+    return Object.entries(ctx.schema.properties ?? {})
+      .filter(([key]) => !ctx.isRoot() || !ctx.key_properties.includes(key))
+      .reduce((acc: MetaProps, [key, propDef]) => {
         if (typeof propDef === "boolean") {
           throwError(ctx, "propDef as boolean not supported")
-          return // needed as ts doesn't understand throwError will always end up throwing
+          return acc// needed as ts doesn't understand throwError will always end up throwing
         }
-
         // JSON Spec supports multiple types. We accept this format but only handle one at a time
         const propDefTypes = asArray(propDef.type)
 
         if (propDefTypes.includes("object")) {
           const {simpleColumnMappings: nestedSimpleColumnMappings, children: nestedChildren} = flattenNestedObject(propDef, key, ctx)
-          simpleColumnsMappings = simpleColumnsMappings.concat(nestedSimpleColumnMappings)
-          children = children.concat(nestedChildren)
+          return {
+            ...acc,
+            simpleColumnMappings: acc.simpleColumnMappings.concat(nestedSimpleColumnMappings),
+            children: acc.children.concat(nestedChildren),
+          }
         } else if (propDefTypes.includes("array")) {
-          children.push(createSubTable(propDef, key, ctx))
+          return {
+            ...acc,
+            children: acc.children.push(createSubTable(propDef, key, ctx))
+          }
         } else {
           const colType = getSimpleColumnType(ctx, key)
 
           // Column is a scalar value
           if (colType) {
-            simpleColumnsMappings.push({
-              prop: key,
-              sqlIdentifier: escapeIdentifier(key),
-              ...colType,
-            })
+            return {
+              ...acc,
+              simpleColumnMappings: acc.simpleColumnMappings.push({
+                prop: key,
+                sqlIdentifier: escapeIdentifier(key),
+                ...colType,
+              })
+            }
           } else {
             log_warning(`'${ctx.alias}': '${key}': could not be registered (type '${propDef.type}' unrecognized)`)
+            return acc
           }
         }
-      })
-
+      }, {simpleColumnMappings: List<ColumnMap>(), children: List<ISourceMeta>()})
+    // return {simpleColumnMappings: simpleColumnsMappings, children}
   } else {
-    simpleColumnsMappings.push({
-      sqlIdentifier: escapeIdentifier("value"),
-      ...getSimpleColumnType(ctx, undefined),
-      nullable: false,
-    })
+    return {
+      simpleColumnMappings: List<ColumnMap>([{
+        sqlIdentifier: escapeIdentifier("value"),
+        ...getSimpleColumnType(ctx, undefined),
+        nullable: false,
+      }]),
+      children: List<ISourceMeta>(),
+    }
   }
-  return {simpleColumnMappings: simpleColumnsMappings, children}
 }
 
 
@@ -213,21 +223,6 @@ export function getSimpleColumnType(ctx: JsonSchemaInspectorContext, key?: strin
     chType: type,
     nullable: asArray(propDef.type).includes("null") ?? false,
   } : undefined
-}
-
-/*
-    Expects format: precision:10,scale:2
- */
-export function parseCustomFormat(format: string): { [k: string]: string } {
-  const regex = /([a-zA-Z]+):([a-zA-Z0-9]+)/g
-  const ret: { [k: string]: string } = {}
-
-  let match: any
-  while (match = regex.exec(format)) {
-    ret[match[1]] = match[2]
-  }
-
-  return ret
 }
 
 /**
