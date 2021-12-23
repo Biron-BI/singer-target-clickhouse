@@ -11,6 +11,59 @@ const simpleSchema: IExtendedJSONSchema7 = {
   }, "type": ["null", "object"],
 }
 
+const nestedObjectSchema: IExtendedJSONSchema7 = {
+  "properties": {
+    "id": {"type": ["null", "integer"]},
+    "nested": {"type": ["null", "object"], properties: {"color": {type: "string"}}},
+  }, "type": ["null", "object"],
+}
+
+const arrayScalarSchema: IExtendedJSONSchema7 = {
+  "properties": {
+    "collaborator_ids": {
+      "items": {
+        "type": [
+          "null",
+          "integer",
+        ],
+      },
+      "type": [
+        "null",
+        "array",
+      ],
+    },
+    "id": {"type": ["null", "integer"]},
+  }, "type": ["null", "object"],
+}
+
+const arrayObjectSchema: IExtendedJSONSchema7 = {
+  "properties": {
+    "custom_fields": {
+      "items": {
+        "properties": {
+          "field": {
+            "type": [
+              "null",
+              "integer",
+            ],
+          },
+          "value": {},
+        },
+        "type": [
+          "null",
+          "object",
+        ],
+      },
+      "type": [
+        "null",
+        "array",
+      ],
+    },
+    "id": {"type": ["null", "integer"]},
+  }, "type": ["null", "object"],
+}
+
+
 describe("getSimpleColumnSqlType", () => {
   it("should handle simple stream", () => {
     const res = getSimpleColumnSqlType(new JsonSchemaInspectorContext("audits", simpleSchema, List()),
@@ -27,5 +80,37 @@ describe("JSON Schema Inspector", () => {
     assert.equal(res.pkMappings.get(0)?.chType, "Int32")
     assert.equal(res.simpleColumnMappings.length, 3)
     assert.equal(res.simpleColumnMappings.find((elem) => elem.prop === "created_at")?.nullable, false)
+  })
+
+  it("should handle array scalar case", async () => {
+    const res = buildMeta(new JsonSchemaInspectorContext("audits", arrayScalarSchema, List(["id"])))
+    assert.equal(res.children.length, 1)
+    assert.equal(res.children[0].prop, "collaborator_ids")
+    assert.equal(res.children[0].pkMappings.size, 2)
+    assert.equal(res.children[0].pkMappings.get(0)?.prop, "_level_0_index")
+    assert.equal(res.children[0].pkMappings.get(0)?.chType, "Int32")
+    assert.equal(res.children[0].pkMappings.get(0)?.nullable, false)
+    assert.equal(res.children[0].pkMappings.get(1)?.prop, "id")
+    assert.equal(res.children[0].pkMappings.get(1)?.chType, "Int32")
+  })
+
+  it("should handle nested object case", async () => {
+    const res = buildMeta(new JsonSchemaInspectorContext("audits", nestedObjectSchema, List(["id"])))
+    assert.equal(res.children.length, 0)
+    assert.equal(res.simpleColumnMappings.length, 1)
+    assert.equal(res.pkMappings.size, 1)
+    assert.equal(res.simpleColumnMappings[0].sqlIdentifier, "`nested_color`")
+    assert.equal(res.simpleColumnMappings[0].chType, "String")
+  })
+
+  it("should handle array of nested object case", async () => {
+    const res = buildMeta(new JsonSchemaInspectorContext("audits", arrayObjectSchema, List(["id"])))
+    assert.equal(res.children.length, 1)
+    assert.equal(res.children[0].sqlTableName, "`audits__custom_fields`")
+    assert.equal(res.children[0].simpleColumnMappings.length, 1)
+    assert.equal(res.children[0].simpleColumnMappings[0].sqlIdentifier, "`field`")
+    assert.equal(res.children[0].pkMappings.size, 2)
+    assert.equal(res.children[0].pkMappings.get(0)?.sqlIdentifier, "`_level_0_index`")
+    assert.equal(res.children[0].pkMappings.get(1)?.sqlIdentifier, "`_root_id`")
   })
 })

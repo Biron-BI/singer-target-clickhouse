@@ -1,4 +1,4 @@
-import {ExtendedJSONSchema7} from "singer-node"
+import {ExtendedJSONSchema7, log_warning} from "singer-node"
 import {List, Range} from "immutable"
 import {asArray} from "asArray"
 import {JSONSchema7Definition, JSONSchema7TypeName} from "json-schema"
@@ -43,6 +43,11 @@ export class JsonSchemaInspectorContext {
 
   public isRoot() {
     return this.parentCtx === undefined
+  }
+
+  public getRootContext(): JsonSchemaInspectorContext {
+    // @ts-ignore ts failure, undefined check was done by isRoot
+    return this.isRoot() ? this : this.parentCtx?.getRootContext()
   }
 }
 
@@ -100,18 +105,17 @@ export function buildMeta(ctx: JsonSchemaInspectorContext): ISourceMeta {
         chType: "Int32",
         nullable: false,
       } as PkMap
-    }).toList().concat(ctx.key_properties.map((prop) => ({
+    }).toList().concat(ctx.getRootContext().key_properties.map((prop) => ({
       prop,
       sqlIdentifier: escapeIdentifier(formatRootPKColumn(prop)),
-      ...getSimpleColumnType(ctx, prop),
+      ...getSimpleColumnType(ctx.getRootContext(), prop),
       nullable: false,
     }))),
     ...buildMetaProps(ctx),
-    // cleaningColumn: ctx.schema.cleaningColumn,
   }
 }
 
-export function flattenNestedObject(propDef: IExtendedJSONSchema7, key: string, ctx: JsonSchemaInspectorContext) {
+function flattenNestedObject(propDef: IExtendedJSONSchema7, key: string, ctx: JsonSchemaInspectorContext) {
   // flatten 1..1 relation properties into the current level
   const nestedSchema = {
     type: "object" as JSONSchema7TypeName, // ts is dumb
@@ -125,18 +129,18 @@ export function flattenNestedObject(propDef: IExtendedJSONSchema7, key: string, 
   return buildMetaProps(new JsonSchemaInspectorContext(
     ctx.alias,
     nestedSchema,
-    ctx.key_properties,
+    List(),
     ctx,
     ctx.level,
     ctx.tableName,
   ))
 }
 
-export function createSubTable(propDef: IExtendedJSONSchema7, key: string, ctx: JsonSchemaInspectorContext): ISourceMeta {
+function createSubTable(propDef: IExtendedJSONSchema7, key: string, ctx: JsonSchemaInspectorContext): ISourceMeta {
   return buildMeta(new JsonSchemaInspectorContext(
     key,
     (propDef.items || {type: "string"}) as IExtendedJSONSchema7,
-    ctx.key_properties,
+    List(),
     ctx,
     ctx.level + 1,
   ))
@@ -175,7 +179,7 @@ function buildMetaProps(ctx: JsonSchemaInspectorContext): { children: ISourceMet
               ...colType,
             })
           } else {
-            throwError(ctx, `${key}: unsupported type [${propDef.type}]`)
+            log_warning(`'${ctx.alias}': '${key}': could not be registered (type '${propDef.type}' unrecognized)`)
           }
         }
       })
@@ -196,7 +200,11 @@ function excludeNullFromArray(array?: JSONSchema7TypeName | JSONSchema7TypeName[
 }
 
 export function getSimpleColumnType(ctx: JsonSchemaInspectorContext, key?: string): ISimpleColumnType | undefined {
-  const propDef: IExtendedJSONSchema7 = key ? ctx.schema.properties?.[key] as ExtendedJSONSchema7 : ctx.schema
+  const propDef = key ? ctx.schema.properties?.[key] : ctx.schema
+  if (!propDef || typeof propDef === "boolean") {
+    throwError(ctx, `Key '${key}' does not match any usable prop in schema props '${ctx.schema.properties}'`)
+    return
+  }
   const type = getSimpleColumnSqlType(ctx, propDef, key)
 
   return type ? {
