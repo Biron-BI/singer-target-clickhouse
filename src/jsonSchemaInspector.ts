@@ -87,30 +87,34 @@ export interface ISourceMeta {
 const formatLevelIndexColumn = (level: number) => `_level_${level}_index`
 const formatRootPKColumn = (prop: string) => `_root_${prop}`
 
+function buildMetaPkProps(ctx: JsonSchemaInspectorContext) {
+  return ctx.isRoot() ? ctx.key_properties.map((prop) => ({
+    prop,
+    sqlIdentifier: escapeIdentifier(prop),
+    ...getSimpleColumnType(ctx, prop),
+    nullable: false,
+  })) : Range(0, ctx.level).map((value) => {
+    const prop = formatLevelIndexColumn(value)
+    return {
+      prop,
+      sqlIdentifier: escapeIdentifier(prop),
+      chType: "Int32",
+      nullable: false,
+    } as PkMap
+  }).toList().concat(ctx.getRootContext().key_properties.map((prop) => ({
+    prop,
+    sqlIdentifier: escapeIdentifier(formatRootPKColumn(prop)),
+    ...getSimpleColumnType(ctx.getRootContext(), prop),
+    nullable: false,
+  })))
+}
+
 export function buildMeta(ctx: JsonSchemaInspectorContext): ISourceMeta {
   return {
     prop: ctx.alias,
     sqlTableName: escapeIdentifier(ctx.tableName),
     sqlTableComment: ctx.tableName,
-    pkMappings: ctx.isRoot() ? ctx.key_properties.map((prop) => ({
-      prop,
-      sqlIdentifier: escapeIdentifier(prop),
-      ...getSimpleColumnType(ctx, prop),
-      nullable: false,
-    })) : Range(0, ctx.level).map((value) => {
-      const prop = formatLevelIndexColumn(value)
-      return {
-        prop,
-        sqlIdentifier: escapeIdentifier(prop),
-        chType: "Int32",
-        nullable: false,
-      } as PkMap
-    }).toList().concat(ctx.getRootContext().key_properties.map((prop) => ({
-      prop,
-      sqlIdentifier: escapeIdentifier(formatRootPKColumn(prop)),
-      ...getSimpleColumnType(ctx.getRootContext(), prop),
-      nullable: false,
-    }))),
+    pkMappings: buildMetaPkProps(ctx),
     ...buildMetaProps(ctx),
   }
 }
