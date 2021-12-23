@@ -38,7 +38,7 @@ export class JsonSchemaInspectorContext {
   }
 
   public isTypeObject() {
-    return this.schema.type === "object"
+    return this.schema.type?.includes("object") ?? false
   }
 
   public isRoot() {
@@ -47,7 +47,6 @@ export class JsonSchemaInspectorContext {
 }
 
 export interface IColumnMapping {
-  mandatory: boolean;
   prop?: string;
   sqlIdentifier: string;
 }
@@ -146,16 +145,14 @@ export function createSubTable(propDef: IExtendedJSONSchema7, key: string, ctx: 
 function buildMetaProps(ctx: JsonSchemaInspectorContext): { children: ISourceMeta[], simpleColumnMappings: ColumnMap[] } {
   let simpleColumnsMappings: ColumnMap[] = []
   let children: ISourceMeta[] = []
-  // if (ctx.schema.cleaningColumn && (!ctx.schema.required || !ctx.schema.required.includes(ctx.schema.cleaningColumn))) {
-  //   throwError(ctx, "cleaning column should be mandatory, include it in required")
-  // }
-  { // columns part
-    if (ctx.isTypeObject()) {
-      const isMandatory = (key: string) => ctx.schema.required !== undefined && ctx.schema.required.indexOf(key) > -1
-      Object.entries(ctx.schema.properties ?? {}).forEach(([key, propDef]) => {
+
+  if (ctx.isTypeObject()) {
+    Object.entries(ctx.schema.properties ?? {})
+      .filter(([key,]) => !ctx.isRoot() || !ctx.key_properties.includes(key))
+      .forEach(([key, propDef]) => {
         if (typeof propDef === "boolean") {
           throwError(ctx, "propDef as boolean not supported")
-          return // needed as ts doesn't understand throwError will always end up throwing (up)
+          return // needed as ts doesn't understand throwError will always end up throwing
         }
 
         // JSON Spec supports multiple types. We accept this format but only handle one at a time
@@ -176,7 +173,6 @@ function buildMetaProps(ctx: JsonSchemaInspectorContext): { children: ISourceMet
               prop: key,
               sqlIdentifier: escapeIdentifier(key),
               ...colType,
-              mandatory: isMandatory(key),
             })
           } else {
             throwError(ctx, `${key}: unsupported type [${propDef.type}]`)
@@ -184,30 +180,27 @@ function buildMetaProps(ctx: JsonSchemaInspectorContext): { children: ISourceMet
         }
       })
 
-    } else {
-      simpleColumnsMappings.push({
-        sqlIdentifier: escapeIdentifier("value"),
-        ...getSimpleColumnType(ctx, undefined),
-        mandatory: true, // todo delete
-        nullable: false,
-      })
-    }
+  } else {
+    simpleColumnsMappings.push({
+      sqlIdentifier: escapeIdentifier("value"),
+      ...getSimpleColumnType(ctx, undefined),
+      nullable: false,
+    })
   }
   return {simpleColumnMappings: simpleColumnsMappings, children}
+}
+
+
+function excludeNullFromArray(array?: JSONSchema7TypeName | JSONSchema7TypeName[]) {
+  return asArray(array).filter((type) => type !== "null")
 }
 
 export function getSimpleColumnType(ctx: JsonSchemaInspectorContext, key?: string): ISimpleColumnType | undefined {
   const propDef: IExtendedJSONSchema7 = key ? ctx.schema.properties?.[key] as ExtendedJSONSchema7 : ctx.schema
   const type = getSimpleColumnSqlType(ctx, propDef, key)
 
-  console.log(propDef)
-  // Type could be an array as per JSON spec, in which case we'll take only first
-  if (typeof propDef.type === "object") {
-    propDef.type = propDef.type[0]
-  }
-
   return type ? {
-    type: propDef.type,
+    type: excludeNullFromArray(propDef.type).get(0),
     typeFormat: propDef.format,
     chType: type,
     nullable: asArray(propDef.type).includes("null") ?? false,
@@ -234,7 +227,7 @@ export function parseCustomFormat(format: string): { [k: string]: string } {
  * @returns string if found, otherwise undefined, can throw error
  */
 export function getSimpleColumnSqlType(ctx: JsonSchemaInspectorContext, propDef: IExtendedJSONSchema7, key?: string): string | undefined {
-  const type = asArray(propDef.type).filter((type) => type !== "null").get(0)
+  const type = excludeNullFromArray(propDef.type).get(0)
   const format = propDef.format
   if (type === "string") {
     if (format === "date" || format === "x-excel-date") {
