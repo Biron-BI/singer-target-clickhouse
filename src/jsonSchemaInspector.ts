@@ -67,7 +67,7 @@ export interface IPKMapping {
 
 export interface ISimpleColumnType {
   chType?: string;
-  type?: string;
+  type?: JSONSchema7TypeName;
   typeFormat?: string;
   nullable: boolean
 }
