@@ -74,7 +74,7 @@ describe("getSimpleColumnSqlType", () => {
 })
 
 describe("JSON Schema Inspector", () => {
-  it("should handle simple case", async () => {
+  it("should handle simple case", () => {
     const res = buildMeta(new JsonSchemaInspectorContext("audits", simpleSchema, List(["id"])))
     assert.equal(res.sqlTableName, "`audits`")
     assert.equal(res.pkMappings.size, 1)
@@ -83,7 +83,7 @@ describe("JSON Schema Inspector", () => {
     assert.equal(res.simpleColumnMappings.find((elem) => elem.prop === "created_at")?.nullable, false)
   })
 
-  it("should handle array scalar case", async () => {
+  it("should handle array scalar case", () => {
     const res = buildMeta(new JsonSchemaInspectorContext("audits", arrayScalarSchema, List(["id"])))
     assert.equal(res.children.size, 1)
     assert.equal(res.children.get(0)?.prop, "collaborator_ids")
@@ -95,7 +95,7 @@ describe("JSON Schema Inspector", () => {
     assert.equal(res.children.get(0)?.pkMappings.get(1)?.chType, "Int32")
   })
 
-  it("should handle nested object case", async () => {
+  it("should handle nested object case", () => {
     const res = buildMeta(new JsonSchemaInspectorContext("audits", nestedObjectSchema, List(["id"])))
     assert.equal(res.children.size, 0)
     assert.equal(res.simpleColumnMappings.size, 1)
@@ -104,7 +104,7 @@ describe("JSON Schema Inspector", () => {
     assert.equal(res.simpleColumnMappings.get(0)?.chType, "String")
   })
 
-  it("should handle array of nested object case", async () => {
+  it("should handle array of nested object case", () => {
     const res = buildMeta(new JsonSchemaInspectorContext("audits", arrayObjectSchema, List(["id"])))
     assert.equal(res.children.get(0)?.sqlTableName, "`audits__custom_fields`")
     assert.equal(res.children.get(0)?.simpleColumnMappings.size, 1)
