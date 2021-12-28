@@ -61,8 +61,6 @@ export type ColumnMap = IColumnMapping & ISimpleColumnType;
 export interface IPKMapping {
   prop: string;
   sqlIdentifier: string;
-  // sqlIdentifierAsFk: string;
-  // sqlIdentifierAsRootFk?: string;
 }
 
 export interface ISimpleColumnType {
@@ -77,9 +75,8 @@ export type PkMap = IPKMapping & ISimpleColumnType;
 export interface ISourceMeta {
   children: List<ISourceMeta>;
   pkMappings: List<PkMap>;
-  prop: string;
   simpleColumnMappings: List<ColumnMap>;
-  sqlTableComment: string;
+  tableName: string
   sqlTableName: string;
   cleaningColumn?: string;
 }
@@ -111,9 +108,8 @@ function buildMetaPkProps(ctx: JsonSchemaInspectorContext) {
 
 export function buildMeta(ctx: JsonSchemaInspectorContext): ISourceMeta {
   return {
-    prop: ctx.alias,
+    tableName: ctx.tableName,
     sqlTableName: escapeIdentifier(ctx.tableName),
-    sqlTableComment: ctx.tableName,
     pkMappings: buildMetaPkProps(ctx),
     ...buildMetaProps(ctx),
   }
@@ -169,7 +165,7 @@ function buildMetaProps(ctx: JsonSchemaInspectorContext): MetaProps {
           return {
             ...acc,
             simpleColumnMappings: acc.simpleColumnMappings.concat(nestedSimpleColumnMappings),
-            children: acc.children.concat(nestedChildren),
+            // children: acc.children.concat(nestedChildren), FIXME CASSÉ
           }
         } else if (propDefTypes.includes("array")) {
           return {
@@ -260,7 +256,7 @@ export function getSimpleColumnSqlType(ctx: JsonSchemaInspectorContext, propDef:
       // For now we'll use a custom format
       //          const parsedFormat = parseCustomFormat(propDef.format);
 //            return "DECIMAL(" + (parsedFormat.precision || 10) + "," + (parsedFormat.decimals || 2) + ")";
-      return `Decimal(${propDef.precision || 10},${propDef.decimals || 2})`
+      return `Decimal(${propDef.precision || 10}, ${propDef.decimals || 2})`
     } else {
       throwError(ctx, `${key}: unsupported number format [${format}]`)
     }

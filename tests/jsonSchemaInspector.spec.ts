@@ -86,7 +86,7 @@ describe("JSON Schema Inspector", () => {
   it("should handle array scalar case", () => {
     const res = buildMeta(new JsonSchemaInspectorContext("audits", arrayScalarSchema, List(["id"])))
     assert.equal(res.children.size, 1)
-    assert.equal(res.children.get(0)?.prop, "collaborator_ids")
+    assert.equal(res.children.get(0)?.sqlTableName, "collaborator_ids")
     assert.equal(res.children.get(0)?.pkMappings.size, 2)
     assert.equal(res.children.get(0)?.pkMappings.get(0)?.prop, "_level_0_index")
     assert.equal(res.children.get(0)?.pkMappings.get(0)?.chType, "Int32")
@@ -106,7 +106,7 @@ describe("JSON Schema Inspector", () => {
 
   it("should handle array of nested object case", () => {
     const res = buildMeta(new JsonSchemaInspectorContext("audits", arrayObjectSchema, List(["id"])))
-    assert.equal(res.children.get(0)?.sqlTableName, "`audits__custom_fields`")
+    assert.equal(res.children.get(0)?.sqlTableName, "audits__custom_fields")
     assert.equal(res.children.get(0)?.simpleColumnMappings.size, 1)
     assert.equal(res.children.get(0)?.simpleColumnMappings.get(0)?.sqlIdentifier, "`field`")
     assert.equal(res.children.get(0)?.pkMappings.size, 2)

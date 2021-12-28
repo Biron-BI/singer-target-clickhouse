@@ -1,7 +1,7 @@
 import {strict as assert} from 'assert'
 import {ISourceMeta} from "../src/jsonSchemaInspector"
 import {List} from "immutable"
-import {translateCH} from "../src/jsonSchemaTranslator"
+import {listTableNames, translateCH} from "../src/jsonSchemaTranslator"
 
 const simpleMeta: ISourceMeta = {
   pkMappings: List(),
@@ -19,18 +19,16 @@ const simpleMeta: ISourceMeta = {
     type: "string"
   }]),
   children: List(),
-  prop: "",
-  sqlTableName: "order",
-  sqlTableComment: "",
+  sqlTableName: "`order`",
+  tableName: "order",
 }
 
 const emptyMeta: ISourceMeta = {
   pkMappings: List(),
   simpleColumnMappings: List(),
   children: List(),
-  prop: "",
-  sqlTableName: "order",
-  sqlTableComment: "",
+  sqlTableName: "`order`",
+  tableName: "order",
 }
 
 const metaWithPK: ISourceMeta = {
@@ -49,9 +47,9 @@ const metaWithPK: ISourceMeta = {
     type: "string"
   }]),
   children: List(),
-  prop: "",
-  sqlTableName: "order",
-  sqlTableComment: "",
+  sqlTableName: "`order`",
+  tableName: "order",
+
 }
 
 const metaWithPKAndChildren: ISourceMeta = {
@@ -69,40 +67,45 @@ const metaWithPKAndChildren: ISourceMeta = {
     chType: "String",
     type: "string"
   }]),
-  children: List([{...simpleMeta, sqlTableName: "order_child"}]),
-  prop: "",
-  sqlTableName: "order",
-  sqlTableComment: "",
+  children: List([{...simpleMeta, sqlTableName: "order_child", tableName: "order_child"}]),
+  sqlTableName: "`order`",
+  tableName: "order",
 }
 
 describe("translateCH", () => {
 
   it("should refuse empty meta", () => {
     assert.throws(() => {
-      translateCH(emptyMeta)
+      translateCH("db", emptyMeta)
     }, Error)
   })
 
   it("should translate basic meta", () => {
-    const res = translateCH(simpleMeta)
+    const res = translateCH("db", simpleMeta)
     assert.equal(res.size, 2)
     assert.equal(res.get(0), "DROP TABLE IF EXISTS order")
     assert.equal(res.get(1), "CREATE TABLE order(`id` Int32,`name` Nullable(String)) ENGINE = MergeTree() ORDER BY (tuple())")
   })
 
   it("should translate meta with PK", () => {
-    const res = translateCH(metaWithPK)
+    const res = translateCH("db", metaWithPK)
     assert.equal(res.size, 2)
     assert.equal(res.get(0), "DROP TABLE IF EXISTS order")
     assert.equal(res.get(1), "CREATE TABLE order(`id` UInt32,`name` Nullable(String),`_ver` UInt64) ENGINE = ReplacingMergeTree(_ver) ORDER BY (`id`)")
   })
 
   it("should translate meta with PK and children", () => {
-    const res = translateCH(metaWithPKAndChildren)
+    const res = translateCH("db", metaWithPKAndChildren)
     assert.equal(res.size, 4)
     assert.equal(res.get(0), "DROP TABLE IF EXISTS order")
     assert.equal(res.get(1), "CREATE TABLE order(`id` UInt32,`name` Nullable(String),`_ver` UInt64) ENGINE = ReplacingMergeTree(_ver) ORDER BY (`id`)")
     assert.equal(res.get(2), "DROP TABLE IF EXISTS order_child")
     assert.equal(res.get(3), "CREATE TABLE order_child(`id` Int32,`name` Nullable(String),`_root_ver` UInt64) ENGINE = MergeTree() ORDER BY (tuple())")
+  })
+})
+
+describe("listTableNames", () => {
+  it('should list all tables names in a single array', function () {
+    assert.deepEqual(listTableNames(metaWithPKAndChildren).toArray(), ["order", "order_child"])
   })
 })

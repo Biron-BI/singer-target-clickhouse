@@ -2,6 +2,7 @@ import {ono} from "ono"
 import * as retry from "retry"
 import {log_debug} from "singer-node"
 import {Config} from "processStream"
+import {List} from "immutable"
 
 const ClickHouse = require("@apla/clickhouse")
 
@@ -33,6 +34,25 @@ export default class ClickhouseConnection {
 
   async checkConnection(): Promise<void> {
     await this.connectionPool()
+  }
+
+  public getDatabase() {
+    return this.connInfo.database
+  }
+
+  public async listTables(): Promise<List<string>> {
+    return List((await this.runQuery("SHOW TABLES")).data).flatMap((elem) => elem)
+  }
+
+  // Produces formatted create table query ready to be compared
+  // Example: CREATE TABLE db.table ( `idx` Int32, `id` Int32, `value` String, `_root_ver` UInt64 ) ENGINE = MergeTree ORDER BY (idx, id)
+  public async describeCreateTable(table: string): Promise<string> {
+    return List<string>((await this.runQuery(`SHOW CREATE TABLE ${table}`))
+      .data[0][0]
+      .split('\n'))
+      .map((line) => line.trim())
+      .filter((line) => !line.startsWith("SETTINGS")) // Remove settings line as we don't create table with it
+      .join(" ")
   }
 
   private async connectionPool(): Promise<any> {
@@ -97,12 +117,12 @@ export default class ClickhouseConnection {
 
     return new Promise((resolve, reject) => {
       const op = retry.operation({
-        retries: 3,
-        factor: 3,
+        retries: 2,
+        factor: 5,
       })
       op.attempt(async function () {
         try {
-          log_debug(`query sql [%s]`)
+          log_debug(`query sql [${query}]`)
           const res = await conn.querying(query)
           resolve(res)
         } catch (err) {

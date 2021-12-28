@@ -1,9 +1,9 @@
 import * as readline from 'readline'
 import {List} from "immutable"
-import {log_debug, log_info, MessageContent, MessageType, SchemaMessageContent} from "singer-node"
-import {buildMeta, JsonSchemaInspectorContext} from "jsonSchemaInspector"
+import {log_debug, log_fatal, log_info, MessageContent, MessageType, SchemaMessageContent} from "singer-node"
+import {buildMeta, escapeIdentifier, JsonSchemaInspectorContext} from "jsonSchemaInspector"
 import {Readable} from "stream"
-import {translateCH} from "jsonSchemaTranslator"
+import {listTableNames, translateCH} from "jsonSchemaTranslator"
 import ClickhouseConnection from "ClickhouseConnection"
 
 // a transformer en classe pour set des valeurs par défaut
@@ -17,17 +17,35 @@ export interface Config {
   // max_batch_size?: number
 }
 
-function processSchemaMessage(msg: SchemaMessageContent, ch: ClickhouseConnection) {
+// Remove magic quotes used to escape queries so we can compare content
+function unescape(query?: string) {
+  return query?.replace(/`/g, "")
+}
+
+async function processSchemaMessage(msg: SchemaMessageContent, ch: ClickhouseConnection) {
   const meta = buildMeta(new JsonSchemaInspectorContext(
     msg.stream,
     msg.schema,
     List(msg.key_properties),
     undefined,
   ))
+  const queries = translateCH(ch.getDatabase(), meta)
 
-  const queries = translateCH(meta)
-
-  return Promise.all(queries.map((query) => ch.runQuery(query)))
+  const rootAlreadyExists = (await ch.listTables()).map(escapeIdentifier).includes(meta.sqlTableName)
+  if (rootAlreadyExists) {
+    await Promise.all(listTableNames(meta).map(async (tableName, idx) => {
+      const currentTable = unescape(await ch.describeCreateTable(tableName))
+      const newTable = unescape(queries.get(idx)?.replace("`", ""))
+      if (newTable !== currentTable) {
+        throw new Error(`Schema modification detected.
+Current:  ${currentTable}
+New:      ${newTable}
+If you wish to update schemas, run with --update-schemas.`)
+      }
+    }))
+  } else {
+    return Promise.all(queries.map(ch.runQuery.bind(ch)))
+  }
 }
 
 async function processLine(line: string, config: Config) {
@@ -37,7 +55,8 @@ async function processLine(line: string, config: Config) {
   switch (msg.type) {
     case MessageType.schema:
       await processSchemaMessage(msg, ch)
-      break;
+      log_debug("done processing schema")
+      break
     default:
       throw new Error("not implemented")
   }
@@ -45,23 +64,21 @@ async function processLine(line: string, config: Config) {
 
 
 export async function processStream(stream: Readable, config: Config) {
-  return new Promise<void>((resolve, reject) => {
 
-    stream.on("error", (err: any) => {
-      reject(new Error(`READ ERROR ${err}`))
-    })
-
-    const rl = readline.createInterface({
-      input: stream,
-    })
-    rl.on('line', async (line) => {
-      log_debug("Processing new line")
-      await processLine(line, config)
-    })
-
-    rl.on('close', () => {
-      log_info("Closing stream, done processing")
-      resolve()
-    })
+  stream.on("error", (err: any) => {
+    log_fatal(err.message)
+    throw new Error(`READ ERROR ${err}`)
   })
+
+  const rl = readline.createInterface({
+    input: stream,
+  })
+
+  // We read input stream sequentially to correctly handle message ordering and echo State messages at regular intervals
+  for await (const line of rl) {
+    log_debug(`Processing new line ${line.substring(0, 40)}...`)
+    await processLine(line, config)
+  }
+  log_info("closing stream, done processing")
+  rl.close()
 }

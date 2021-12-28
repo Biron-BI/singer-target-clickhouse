@@ -32,9 +32,13 @@ function resolveVersionColumn(isRoot: boolean, hasPkMappings: boolean): string {
 }
 
 // In case root has no child, it stays a MergeTree
-const resolveEngine = (isRoot: boolean, hasPkMappings: boolean): string => isRoot && hasPkMappings ? `ReplacingMergeTree(_ver)` : "MergeTree()"
+const resolveEngine = (isRoot: boolean, hasPkMappings: boolean): string => isRoot && hasPkMappings ? `ReplacingMergeTree(_ver)` : "MergeTree"
 
-export function translateCH(meta: ISourceMeta, parentMeta?: ISourceMeta, rootMeta?: ISourceMeta): List<string> {
+const resolveOrderBy = (meta: ISourceMeta): string => `${meta.pkMappings.size > 1 ? '(' : ''}${meta.pkMappings.size > 0 ? meta.pkMappings.map((elem) => elem.sqlIdentifier).join(", ") : "tuple()"}${meta.pkMappings.size > 1 ? ')' : ''}`
+
+// From the schema inspection we build the query to create table in Clickhouse.
+// Must respect the SHOW CREATE TABLE syntax as we will use it to ensure schema didn't change
+export function translateCH(database: string, meta: ISourceMeta, parentMeta?: ISourceMeta, rootMeta?: ISourceMeta): List<string> {
   if (meta.simpleColumnMappings.size < 1) {
     throw new Error("Attempting to create table without columns")
   }
@@ -49,7 +53,10 @@ export function translateCH(meta: ISourceMeta, parentMeta?: ISourceMeta, rootMet
 
 
   return List<string>()
-    .push(`DROP TABLE IF EXISTS ${meta.sqlTableName}`)
-    .push(`CREATE TABLE ${meta.sqlTableName}(${createDefs.filter(Boolean).join(",")}) ENGINE = ${resolveEngine(isNodeRoot, meta.pkMappings.size > 0)} ORDER BY (${meta.pkMappings.size > 0 ? meta.pkMappings.map((elem) => elem.sqlIdentifier).join(",") : "tuple()"})`)
-    .concat(meta.children.flatMap((child: ISourceMeta) => translateCH(child, meta, rootMeta || meta)))
+    // .push(`DROP TABLE IF EXISTS ${meta.sqlTableName}`)
+    .push(`CREATE TABLE ${database}.${meta.sqlTableName} ( ${createDefs.filter(Boolean).join(", ") } ) ENGINE = ${resolveEngine(isNodeRoot, meta.pkMappings.size > 0)} ORDER BY ${resolveOrderBy(meta)}`)
+    .concat(meta.children.flatMap((child: ISourceMeta) => translateCH(database, child, meta, rootMeta || meta)))
 }
+
+export const listTableNames = (meta: ISourceMeta): List<string> => List<string>([meta.tableName])
+  .concat(meta.children.flatMap(listTableNames))
