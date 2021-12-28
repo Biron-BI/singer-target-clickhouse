@@ -1,0 +1,1516 @@
+{
+  "type": "SCHEMA",
+  "stream": "tickets",
+  "schema": {
+    "properties": {
+      "organization_id": {
+        "type": [
+          "null",
+          "integer"
+        ]
+      },
+      "requester_id": {
+        "type": [
+          "null",
+          "integer"
+        ]
+      },
+      "problem_id": {
+        "type": [
+          "null",
+          "integer"
+        ]
+      },
+      "is_public": {
+        "type": [
+          "null",
+          "boolean"
+        ]
+      },
+      "description": {
+        "type": [
+          "null",
+          "string"
+        ]
+      },
+      "follower_ids": {
+        "items": {
+          "type": [
+            "null",
+            "integer"
+          ]
+        },
+        "type": [
+          "null",
+          "array"
+        ]
+      },
+      "submitter_id": {
+        "type": [
+          "null",
+          "integer"
+        ]
+      },
+      "generated_timestamp": {
+        "type": [
+          "null",
+          "integer"
+        ]
+      },
+      "brand_id": {
+        "type": [
+          "null",
+          "integer"
+        ]
+      },
+      "id": {
+        "type": [
+          "null",
+          "integer"
+        ]
+      },
+      "group_id": {
+        "type": [
+          "null",
+          "integer"
+        ]
+      },
+      "type": {
+        "type": [
+          "null",
+          "string"
+        ]
+      },
+      "recipient": {
+        "type": [
+          "null",
+          "string"
+        ]
+      },
+      "collaborator_ids": {
+        "items": {
+          "type": [
+            "null",
+            "integer"
+          ]
+        },
+        "type": [
+          "null",
+          "array"
+        ]
+      },
+      "tags": {
+        "items": {
+          "type": [
+            "null",
+            "string"
+          ]
+        },
+        "type": [
+          "null",
+          "array"
+        ]
+      },
+      "has_incidents": {
+        "type": [
+          "null",
+          "boolean"
+        ]
+      },
+      "created_at": {
+        "format": "date-time",
+        "type": [
+          "null",
+          "string"
+        ]
+      },
+      "raw_subject": {
+        "type": [
+          "null",
+          "string"
+        ]
+      },
+      "status": {
+        "type": [
+          "null",
+          "string"
+        ]
+      },
+      "updated_at": {
+        "format": "date-time",
+        "type": [
+          "null",
+          "string"
+        ]
+      },
+      "custom_fields": {
+        "items": {
+          "properties": {
+            "id": {
+              "type": [
+                "null",
+                "integer"
+              ]
+            },
+            "value": {}
+          },
+          "type": [
+            "null",
+            "object"
+          ]
+        },
+        "type": [
+          "null",
+          "array"
+        ]
+      },
+      "url": {
+        "type": [
+          "null",
+          "string"
+        ]
+      },
+      "allow_channelback": {
+        "type": [
+          "null",
+          "boolean"
+        ]
+      },
+      "allow_attachments": {
+        "type": [
+          "null",
+          "boolean"
+        ]
+      },
+      "due_at": {
+        "format": "date-time",
+        "type": [
+          "null",
+          "string"
+        ]
+      },
+      "followup_ids": {
+        "items": {
+          "type": [
+            "null",
+            "integer"
+          ]
+        },
+        "type": [
+          "null",
+          "array"
+        ]
+      },
+      "priority": {
+        "type": [
+          "null",
+          "string"
+        ]
+      },
+      "assignee_id": {
+        "type": [
+          "null",
+          "integer"
+        ]
+      },
+      "subject": {
+        "type": [
+          "null",
+          "string"
+        ]
+      },
+      "external_id": {
+        "type": [
+          "null",
+          "string"
+        ]
+      },
+      "via": {
+        "properties": {
+          "source": {
+            "properties": {
+              "from": {
+                "properties": {
+                  "name": {
+                    "type": [
+                      "null",
+                      "string"
+                    ]
+                  },
+                  "ticket_id": {
+                    "type": [
+                      "null",
+                      "integer"
+                    ]
+                  },
+                  "address": {
+                    "type": [
+                      "null",
+                      "string"
+                    ]
+                  },
+                  "subject": {
+                    "type": [
+                      "null",
+                      "string"
+                    ]
+                  }
+                },
+                "type": [
+                  "null",
+                  "object"
+                ]
+              },
+              "to": {
+                "properties": {
+                  "address": {
+                    "type": [
+                      "null",
+                      "string"
+                    ]
+                  },
+                  "name": {
+                    "type": [
+                      "null",
+                      "string"
+                    ]
+                  }
+                },
+                "type": [
+                  "null",
+                  "object"
+                ]
+              },
+              "rel": {
+                "type": [
+                  "null",
+                  "string"
+                ]
+              }
+            },
+            "type": [
+              "null",
+              "object"
+            ]
+          },
+          "channel": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        },
+        "type": [
+          "null",
+          "object"
+        ]
+      },
+      "ticket_form_id": {
+        "type": [
+          "null",
+          "integer"
+        ]
+      },
+      "satisfaction_rating": {
+        "properties": {
+          "id": {
+            "type": [
+              "null",
+              "integer"
+            ]
+          },
+          "assignee_id": {
+            "type": [
+              "null",
+              "integer"
+            ]
+          },
+          "group_id": {
+            "type": [
+              "null",
+              "integer"
+            ]
+          },
+          "reason_id": {
+            "type": [
+              "null",
+              "integer"
+            ]
+          },
+          "requester_id": {
+            "type": [
+              "null",
+              "integer"
+            ]
+          },
+          "ticket_id": {
+            "type": [
+              "null",
+              "integer"
+            ]
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "url": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "score": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "reason": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "comment": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        },
+        "type": [
+          "null",
+          "object",
+          "string"
+        ]
+      },
+      "sharing_agreement_ids": {
+        "items": {
+          "type": [
+            "null",
+            "integer"
+          ]
+        },
+        "type": [
+          "null",
+          "array"
+        ]
+      },
+      "email_cc_ids": {
+        "items": {
+          "type": [
+            "null",
+            "integer"
+          ]
+        },
+        "type": [
+          "null",
+          "array"
+        ]
+      },
+      "forum_topic_id": {
+        "type": [
+          "null",
+          "integer"
+        ]
+      }
+    },
+    "type": [
+      "null",
+      "object"
+    ]
+  },
+  "key_properties": [
+    "id"
+  ]
+}
+{
+  "type": "SCHEMA",
+  "stream": "ticket_audits",
+  "schema": {
+    "properties": {
+      "events": {
+        "items": {
+          "properties": {
+            "attachments": {
+              "items": {
+                "properties": {
+                  "id": {
+                    "type": [
+                      "null",
+                      "integer"
+                    ]
+                  },
+                  "size": {
+                    "type": [
+                      "null",
+                      "integer"
+                    ]
+                  },
+                  "url": {
+                    "type": [
+                      "null",
+                      "string"
+                    ]
+                  },
+                  "inline": {
+                    "type": [
+                      "null",
+                      "boolean"
+                    ]
+                  },
+                  "height": {
+                    "type": [
+                      "null",
+                      "integer"
+                    ]
+                  },
+                  "width": {
+                    "type": [
+                      "null",
+                      "integer"
+                    ]
+                  },
+                  "content_url": {
+                    "type": [
+                      "null",
+                      "string"
+                    ]
+                  },
+                  "mapped_content_url": {
+                    "type": [
+                      "null",
+                      "string"
+                    ]
+                  },
+                  "content_type": {
+                    "type": [
+                      "null",
+                      "string"
+                    ]
+                  },
+                  "file_name": {
+                    "type": [
+                      "null",
+                      "string"
+                    ]
+                  },
+                  "thumbnails": {
+                    "items": {
+                      "properties": {
+                        "id": {
+                          "type": [
+                            "null",
+                            "integer"
+                          ]
+                        },
+                        "size": {
+                          "type": [
+                            "null",
+                            "integer"
+                          ]
+                        },
+                        "url": {
+                          "type": [
+                            "null",
+                            "string"
+                          ]
+                        },
+                        "inline": {
+                          "type": [
+                            "null",
+                            "boolean"
+                          ]
+                        },
+                        "height": {
+                          "type": [
+                            "null",
+                            "integer"
+                          ]
+                        },
+                        "width": {
+                          "type": [
+                            "null",
+                            "integer"
+                          ]
+                        },
+                        "content_url": {
+                          "type": [
+                            "null",
+                            "string"
+                          ]
+                        },
+                        "mapped_content_url": {
+                          "type": [
+                            "null",
+                            "string"
+                          ]
+                        },
+                        "content_type": {
+                          "type": [
+                            "null",
+                            "string"
+                          ]
+                        },
+                        "file_name": {
+                          "type": [
+                            "null",
+                            "string"
+                          ]
+                        }
+                      },
+                      "type": [
+                        "null",
+                        "object"
+                      ]
+                    },
+                    "type": [
+                      "null",
+                      "array"
+                    ]
+                  }
+                },
+                "type": [
+                  "null",
+                  "object"
+                ]
+              },
+              "type": [
+                "null",
+                "array"
+              ]
+            },
+            "created_at": {
+              "format": "date-time",
+              "type": [
+                "null",
+                "string"
+              ]
+            },
+            "data": {
+              "properties": {
+                "transcription_status": {
+                  "type": [
+                    "null",
+                    "string"
+                  ]
+                },
+                "transcription_text": {
+                  "type": [
+                    "null",
+                    "string"
+                  ]
+                },
+                "to": {
+                  "type": [
+                    "null",
+                    "string"
+                  ]
+                },
+                "call_duration": {
+                  "type": [
+                    "null",
+                    "string"
+                  ]
+                },
+                "answered_by_name": {
+                  "type": [
+                    "null",
+                    "string"
+                  ]
+                },
+                "recording_url": {
+                  "type": [
+                    "null",
+                    "string"
+                  ]
+                },
+                "started_at": {
+                  "format": "date-time",
+                  "type": [
+                    "null",
+                    "string"
+                  ]
+                },
+                "answered_by_id": {
+                  "type": [
+                    "null",
+                    "integer"
+                  ]
+                },
+                "from": {
+                  "type": [
+                    "null",
+                    "string"
+                  ]
+                }
+              },
+              "type": [
+                "null",
+                "object"
+              ]
+            },
+            "formatted_from": {
+              "type": [
+                "null",
+                "string"
+              ]
+            },
+            "formatted_to": {
+              "type": [
+                "null",
+                "string"
+              ]
+            },
+            "transcription_visible": {},
+            "trusted": {
+              "type": [
+                "null",
+                "boolean"
+              ]
+            },
+            "html_body": {
+              "type": [
+                "null",
+                "string"
+              ]
+            },
+            "subject": {
+              "type": [
+                "null",
+                "string"
+              ]
+            },
+            "field_name": {
+              "type": [
+                "null",
+                "string"
+              ]
+            },
+            "audit_id": {
+              "type": [
+                "null",
+                "integer"
+              ]
+            },
+            "value": {
+              "items": {
+                "type": [
+                  "null",
+                  "string"
+                ]
+              },
+              "type": [
+                "null",
+                "array",
+                "string"
+              ]
+            },
+            "author_id": {
+              "type": [
+                "null",
+                "integer"
+              ]
+            },
+            "via": {
+              "properties": {
+                "channel": {
+                  "type": [
+                    "null",
+                    "string"
+                  ]
+                },
+                "source": {
+                  "properties": {
+                    "to": {
+                      "properties": {
+                        "address": {
+                          "type": [
+                            "null",
+                            "string"
+                          ]
+                        },
+                        "name": {
+                          "type": [
+                            "null",
+                            "string"
+                          ]
+                        }
+                      },
+                      "type": [
+                        "null",
+                        "object"
+                      ]
+                    },
+                    "from": {
+                      "properties": {
+                        "title": {
+                          "type": [
+                            "null",
+                            "string"
+                          ]
+                        },
+                        "address": {
+                          "type": [
+                            "null",
+                            "string"
+                          ]
+                        },
+                        "subject": {
+                          "type": [
+                            "null",
+                            "string"
+                          ]
+                        },
+                        "deleted": {
+                          "type": [
+                            "null",
+                            "boolean"
+                          ]
+                        },
+                        "name": {
+                          "type": [
+                            "null",
+                            "string"
+                          ]
+                        },
+                        "original_recipients": {
+                          "items": {
+                            "type": [
+                              "null",
+                              "string"
+                            ]
+                          },
+                          "type": [
+                            "null",
+                            "array"
+                          ]
+                        },
+                        "id": {
+                          "type": [
+                            "null",
+                            "integer"
+                          ]
+                        },
+                        "ticket_id": {
+                          "type": [
+                            "null",
+                            "integer"
+                          ]
+                        },
+                        "revision_id": {
+                          "type": [
+                            "null",
+                            "integer"
+                          ]
+                        }
+                      },
+                      "type": [
+                        "null",
+                        "object"
+                      ]
+                    },
+                    "rel": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    }
+                  },
+                  "type": [
+                    "null",
+                    "object"
+                  ]
+                }
+              },
+              "type": [
+                "null",
+                "object"
+              ]
+            },
+            "type": {
+              "type": [
+                "null",
+                "string"
+              ]
+            },
+            "macro_id": {
+              "type": [
+                "null",
+                "string"
+              ]
+            },
+            "body": {
+              "type": [
+                "null",
+                "string"
+              ]
+            },
+            "recipients": {
+              "items": {
+                "type": [
+                  "null",
+                  "integer"
+                ]
+              },
+              "type": [
+                "null",
+                "array"
+              ]
+            },
+            "macro_deleted": {
+              "type": [
+                "null",
+                "boolean"
+              ]
+            },
+            "plain_body": {
+              "type": [
+                "null",
+                "string"
+              ]
+            },
+            "id": {
+              "type": [
+                "null",
+                "integer"
+              ]
+            },
+            "previous_value": {
+              "items": {
+                "type": [
+                  "null",
+                  "string"
+                ]
+              },
+              "type": [
+                "null",
+                "array",
+                "string"
+              ]
+            },
+            "macro_title": {
+              "type": [
+                "null",
+                "string"
+              ]
+            },
+            "public": {
+              "type": [
+                "null",
+                "boolean"
+              ]
+            },
+            "resource": {
+              "type": [
+                "null",
+                "string"
+              ]
+            }
+          },
+          "type": [
+            "null",
+            "object"
+          ]
+        },
+        "type": [
+          "null",
+          "array"
+        ]
+      },
+      "author_id": {
+        "type": [
+          "null",
+          "integer"
+        ]
+      },
+      "metadata": {
+        "properties": {
+          "custom": {},
+          "trusted": {
+            "type": [
+              "null",
+              "boolean"
+            ]
+          },
+          "notifications_suppressed_for": {
+            "items": {
+              "type": [
+                "null",
+                "integer"
+              ]
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
+          "flags_options": {
+            "properties": {
+              "2": {
+                "properties": {
+                  "trusted": {
+                    "type": [
+                      "null",
+                      "boolean"
+                    ]
+                  }
+                },
+                "type": [
+                  "null",
+                  "object"
+                ]
+              },
+              "11": {
+                "properties": {
+                  "trusted": {
+                    "type": [
+                      "null",
+                      "boolean"
+                    ]
+                  },
+                  "message": {
+                    "properties": {
+                      "user": {
+                        "type": [
+                          "null",
+                          "string"
+                        ]
+                      }
+                    },
+                    "type": [
+                      "null",
+                      "object"
+                    ]
+                  }
+                },
+                "type": [
+                  "null",
+                  "object"
+                ]
+              }
+            },
+            "type": [
+              "null",
+              "object"
+            ]
+          },
+          "flags": {
+            "items": {
+              "type": [
+                "null",
+                "integer"
+              ]
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
+          "system": {
+            "properties": {
+              "location": {
+                "type": [
+                  "null",
+                  "string"
+                ]
+              },
+              "longitude": {
+                "type": [
+                  "null",
+                  "number"
+                ]
+              },
+              "message_id": {
+                "type": [
+                  "null",
+                  "string"
+                ]
+              },
+              "raw_email_identifier": {
+                "type": [
+                  "null",
+                  "string"
+                ]
+              },
+              "ip_address": {
+                "type": [
+                  "null",
+                  "string"
+                ]
+              },
+              "json_email_identifier": {
+                "type": [
+                  "null",
+                  "string"
+                ]
+              },
+              "client": {
+                "type": [
+                  "null",
+                  "string"
+                ]
+              },
+              "latitude": {
+                "type": [
+                  "null",
+                  "number"
+                ]
+              }
+            },
+            "type": [
+              "null",
+              "object"
+            ]
+          }
+        },
+        "type": [
+          "null",
+          "object"
+        ]
+      },
+      "id": {
+        "type": [
+          "null",
+          "integer"
+        ]
+      },
+      "created_at": {
+        "format": "date-time",
+        "type": [
+          "null",
+          "string"
+        ]
+      },
+      "ticket_id": {
+        "type": [
+          "null",
+          "integer"
+        ]
+      },
+      "via": {
+        "properties": {
+          "channel": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "source": {
+            "properties": {
+              "from": {
+                "properties": {
+                  "ticket_ids": {
+                    "items": {
+                      "type": [
+                        "null",
+                        "integer"
+                      ]
+                    },
+                    "type": [
+                      "null",
+                      "array"
+                    ]
+                  },
+                  "subject": {
+                    "type": [
+                      "null",
+                      "string"
+                    ]
+                  },
+                  "name": {
+                    "type": [
+                      "null",
+                      "string"
+                    ]
+                  },
+                  "address": {
+                    "type": [
+                      "null",
+                      "string"
+                    ]
+                  },
+                  "original_recipients": {
+                    "items": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "type": [
+                      "null",
+                      "array"
+                    ]
+                  },
+                  "id": {
+                    "type": [
+                      "null",
+                      "integer"
+                    ]
+                  },
+                  "ticket_id": {
+                    "type": [
+                      "null",
+                      "integer"
+                    ]
+                  },
+                  "deleted": {
+                    "type": [
+                      "null",
+                      "boolean"
+                    ]
+                  },
+                  "title": {
+                    "type": [
+                      "null",
+                      "string"
+                    ]
+                  }
+                },
+                "type": [
+                  "null",
+                  "object"
+                ]
+              },
+              "to": {
+                "properties": {
+                  "name": {
+                    "type": [
+                      "null",
+                      "string"
+                    ]
+                  },
+                  "address": {
+                    "type": [
+                      "null",
+                      "string"
+                    ]
+                  }
+                },
+                "type": [
+                  "null",
+                  "object"
+                ]
+              },
+              "rel": {
+                "type": [
+                  "null",
+                  "string"
+                ]
+              }
+            },
+            "type": [
+              "null",
+              "object"
+            ]
+          }
+        },
+        "type": [
+          "null",
+          "object"
+        ]
+      }
+    },
+    "type": [
+      "null",
+      "object"
+    ]
+  },
+  "key_properties": [
+    "id"
+  ]
+}
+{
+  "type": "SCHEMA",
+  "stream": "ticket_metrics",
+  "schema": {
+    "properties": {
+      "metric": {
+        "type": [
+          "null",
+          "integer"
+        ]
+      },
+      "id": {
+        "type": [
+          "null",
+          "integer"
+        ]
+      },
+      "time": {
+        "type": [
+          "null",
+          "string"
+        ]
+      },
+      "instance_id": {
+        "type": [
+          "null",
+          "integer"
+        ]
+      },
+      "ticket_id": {
+        "type": [
+          "null",
+          "integer"
+        ]
+      },
+      "status": {
+        "properties": {
+          "calendar": {
+            "type": [
+              "null",
+              "integer"
+            ]
+          },
+          "business": {
+            "type": [
+              "null",
+              "integer"
+            ]
+          }
+        },
+        "type": [
+          "null",
+          "object"
+        ]
+      },
+      "type": {
+        "type": [
+          "null",
+          "string"
+        ]
+      },
+      "agent_wait_time_in_minutes": {
+        "properties": {
+          "calendar": {
+            "type": [
+              "null",
+              "integer"
+            ]
+          },
+          "business": {
+            "type": [
+              "null",
+              "integer"
+            ]
+          }
+        },
+        "type": [
+          "null",
+          "object"
+        ]
+      },
+      "assignee_stations": {
+        "type": [
+          "null",
+          "integer"
+        ]
+      },
+      "created_at": {
+        "format": "date-time",
+        "type": [
+          "null",
+          "string"
+        ]
+      },
+      "first_resolution_time_in_minutes": {
+        "properties": {
+          "calendar": {
+            "type": [
+              "null",
+              "integer"
+            ]
+          },
+          "business": {
+            "type": [
+              "null",
+              "integer"
+            ]
+          }
+        },
+        "type": [
+          "null",
+          "object"
+        ]
+      },
+      "full_resolution_time_in_minutes": {
+        "properties": {
+          "calendar": {
+            "type": [
+              "null",
+              "integer"
+            ]
+          },
+          "business": {
+            "type": [
+              "null",
+              "integer"
+            ]
+          }
+        },
+        "type": [
+          "null",
+          "object"
+        ]
+      },
+      "group_stations": {
+        "type": [
+          "null",
+          "integer"
+        ]
+      },
+      "latest_comment_added_at": {
+        "format": "date-time",
+        "type": [
+          "null",
+          "string"
+        ]
+      },
+      "on_hold_time_in_minutes": {
+        "properties": {
+          "calendar": {
+            "type": [
+              "null",
+              "integer"
+            ]
+          },
+          "business": {
+            "type": [
+              "null",
+              "integer"
+            ]
+          }
+        },
+        "type": [
+          "null",
+          "object"
+        ]
+      },
+      "reopens": {
+        "type": [
+          "null",
+          "integer"
+        ]
+      },
+      "replies": {
+        "type": [
+          "null",
+          "integer"
+        ]
+      },
+      "reply_time_in_minutes": {
+        "properties": {
+          "calendar": {
+            "type": [
+              "null",
+              "integer"
+            ]
+          },
+          "business": {
+            "type": [
+              "null",
+              "integer"
+            ]
+          }
+        },
+        "type": [
+          "null",
+          "object"
+        ]
+      },
+      "requester_updated_at": {
+        "format": "date-time",
+        "type": [
+          "null",
+          "string"
+        ]
+      },
+      "requester_wait_time_in_minutes": {
+        "properties": {
+          "calendar": {
+            "type": [
+              "null",
+              "integer"
+            ]
+          },
+          "business": {
+            "type": [
+              "null",
+              "integer"
+            ]
+          }
+        },
+        "type": [
+          "null",
+          "object"
+        ]
+      },
+      "status_updated_at": {
+        "format": "date-time",
+        "type": [
+          "null",
+          "string"
+        ]
+      },
+      "updated_at": {
+        "format": "date-time",
+        "type": [
+          "null",
+          "string"
+        ]
+      },
+      "url": {
+        "type": [
+          "null",
+          "string"
+        ]
+      },
+      "initially_assigned_at": {
+        "format": "date-time",
+        "type": [
+          "null",
+          "string"
+        ]
+      },
+      "assigned_at": {
+        "format": "date-time",
+        "type": [
+          "null",
+          "string"
+        ]
+      },
+      "solved_at": {
+        "format": "date-time",
+        "type": [
+          "null",
+          "string"
+        ]
+      },
+      "assignee_updated_at": {
+        "format": "date-time",
+        "type": [
+          "null",
+          "string"
+        ]
+      }
+    },
+    "type": [
+      "null",
+      "object"
+    ]
+  },
+  "key_properties": [
+    "id"
+  ]
+}

@@ -20,7 +20,6 @@ const simpleMeta: ISourceMeta = {
   }]),
   children: List(),
   sqlTableName: "`order`",
-  tableName: "order",
 }
 
 const emptyMeta: ISourceMeta = {
@@ -28,7 +27,6 @@ const emptyMeta: ISourceMeta = {
   simpleColumnMappings: List(),
   children: List(),
   sqlTableName: "`order`",
-  tableName: "order",
 }
 
 const metaWithPK: ISourceMeta = {
@@ -48,7 +46,6 @@ const metaWithPK: ISourceMeta = {
   }]),
   children: List(),
   sqlTableName: "`order`",
-  tableName: "order",
 
 }
 
@@ -67,9 +64,8 @@ const metaWithPKAndChildren: ISourceMeta = {
     chType: "String",
     type: "string"
   }]),
-  children: List([{...simpleMeta, sqlTableName: "order_child", tableName: "order_child"}]),
+  children: List([{...simpleMeta, sqlTableName: "`order_child`", tableName: "order_child"}]),
   sqlTableName: "`order`",
-  tableName: "order",
 }
 
 describe("translateCH", () => {
@@ -82,30 +78,26 @@ describe("translateCH", () => {
 
   it("should translate basic meta", () => {
     const res = translateCH("db", simpleMeta)
-    assert.equal(res.size, 2)
-    assert.equal(res.get(0), "DROP TABLE IF EXISTS order")
-    assert.equal(res.get(1), "CREATE TABLE order(`id` Int32,`name` Nullable(String)) ENGINE = MergeTree() ORDER BY (tuple())")
+    assert.equal(res.size, 1)
+    assert.equal(res.get(0), "CREATE TABLE db.`order` ( `id` Int32, `name` Nullable(String) ) ENGINE = MergeTree ORDER BY tuple()")
   })
 
   it("should translate meta with PK", () => {
     const res = translateCH("db", metaWithPK)
-    assert.equal(res.size, 2)
-    assert.equal(res.get(0), "DROP TABLE IF EXISTS order")
-    assert.equal(res.get(1), "CREATE TABLE order(`id` UInt32,`name` Nullable(String),`_ver` UInt64) ENGINE = ReplacingMergeTree(_ver) ORDER BY (`id`)")
+    assert.equal(res.size, 1)
+    assert.equal(res.get(0), "CREATE TABLE db.`order` ( `id` UInt32, `name` Nullable(String), `_ver` UInt64 ) ENGINE = ReplacingMergeTree(_ver) ORDER BY `id`")
   })
 
   it("should translate meta with PK and children", () => {
     const res = translateCH("db", metaWithPKAndChildren)
-    assert.equal(res.size, 4)
-    assert.equal(res.get(0), "DROP TABLE IF EXISTS order")
-    assert.equal(res.get(1), "CREATE TABLE order(`id` UInt32,`name` Nullable(String),`_ver` UInt64) ENGINE = ReplacingMergeTree(_ver) ORDER BY (`id`)")
-    assert.equal(res.get(2), "DROP TABLE IF EXISTS order_child")
-    assert.equal(res.get(3), "CREATE TABLE order_child(`id` Int32,`name` Nullable(String),`_root_ver` UInt64) ENGINE = MergeTree() ORDER BY (tuple())")
+    assert.equal(res.size, 2)
+    assert.equal(res.get(0), "CREATE TABLE db.`order` ( `id` UInt32, `name` Nullable(String), `_ver` UInt64 ) ENGINE = ReplacingMergeTree(_ver) ORDER BY `id`")
+    assert.equal(res.get(1), "CREATE TABLE db.`order_child` ( `id` Int32, `name` Nullable(String), `_root_ver` UInt64 ) ENGINE = MergeTree ORDER BY tuple()")
   })
 })
 
 describe("listTableNames", () => {
   it('should list all tables names in a single array', function () {
-    assert.deepEqual(listTableNames(metaWithPKAndChildren).toArray(), ["order", "order_child"])
+    assert.deepEqual(listTableNames(metaWithPKAndChildren).toArray(), ["`order`", "`order_child`"])
   })
 })

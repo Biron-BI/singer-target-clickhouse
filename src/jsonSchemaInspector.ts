@@ -25,14 +25,6 @@ export class JsonSchemaInspectorContext {
   ) {
   }
 
-  // static defaultPks(schema: IExtendedJSONSchema7, autoPrimaryKeyNames?: List<string>): List<string> {
-  //   if (schema.type !== "object") {
-  //     return List()
-  //   }
-  //
-  //   return asArray(schema.primaryKey ?? (autoPrimaryKeyNames?.find(autoPrimaryKeyName => schema.properties?.hasOwnProperty(autoPrimaryKeyName) ?? false) ?? []))
-  // }
-
   static defaultTableName(alias: string, parentCtx?: JsonSchemaInspectorContext): string {
     return `${parentCtx ? (`${parentCtx.tableName}__`) : ""}${alias}`
   }
@@ -76,7 +68,7 @@ export interface ISourceMeta {
   children: List<ISourceMeta>;
   pkMappings: List<PkMap>;
   simpleColumnMappings: List<ColumnMap>;
-  tableName: string
+  // tableName: string
   sqlTableName: string;
   cleaningColumn?: string;
 }
@@ -84,36 +76,33 @@ export interface ISourceMeta {
 const formatLevelIndexColumn = (level: number) => `_level_${level}_index`
 const formatRootPKColumn = (prop: string) => `_root_${prop}`
 
-function buildMetaPkProps(ctx: JsonSchemaInspectorContext) {
-  return ctx.isRoot() ? ctx.key_properties.map((prop) => ({
+// To refactor
+const buildMetaPkProps = (ctx: JsonSchemaInspectorContext) => ctx.isRoot() ? ctx.key_properties.map((prop) => ({
+  prop,
+  sqlIdentifier: escapeIdentifier(prop),
+  ...getSimpleColumnType(ctx, prop),
+  nullable: false,
+})) : Range(0, ctx.level).map((value) => {
+  const prop = formatLevelIndexColumn(value)
+  return {
     prop,
     sqlIdentifier: escapeIdentifier(prop),
-    ...getSimpleColumnType(ctx, prop),
+    chType: "Int32",
     nullable: false,
-  })) : Range(0, ctx.level).map((value) => {
-    const prop = formatLevelIndexColumn(value)
-    return {
-      prop,
-      sqlIdentifier: escapeIdentifier(prop),
-      chType: "Int32",
-      nullable: false,
-    } as PkMap
-  }).toList().concat(ctx.getRootContext().key_properties.map((prop) => ({
-    prop,
-    sqlIdentifier: escapeIdentifier(formatRootPKColumn(prop)),
-    ...getSimpleColumnType(ctx.getRootContext(), prop),
-    nullable: false,
-  })))
-}
+  } as PkMap
+}).toList().concat(ctx.getRootContext().key_properties.map((prop) => ({
+  prop,
+  sqlIdentifier: escapeIdentifier(formatRootPKColumn(prop)),
+  ...getSimpleColumnType(ctx.getRootContext(), prop),
+  nullable: false,
+})))
 
-export function buildMeta(ctx: JsonSchemaInspectorContext): ISourceMeta {
-  return {
-    tableName: ctx.tableName,
-    sqlTableName: escapeIdentifier(ctx.tableName),
-    pkMappings: buildMetaPkProps(ctx),
-    ...buildMetaProps(ctx),
-  }
-}
+export const buildMeta = (ctx: JsonSchemaInspectorContext): ISourceMeta => ({
+  // tableName: ctx.tableName,
+  sqlTableName: escapeIdentifier(ctx.tableName),
+  pkMappings: buildMetaPkProps(ctx),
+  ...buildMetaProps(ctx),
+})
 
 function flattenNestedObject(propDef: IExtendedJSONSchema7, key: string, ctx: JsonSchemaInspectorContext) {
   // flatten 1..1 relation properties into the current level
@@ -165,7 +154,7 @@ function buildMetaProps(ctx: JsonSchemaInspectorContext): MetaProps {
           return {
             ...acc,
             simpleColumnMappings: acc.simpleColumnMappings.concat(nestedSimpleColumnMappings),
-            // children: acc.children.concat(nestedChildren), FIXME CASSÉ
+            children: acc.children.concat(nestedChildren), //FIXME CASSÉ
           }
         } else if (propDefTypes.includes("array")) {
           return {
@@ -278,7 +267,7 @@ export function getSimpleColumnSqlType(ctx: JsonSchemaInspectorContext, propDef:
  * @return {string}
  */
 export function escapeIdentifier(id: string): string {
-  id = id.replace(/\./g, "_")
+  id = id.replace(/\./g, "__")
   if (id.length > 64) {
     const uid = sha1(id).substr(0, 10)
     id = id.substr(0, 64 - uid.length - 27) + uid + id.substring(id.length - 27)

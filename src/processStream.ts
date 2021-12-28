@@ -9,7 +9,7 @@ import ClickhouseConnection from "ClickhouseConnection"
 // a transformer en classe pour set des valeurs par défaut
 export interface Config {
   host: string
-  port: string | number
+  port: number
   user: string
   password: string
   database: string
@@ -35,8 +35,8 @@ async function processSchemaMessage(msg: SchemaMessageContent, ch: ClickhouseCon
   if (rootAlreadyExists) {
     await Promise.all(listTableNames(meta).map(async (tableName, idx) => {
       const currentTable = unescape(await ch.describeCreateTable(tableName))
-      const newTable = unescape(queries.get(idx)?.replace("`", ""))
-      if (newTable !== currentTable) {
+      const newTable = unescape(queries.get(idx))
+      if (!newTable || !currentTable || newTable.localeCompare(currentTable)) {
         throw new Error(`Schema modification detected.
 Current:  ${currentTable}
 New:      ${newTable}
@@ -55,7 +55,6 @@ async function processLine(line: string, config: Config) {
   switch (msg.type) {
     case MessageType.schema:
       await processSchemaMessage(msg, ch)
-      log_debug("done processing schema")
       break
     default:
       throw new Error("not implemented")

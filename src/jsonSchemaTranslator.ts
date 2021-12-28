@@ -58,5 +58,5 @@ export function translateCH(database: string, meta: ISourceMeta, parentMeta?: IS
     .concat(meta.children.flatMap((child: ISourceMeta) => translateCH(database, child, meta, rootMeta || meta)))
 }
 
-export const listTableNames = (meta: ISourceMeta): List<string> => List<string>([meta.tableName])
+export const listTableNames = (meta: ISourceMeta): List<string> => List<string>([meta.sqlTableName])
   .concat(meta.children.flatMap(listTableNames))

@@ -60,7 +60,7 @@ export default class ClickhouseConnection {
       this.connection = new ClickHouse({
         host: this.connInfo.host,
         user: this.connInfo.user,
-        port: /*this.connInfo.port ||*/ 8123, // todo
+        port: this.connInfo.port,
         password: this.connInfo.password,
         queryOptions: {
           mutations_sync: 2, // To run data deletion sync https://clickhouse.tech/docs/en/operations/settings/settings/#mutations_sync
