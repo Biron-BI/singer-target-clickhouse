@@ -47,11 +47,7 @@ export function translateCH(database: string, meta: ISourceMeta, parentMeta?: IS
 
 
   return List<string>()
-    // .push(`DROP TABLE IF EXISTS ${meta.sqlTableName}`)
-    .push(`CREATE TABLE ${database}.${meta.sqlTableName}
-           (
-               ${createDefs.filter(Boolean).join(", ")}
-           ) ENGINE = ${resolveEngine(isNodeRoot, meta.pkMappings.size > 0)} ORDER BY ${resolveOrderBy(meta)}`)
+    .push(`CREATE TABLE ${database}.${meta.sqlTableName} ( ${createDefs.filter(Boolean).join(", ")} ) ENGINE = ${resolveEngine(isNodeRoot, meta.pkMappings.size > 0)} ORDER BY ${resolveOrderBy(meta)}`)
     .concat(meta.children.flatMap((child: ISourceMeta) => translateCH(database, child, meta, rootMeta || meta)))
 }
 

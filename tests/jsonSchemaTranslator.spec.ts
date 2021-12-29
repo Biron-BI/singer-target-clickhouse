@@ -20,6 +20,7 @@ const simpleMeta: ISourceMeta = {
   }]),
   children: List(),
   sqlTableName: "`order`",
+  prop: "order",
 }
 
 const emptyMeta: ISourceMeta = {
@@ -27,6 +28,8 @@ const emptyMeta: ISourceMeta = {
   simpleColumnMappings: List(),
   children: List(),
   sqlTableName: "`order`",
+  prop: "order",
+
 }
 
 const metaWithPK: ISourceMeta = {
@@ -46,6 +49,7 @@ const metaWithPK: ISourceMeta = {
   }]),
   children: List(),
   sqlTableName: "`order`",
+  prop: "order",
 }
 
 const metaWithPKAndChildren: ISourceMeta = {
@@ -65,6 +69,7 @@ const metaWithPKAndChildren: ISourceMeta = {
   }]),
   children: List([{...simpleMeta, sqlTableName: "`order_child`", tableName: "order_child"}]),
   sqlTableName: "`order`",
+  prop: "order",
 }
 
 describe("translateCH", () => {

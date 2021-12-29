@@ -65,6 +65,7 @@ export interface ISimpleColumnType {
 export type PkMap = IPKMapping & ISimpleColumnType;
 
 export interface ISourceMeta {
+  prop: string
   children: List<ISourceMeta>;
   pkMappings: List<PkMap>;
   simpleColumnMappings: List<ColumnMap>;
@@ -73,7 +74,7 @@ export interface ISourceMeta {
   cleaningColumn?: string;
 }
 
-const formatLevelIndexColumn = (level: number) => `_level_${level}_index`
+export const formatLevelIndexColumn = (level: number) => `_level_${level}_index`
 const formatRootPKColumn = (prop: string) => `_root_${prop}`
 
 // To refactor
@@ -98,7 +99,7 @@ const buildMetaPkProps = (ctx: JsonSchemaInspectorContext) => ctx.isRoot() ? ctx
 })))
 
 export const buildMeta = (ctx: JsonSchemaInspectorContext): ISourceMeta => ({
-  // tableName: ctx.tableName,
+  prop: ctx.alias,
   sqlTableName: escapeIdentifier(ctx.tableName),
   pkMappings: buildMetaPkProps(ctx),
   ...buildMetaProps(ctx),
@@ -108,7 +109,6 @@ function flattenNestedObject(propDef: IExtendedJSONSchema7, key: string, ctx: Js
   // flatten 1..1 relation properties into the current level
   const nestedSchema = {
     type: "object" as JSONSchema7TypeName, // ts is dumb
-    // required: (isMandatory(key) ? asArray(propDef.required).map((s: string) => `${key}.${s}`) : List<string>()).toArray(),
     properties: {} as Record<string, JSONSchema7Definition>,
   }
   Object.entries(propDef.properties ?? {}).forEach(([nestedKey, nestedPropDef]) => {

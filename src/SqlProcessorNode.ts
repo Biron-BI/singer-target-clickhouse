@@ -3,7 +3,9 @@ import {ISourceMeta} from "jsonSchemaInspector"
 import {extractValue} from "jsonSchemaTranslator"
 import {List, Range} from "immutable"
 
-type SourceMetaPK = ISourceMeta & { values: string[] };
+const get = require("lodash.get")
+
+type SourceMetaPK = ISourceMeta & { values: List<string | number> };
 
 // https://clickhouse.tech/docs/en/interfaces/formats/#jsoncompacteachrow
 export function jsonToJSONCompactEachRow(v: any) {
@@ -19,14 +21,13 @@ export function jsonToJSONCompactEachRow(v: any) {
  * Call pushRecord for each row, and buildInsertQuery when batch is complete
  * One node for one table
  */
-// The INGESTOR
 export default class SqlProcessorNode {
 
   constructor(
-    private readonly meta: ISourceMeta,
-    private readonly fields: List<string> = List(),
-    private readonly values: List<string | number> = List(),
-    private readonly children: List<SqlProcessorNode> = List()
+    public readonly meta: ISourceMeta,
+    public readonly fields: List<string> = List(),
+    public readonly values: List<string | number> = List(),
+    public readonly children: List<SqlProcessorNode> = List(),
   ) {
     this.meta = meta
   }
@@ -63,82 +64,72 @@ export default class SqlProcessorNode {
       Creates children
       Structure: One child per table
    */
-  // pushRecord(data: { [k: string]: any }, chunkIndex: number, maxVer: number, parentMeta?: SourceMetaPK, rootMeta?: SourceMetaPK, rootVer?: number) {
-  //   this.currentRootMeta = rootMeta
-  //   // We build header fields only once as the meta is the same for all values in this node
-  //   if (this.fields.size === 0) {
-  //     this.fields = this.buildSQLInsertField(this.meta)
-  //     if (rootMeta === undefined) {
-  //       if (this.meta.pkMappings.size > 0) {
-  //         this.fields.push("_ver")
-  //       }
-  //     } else {
-  //       this.fields.push("_root_ver")
-  //     }
-  //   }
-  //   // Record new version start at max existing version, + position in stream + 1
-  //   // Only needed if a column for version exists
-  //   if (!rootVer && (this.fields.includes("_ver") || this.fields.includes("_root_ver"))) {
-  //     rootVer = maxVer + chunkIndex + 1
-  //   }
-  //   // We parse values from chunk data received and store them in this node
-  //   this.values = this.values.concat(this.buildSQLInsertValues(data, this.meta, parentMeta?.values, rootMeta?.values, rootVer))
-  //
-  //   // We extract values of primary keys so we can insert them in children later
-  //   let pkValues: List<string> = List()
-  //   if (this.meta.children.size > 0) {
-  //     pkValues = this.meta.pkMappings.map(pkMapping => extractValue(data, pkMapping))
-  //   }
-  //   const meAsParent: SourceMetaPK = {...this.meta, values: pkValues}
-  //
-  //   if (!this.currentRootMeta) {
-  //     this.currentRootMeta = meAsParent
-  //   }
-  //
-  //   for (const child of this.meta.children) {
-  //     // We check if a children with the same meta has already been added
-  //     let processor: SqlProcessorNode = this.children.find((elem) => elem.meta.prop === child.prop &&
-  //       elem.meta.sqlTableName === child.sqlTableName)
-  //     // Otherwise we create a new node
-  //     if (!processor) {
-  //       processor = new SqlProcessorNode(child)
-  //
-  //       this.children.push(processor)
-  //     }
-  //     const childData: { [k: string]: any }[] = _.get(data, child.prop.split("."))
-  //
-  //     if (childData) {
-  //       for (const elem of childData) {
-  //         processor.pushRecord(elem, chunkIndex, maxVer, meAsParent, rootMeta || meAsParent, rootVer)
-  //       }
-  //     }
-  //   }
-  // }
+  pushRecord(data: Record<string, any>,
+             chunkIndex: number,
+             maxVer: number,
+             parentMeta?: SourceMetaPK,
+             rootVer?: number,
+             level = 0,
+             indexInParent?: number
+  ): SqlProcessorNode {
 
-  //
-  // retrieveRootPKValues() {
-  //   if (this.currentRootMeta) {
-  //     return this.currentRootMeta.values
-  //   } else {
-  //     throw new Error("No root PK value could be found")
-  //   }
-  // }
+    const isRoot = indexInParent === undefined
+
+    // Root version number is computed only for a root who has children
+    //version start at max existing version, + position in stream + 1
+    const resolvedRootVer = (isRoot && !this.meta.children.isEmpty()) ? maxVer + chunkIndex + 1 : rootVer
+
+    // In children we only add index to previous PKS
+    const pkValues = isRoot ? this.meta.pkMappings.map(pkMapping => extractValue(data, pkMapping)) : parentMeta?.values.push(indexInParent) ?? List()
+
+    const meAsParent: SourceMetaPK = {...this.meta, values: pkValues}
+
+    return new SqlProcessorNode(
+      this.meta,
+      this.buildSQLInsertField(this.meta, isRoot),
+      this.values.concat(this.buildSQLInsertValues(data, pkValues, resolvedRootVer)),
+      this.meta.children.map((child) => {
+        const processor = this.children.find((elem) => elem.meta.sqlTableName === child.sqlTableName) ?? new SqlProcessorNode(child)
+        const childData: List<Record<string, any>> = List(get(data, child.prop.split(".")))
+        if (!childData.isEmpty()) {
+          return childData.reduce((acc, elem, idx) => {
+            return acc.pushRecord(elem, chunkIndex, maxVer, meAsParent, resolvedRootVer, level + 1, idx)
+          }, processor)
+        }
+        return processor
+      })
+    )
+  }
 
   // Fields that'll be inserted in the database
-  private buildSQLInsertField(meta: ISourceMeta): List<string> {
+  private buildSQLInsertField(meta: ISourceMeta, isRoot: boolean): List<string> {
+    if (this.fields.size > 0) {
+      return this.fields
+    }
+
     return meta.pkMappings
       .map((pkMap) => pkMap.sqlIdentifier)
       .concat(meta.simpleColumnMappings
         .map((cMap) => cMap.sqlIdentifier))
+      .concat(fillIf("_ver", isRoot && !this.meta.pkMappings.isEmpty()))
+      .concat(fillIf("_root_ver", !isRoot))
   }
 
-  // Values that'll be inserted
-  private buildSQLInsertValues(data: { [k: string]: any }, meta: ISourceMeta, pkValues: List<any> = List(), version?: number) {
-    const ret = pkValues.concat(meta.simpleColumnMappings.map(cm => extractValue(data, cm)))
+  /**
+   *
+   * @param data
+   * @param pkValues all current pkValues of parent (key_properties + level indexes)
+   * @param version to add root_ver
+   * @private
+   */
+  private buildSQLInsertValues = (data: Record<string, any>,
+                               pkValues: List<any> = List(),
+                               version?: number
+  ) => pkValues
+    .concat(this.meta.simpleColumnMappings.map(cm => extractValue(data, cm)))
+    .concat(fillIf(version, version !== undefined))
+}
 
-    if (version) {
-      return ret.push(version)
-    }
-    return ret
-  }
+function fillIf<T>(value: T, apply: boolean): List<T> {
+  return apply ? List([value]): List()
 }
