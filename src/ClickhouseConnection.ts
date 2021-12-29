@@ -1,8 +1,8 @@
 import {ono} from "ono"
 import * as retry from "retry"
 import {log_debug} from "singer-node"
-import {Config} from "processStream"
 import {List} from "immutable"
+import {IConfig} from "Config"
 
 const ClickHouse = require("@apla/clickhouse")
 
@@ -28,7 +28,7 @@ export interface ISqlConnection {
 
 export default class ClickhouseConnection {
 
-  constructor(private connInfo: Config) {}
+  constructor(private connInfo: IConfig) {}
 
   private connection: any
 

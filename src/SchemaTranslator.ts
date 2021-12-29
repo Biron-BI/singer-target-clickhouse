@@ -5,7 +5,7 @@ function isoDate(d: Date) {
   d.getTimezoneOffset();
   d = new Date(d.getTime() - (d.getTimezoneOffset() * 60 * 1000))
 
-  return d.toISOString().substr(0, ("YYYY-MM-DD".length));
+  return d.toISOString().substring(0, ("YYYY-MM-DD".length));
 }
 
 export default class SchemaTranslator {

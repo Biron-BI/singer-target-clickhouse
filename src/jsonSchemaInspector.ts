@@ -154,7 +154,7 @@ function buildMetaProps(ctx: JsonSchemaInspectorContext): MetaProps {
           return {
             ...acc,
             simpleColumnMappings: acc.simpleColumnMappings.concat(nestedSimpleColumnMappings),
-            children: acc.children.concat(nestedChildren), //FIXME CASSÉ
+            children: acc.children.concat(nestedChildren),
           }
         } else if (propDefTypes.includes("array")) {
           return {

@@ -1,22 +1,16 @@
 // import SchemaTranslator from "SchemaTranslator"
-import {ISourceMeta} from "jsonSchemaInspector"
+import {ColumnMap, ISourceMeta, PkMap} from "jsonSchemaInspector"
 import {List} from "immutable"
+import SchemaTranslator from "SchemaTranslator"
 
-// export const JsonDataToSql = {
-//     extractValue(data: { [k: string]: any }, mapping: ColumnMap | PkMap): string {
-//         let v = mapping.prop ? _.get(data, mapping.prop.split(".")) : data;
-//
-//         const value = mapping.prop ? Object.entries(data).find()
-//
-//         const translator = new SchemaTranslator(mapping);
-//         return translator.extractValue(v);
-//     }
-// };
-//
-// /**
-//  * Returns list of sql instructions to setup sql table
-//  */
-//
+const get = require("lodash.get")
+
+export function extractValue(data: { [k: string]: any }, mapping: ColumnMap | PkMap): string {
+  let v = mapping.prop ? get(data, mapping.prop.split(".")) : data
+  const translator = new SchemaTranslator(mapping)
+  return translator.extractValue(v)
+}
+
 
 function resolveVersionColumn(isRoot: boolean, hasPkMappings: boolean): string {
   if (isRoot) {
@@ -54,7 +48,10 @@ export function translateCH(database: string, meta: ISourceMeta, parentMeta?: IS
 
   return List<string>()
     // .push(`DROP TABLE IF EXISTS ${meta.sqlTableName}`)
-    .push(`CREATE TABLE ${database}.${meta.sqlTableName} ( ${createDefs.filter(Boolean).join(", ") } ) ENGINE = ${resolveEngine(isNodeRoot, meta.pkMappings.size > 0)} ORDER BY ${resolveOrderBy(meta)}`)
+    .push(`CREATE TABLE ${database}.${meta.sqlTableName}
+           (
+               ${createDefs.filter(Boolean).join(", ")}
+           ) ENGINE = ${resolveEngine(isNodeRoot, meta.pkMappings.size > 0)} ORDER BY ${resolveOrderBy(meta)}`)
     .concat(meta.children.flatMap((child: ISourceMeta) => translateCH(database, child, meta, rootMeta || meta)))
 }
 

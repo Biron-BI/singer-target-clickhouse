@@ -5,17 +5,7 @@ import {buildMeta, escapeIdentifier, JsonSchemaInspectorContext} from "jsonSchem
 import {Readable} from "stream"
 import {listTableNames, translateCH} from "jsonSchemaTranslator"
 import ClickhouseConnection from "ClickhouseConnection"
-
-// a transformer en classe pour set des valeurs par défaut
-export interface Config {
-  host: string
-  port: number
-  user: string
-  password: string
-  database: string
-  // max_batch_rows?: number   to implement, could be nice
-  // max_batch_size?: number
-}
+import {IConfig} from "Config"
 
 // Remove magic quotes used to escape queries so we can compare content
 function unescape(query?: string) {
@@ -48,7 +38,7 @@ If you wish to update schemas, run with --update-schemas.`)
   }
 }
 
-async function processLine(line: string, config: Config) {
+async function processLine(line: string, config: IConfig) {
   const msg: MessageContent = JSON.parse(line)
 
   const ch = new ClickhouseConnection(config)
@@ -62,7 +52,7 @@ async function processLine(line: string, config: Config) {
 }
 
 
-export async function processStream(stream: Readable, config: Config) {
+export async function processStream(stream: Readable, config: IConfig) {
 
   stream.on("error", (err: any) => {
     log_fatal(err.message)

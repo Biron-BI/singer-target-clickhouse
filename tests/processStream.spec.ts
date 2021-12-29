@@ -1,11 +1,12 @@
 import {strict as assert} from 'assert'
 import * as fs from "fs"
-import {Config, processStream} from "../src/processStream"
+import {processStream} from "../src/processStream"
 import {StartedTestContainer} from "testcontainers"
 import {set_level} from "singer-node"
 import {bootClickhouseContainer, runChQueryInContainer} from "./helpers"
+import {IConfig} from '../src/Config'
 
-const connInfo: Config = {
+const connInfo: IConfig = {
   host: "localhost",
   user: "root",
   password: "azertyuiop",

@@ -2,8 +2,6 @@ import {strict as assert} from 'assert'
 import {buildMeta, getSimpleColumnSqlType, IExtendedJSONSchema7, JsonSchemaInspectorContext} from "../src/jsonSchemaInspector"
 import {List} from "immutable"
 
-// todo: tester avec un objet qui a lui meme des enfants
-
 const simpleSchema: IExtendedJSONSchema7 = {
   "properties": {
     "author_id": {"type": ["null", "string"]},

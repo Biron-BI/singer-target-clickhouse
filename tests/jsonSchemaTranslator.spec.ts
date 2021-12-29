@@ -46,7 +46,6 @@ const metaWithPK: ISourceMeta = {
   }]),
   children: List(),
   sqlTableName: "`order`",
-
 }
 
 const metaWithPKAndChildren: ISourceMeta = {
