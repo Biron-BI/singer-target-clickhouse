@@ -75,7 +75,7 @@ export interface ISourceMeta {
 }
 
 export const formatLevelIndexColumn = (level: number) => `_level_${level}_index`
-const formatRootPKColumn = (prop: string) => `_root_${prop}`
+export const formatRootPKColumn = (prop: string) => `_root_${prop}`
 
 // To refactor
 const buildMetaPkProps = (ctx: JsonSchemaInspectorContext) => ctx.isRoot() ? ctx.key_properties.map((prop) => ({

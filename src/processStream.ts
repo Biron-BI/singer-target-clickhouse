@@ -1,18 +1,21 @@
 import * as readline from 'readline'
-import {List} from "immutable"
+import {List, Map} from "immutable"
 import {log_debug, log_fatal, log_info, MessageContent, MessageType, SchemaMessageContent} from "singer-node"
 import {buildMeta, escapeIdentifier, JsonSchemaInspectorContext} from "jsonSchemaInspector"
 import {Readable} from "stream"
 import {listTableNames, translateCH} from "jsonSchemaTranslator"
 import ClickhouseConnection from "ClickhouseConnection"
-import {IConfig} from "Config"
+import {Config} from "Config"
+import StreamProcessor from "StreamProcessor"
 
 // Remove magic quotes used to escape queries so we can compare content
 function unescape(query?: string) {
   return query?.replace(/`/g, "")
 }
 
-async function processSchemaMessage(msg: SchemaMessageContent, ch: ClickhouseConnection) {
+async function processSchemaMessage(msg: SchemaMessageContent, config: Config): Promise<StreamProcessor> {
+  const ch = new ClickhouseConnection(config)
+
   const meta = buildMeta(new JsonSchemaInspectorContext(
     msg.stream,
     msg.schema,
@@ -34,25 +37,32 @@ If you wish to update schemas, run with --update-schemas.`)
       }
     }))
   } else {
-    return Promise.all(queries.map(ch.runQuery.bind(ch)))
+    await Promise.all(queries.map(ch.runQuery.bind(ch)))
   }
+  return new StreamProcessor(meta, config).prepareStreamProcessing()
 }
 
-async function processLine(line: string, config: IConfig) {
+async function processLine(line: string, config: Config, streamProcessors: Map<string, StreamProcessor>): Promise<Map<string, StreamProcessor>> {
   const msg: MessageContent = JSON.parse(line)
 
-  const ch = new ClickhouseConnection(config)
   switch (msg.type) {
     case MessageType.schema:
-      await processSchemaMessage(msg, ch)
-      break
+      return streamProcessors.set(msg.stream, await processSchemaMessage(msg, config))
+    case MessageType.record:
+      if (!streamProcessors.has(msg.stream)) {
+        throw new Error("Record message received before Schema is defined")
+      }
+
+      return streamProcessors.set(msg.stream,
+        await streamProcessors.get(msg.stream)!!.processChunk(msg.record, 0, line.length)
+      )
     default:
       throw new Error("not implemented")
   }
 }
 
 
-export async function processStream(stream: Readable, config: IConfig) {
+export async function processStream(stream: Readable, config: Config) {
 
   stream.on("error", (err: any) => {
     log_fatal(err.message)
@@ -63,11 +73,16 @@ export async function processStream(stream: Readable, config: IConfig) {
     input: stream,
   })
 
+  // The one and only let that I'm not sure how to make immutable
+  let streamProcessors = Map<string, StreamProcessor>()
+
   // We read input stream sequentially to correctly handle message ordering and echo State messages at regular intervals
   for await (const line of rl) {
     log_debug(`Processing new line ${line.substring(0, 40)}...`)
-    await processLine(line, config)
+    streamProcessors = await processLine(line, config, streamProcessors)
   }
+
+  await Promise.all(streamProcessors.map((processor) => processor.doneProcessing()))
   log_info("closing stream, done processing")
   rl.close()
 }

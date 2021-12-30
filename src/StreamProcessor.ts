@@ -1,6 +1,6 @@
 // abstract class intended to be inherited by each storage destination: mySQL, clickhouse, snowflake, ... based on the connectionAlias
 
-import {ISourceMeta, PkMap} from "./jsonSchemaInspector"
+import {formatRootPKColumn, ISourceMeta, PkMap} from "jsonSchemaInspector"
 import RecordProcessor from "RecordProcessor"
 import {ono} from "ono"
 import {pipeline, Transform} from "stream"
@@ -20,7 +20,7 @@ export default class StreamProcessor {
   // Will contain all values used to clear data based on 'cleaningColumn'
   private readonly clickhouse: ClickhouseConnection
 
-  protected constructor(
+  public constructor(
     private readonly meta: ISourceMeta,
     private readonly config: Config,
     private readonly recordProcessor = new RecordProcessor(meta),
@@ -71,7 +71,7 @@ export default class StreamProcessor {
     // }
     const recordProcess = this.recordProcessor.pushRecord(data, chunkIndex, this.maxVer)
     if (this.currentBatchRows >= this.config.max_batch_rows ||
-    this.currentBatchSize >= this.config.max_batch_size) {
+      this.currentBatchSize >= this.config.max_batch_size) {
       try {
         await this.saveNewRecords()
       } catch (err) {
@@ -112,7 +112,6 @@ export default class StreamProcessor {
     await this.assertPKIntegrity(this.meta)
   }
 
-  // FIXME
   private async deleteChildDuplicates(currentNode: ISourceMeta) {
     const query = `ALTER
                    TABLE
@@ -120,7 +119,7 @@ export default class StreamProcessor {
                    DELETE
                    WHERE (${
                            this.meta.pkMappings
-                                   // .map((elem) => elem.sqlIdentifierAsRootFk)
+                                   .map((pk) => formatRootPKColumn(pk.prop))
                                    .concat(["_root_ver"])
                                    .join(",")
                    }) NOT IN (SELECT ${

@@ -4,15 +4,15 @@ import {processStream} from "../src/processStream"
 import {StartedTestContainer} from "testcontainers"
 import {set_level} from "singer-node"
 import {bootClickhouseContainer, runChQueryInContainer} from "./helpers"
-import {IConfig} from '../src/Config'
+import {Config} from '../src/Config'
 
-const connInfo: IConfig = {
+const connInfo = new Config({
   host: "localhost",
   user: "root",
   password: "azertyuiop",
   port: 8123,
   database: "datbayse"
-}
+})
 
 
 describe("processStream - Schemas", () => {
@@ -61,3 +61,35 @@ describe("processStream - Schemas", () => {
   }).timeout(30000)
 
 }).timeout(30000)
+
+describe("processStream - Records", () => {
+  let container: StartedTestContainer
+  beforeEach(async function () {
+    this.timeout(30000)
+    try {
+      connInfo.port = 8123
+      container = await bootClickhouseContainer(connInfo);
+      connInfo.port = container.getMappedPort(connInfo.port)
+    } catch (err) {
+      console.log("err", err);
+    }
+    set_level("trace")
+  });
+
+  afterEach(async function () {
+    await container.stop();
+  });
+
+  it('should insert records', async () => {
+    await processStream(fs.createReadStream("./tests/data/stream_short.jsonl"), connInfo)
+    const execResult = await runChQueryInContainer(container, connInfo, `select brand_id from tickets where assignee_id = 11`)
+    assert.equal(execResult.output, '22\n')
+
+  }).timeout(30000)
+
+}).timeout(30000)
+
+describe("processStream - State", () => {
+
+}).timeout(30000)
+
