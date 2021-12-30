@@ -3,6 +3,7 @@ import * as retry from "retry"
 import {log_debug} from "singer-node"
 import {List} from "immutable"
 import {IConfig} from "Config"
+import {Writable} from "stream"
 
 const ClickHouse = require("@apla/clickhouse")
 
@@ -133,5 +134,18 @@ export default class ClickhouseConnection {
         }
       })
     })
+  }
+
+  // https://github.com/apla/node-clickhouse/blob/HEAD/README.md#inserting-with-stream
+  public async createWriteStream(query: string, callback: (err: Error, result: any) => any): Promise<Writable> {
+    const conn = await this.connectionPool();
+
+    log_debug(`building stream to query sql ${query}`)
+
+    try {
+      return conn.query(query, {omitFormat: true}, callback);
+    } catch (err) {
+      throw ono("ch stream failed", err);
+    }
   }
 }

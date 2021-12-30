@@ -21,21 +21,16 @@ export function jsonToJSONCompactEachRow(v: any) {
  * Call pushRecord for each row, and buildInsertQuery when batch is complete
  * One node for one table
  */
-export default class SqlProcessorNode {
+export default class RecordProcessor {
 
   constructor(
     public readonly meta: ISourceMeta,
     public readonly fields: List<string> = List(),
     public readonly values: List<string | number> = List(),
-    public readonly children: List<SqlProcessorNode> = List(),
+    public readonly children: List<RecordProcessor> = List(),
   ) {
     this.meta = meta
   }
-
-
-  // Used for direct insert mode
-  // private currentRootMeta?: SourceMetaPK
-
 
   public buildInsertQuery(): List<{ baseQuery: string, stream: Readable }> {
     const tableToInsertTo: string = this.meta.sqlTableName
@@ -64,14 +59,15 @@ export default class SqlProcessorNode {
       Creates children
       Structure: One child per table
    */
-  pushRecord(data: Record<string, any>,
-             chunkIndex: number,
-             maxVer: number,
-             parentMeta?: SourceMetaPK,
-             rootVer?: number,
-             level = 0,
-             indexInParent?: number
-  ): SqlProcessorNode {
+  pushRecord(
+    data: Record<string, any>,
+    chunkIndex: number,
+    maxVer: number,
+    parentMeta?: SourceMetaPK,
+    rootVer?: number,
+    level = 0,
+    indexInParent?: number,
+  ): RecordProcessor {
 
     const isRoot = indexInParent === undefined
 
@@ -84,12 +80,12 @@ export default class SqlProcessorNode {
 
     const meAsParent: SourceMetaPK = {...this.meta, values: pkValues}
 
-    return new SqlProcessorNode(
+    return new RecordProcessor(
       this.meta,
       this.buildSQLInsertField(this.meta, isRoot),
       this.values.concat(this.buildSQLInsertValues(data, pkValues, resolvedRootVer)),
       this.meta.children.map((child) => {
-        const processor = this.children.find((elem) => elem.meta.sqlTableName === child.sqlTableName) ?? new SqlProcessorNode(child)
+        const processor = this.children.find((elem) => elem.meta.sqlTableName === child.sqlTableName) ?? new RecordProcessor(child)
         const childData: List<Record<string, any>> = List(get(data, child.prop.split(".")))
         if (!childData.isEmpty()) {
           return childData.reduce((acc, elem, idx) => {
@@ -97,7 +93,7 @@ export default class SqlProcessorNode {
           }, processor)
         }
         return processor
-      })
+      }),
     )
   }
 
@@ -122,14 +118,15 @@ export default class SqlProcessorNode {
    * @param version to add root_ver
    * @private
    */
-  private buildSQLInsertValues = (data: Record<string, any>,
-                               pkValues: List<any> = List(),
-                               version?: number
+  private buildSQLInsertValues = (
+    data: Record<string, any>,
+    pkValues: List<any> = List(),
+    version?: number,
   ) => pkValues
     .concat(this.meta.simpleColumnMappings.map(cm => extractValue(data, cm)))
     .concat(fillIf(version, version !== undefined))
 }
 
 function fillIf<T>(value: T, apply: boolean): List<T> {
-  return apply ? List([value]): List()
+  return apply ? List([value]) : List()
 }

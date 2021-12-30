@@ -1,6 +1,6 @@
 import {List} from "immutable"
 import {strict as assert} from "assert"
-import SqlProcessorNode from "../src/SqlProcessorNode"
+import RecordProcessor from "../src/RecordProcessor"
 import {ColumnMap, ISourceMeta, PkMap} from "../src/jsonSchemaInspector"
 import {streamToStrList} from "./helpers"
 
@@ -71,10 +71,10 @@ const metaWithPKAndChildren: ISourceMeta = {
   sqlTableName: "`order`",
 }
 
-describe("SqlProcessNode", () => {
+describe("RecordProcessor", () => {
   describe("buildInsertQuery", () => {
     it("should handle simple meta", async () => {
-      const res = new SqlProcessorNode(simpleMeta, List(["id", "name"]), List([1, "BVEAS2124", 2, "PUYHDR"])).buildInsertQuery()
+      const res = new RecordProcessor(simpleMeta, List(["id", "name"]), List([1, "BVEAS2124", 2, "PUYHDR"])).buildInsertQuery()
       assert.equal(res.size, 1)
       assert.notEqual(res.get(0), undefined)
       assert.equal(res.get(0)?.baseQuery, "INSERT INTO `order` FORMAT JSONCompactEachRow")
@@ -85,26 +85,23 @@ describe("SqlProcessNode", () => {
     })
 
     it("should handle complex meta", async () => {
-      const res = new SqlProcessorNode(metaWithPKAndChildren, List(["id", "name"]), List([1, "BVEAS2124", 2, "PUYHDR"]),
+      const res = new RecordProcessor(metaWithPKAndChildren, List(["id", "name"]), List([1, "BVEAS2124", 2, "PUYHDR"]),
         List([
-          new SqlProcessorNode(metaWithPKAndChildren.children.get(0)!!, List(["id", "name"]), List([1, "a", 2, "b"])),
-          new SqlProcessorNode(metaWithPKAndChildren.children.get(1)!!, List(["id", "name"]), List([1, "c", 2, "d"])),
+          new RecordProcessor(metaWithPKAndChildren.children.get(0)!!, List(["id", "name"]), List([1, "a", 2, "b"])),
         ])).buildInsertQuery()
-      assert.equal(res.size, 3)
+      assert.equal(res.size, 2)
 
       assert.notEqual(res.get(0), undefined)
       assert.equal(res.get(0)?.baseQuery, "INSERT INTO `order` FORMAT JSONCompactEachRow")
-      assert.equal(res.get(1)?.baseQuery, "INSERT INTO `order_child` FORMAT JSONCompactEachRow")
-      assert.equal(res.get(2)?.baseQuery, "INSERT INTO `order_child_2` FORMAT JSONCompactEachRow")
+      assert.equal(res.get(1)?.baseQuery, "INSERT INTO `order__tags` FORMAT JSONCompactEachRow")
 
       assert.equal((await streamToStrList(res.get(1)!!.stream)).get(0), '[1,"a"][2,"b"]')
-      assert.equal((await streamToStrList(res.get(2)!!.stream)).get(0), '[1,"c"][2,"d"]')
     })
   })
 
   describe("pushRecord", () => {
     it("should handle simple schema and data", async () => {
-      const res = new SqlProcessorNode(simpleMeta)
+      const res = new RecordProcessor(simpleMeta)
         .pushRecord(
           {id: 1, name: "a"}, 0, 0,
         ).pushRecord(
@@ -120,7 +117,7 @@ describe("SqlProcessNode", () => {
     })
 
     it("should feed deep nested children", async () => {
-      const res = new SqlProcessorNode(metaWithPKAndChildren)
+      const res = new RecordProcessor(metaWithPKAndChildren)
         .pushRecord(
           {
             id: 1234,
