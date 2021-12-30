@@ -7,41 +7,30 @@ import {pipeline, Transform} from "stream"
 import ClickhouseConnection from "ClickhouseConnection"
 import {log_debug} from "singer-node"
 import {List} from "immutable"
+import {Config} from "Config"
 
-const conf = require("../config")
-
-
-const {dereferenceExternalSchema} = require("../utils/dereferenceSchema")
 const util = require("util")
-const debuglog = util.debuglog("biron-connect:customerDatabase")
-
-// export interface ICompiledSourceMeta {
-//   alias: string;
-//   cleanFirst: boolean;
-//   connAlias: string;
-//   directInsert: boolean;
-//   meta?: ISourceMeta;
-//   schema: JSONSchema7;
-//   topic: string;
-// }
 
 // To handle overall ingestion
-export default abstract class StreamProcessor {
+export default class StreamProcessor {
+  protected readonly cleanFirst: boolean = false
+  // protected cleaningValues: any[] = []
 
-  protected cleanFirst: boolean
-  protected maxVer: number = 0
 
   // Will contain all values used to clear data based on 'cleaningColumn'
-  protected cleaningValues: any[] = []
+  private readonly clickhouse: ClickhouseConnection
 
-  protected constructor(private meta: ISourceMeta, private clickhouse: ClickhouseConnection) {
+  protected constructor(
+    private readonly meta: ISourceMeta,
+    private readonly config: Config,
+    private readonly recordProcessor = new RecordProcessor(meta),
+    private readonly currentBatchRows: number = 0,
+    private readonly currentBatchSize: number = 0,
+    private readonly maxVer: number = -1,
+  ) {
+    this.clickhouse = new ClickhouseConnection(config)
+    // this.maxVer = maxVer ?? await this.retrieveMaxRecordVersion() // lacking a 'late init' feature
   }
-
-  protected sqlProcessor?: RecordProcessor
-  private currentBatchNb: number = 0
-  private nbRecords: number = 0
-  private recordsThreshold: number = conf.get("batch:threshold")
-
 
   /**
    * Returns true if main table has any column
@@ -58,60 +47,40 @@ export default abstract class StreamProcessor {
     }
     await this.finalizeBatchProcessing()
 
-    return this.nbRecords
-  }
-
-  public getMetaStorageData(): ISourceMeta {
-    return this.meta
+    return this.currentBatchRows
   }
 
   /**
    * Prepares tables and local variables for JSON stream processing
    */
-  public async prepareStreamProcessing(cleanFirst: boolean) {
-    this.cleanFirst = cleanFirst
-
-    if (cleanFirst) {
+  public async prepareStreamProcessing() {
+    if (this.cleanFirst) {
       await this.clearTables()
     }
-    await this.retrieveMaxRecordVersion()
-    this.nbRecords = 0
-    this.currentBatchNb = 0
-    this.cleaningValues = []
+
+    return new StreamProcessor(this.meta, this.config, undefined, undefined, undefined, await this.retrieveMaxRecordVersion())
   }
 
-  public async processChunk(data: { [k: string]: any }[], chunkIndex: number) {
-    this.nbRecords += data.length
-    for (const elem of data) {
-      // if (this.meta.cleaningColumn) {
-      //   const cleaningValue = elem[this.meta.cleaningColumn]
-      //   if (!this.cleaningValues.includes(cleaningValue)) {
-      //     this.cleaningValues.push(cleaningValue)
-      //     await this.deleteCleaningValue(cleaningValue)
-      //   }
-      // }
-      this.pushRecord(elem, chunkIndex, this.maxVer)
-      this.currentBatchNb++
-      if (this.currentBatchNb >= this.recordsThreshold) {
-        try {
-          await this.saveNewRecords()
-        } catch (err) {
-          throw ono(err, "could not save new after threshold limit passed records")
-        }
-        this.currentBatchNb = 0
+  public async processChunk(data: Record<string, any>, chunkIndex: number, messageSize: number) {
+    // if (this.meta.cleaningColumn) {
+    //   const cleaningValue = elem[this.meta.cleaningColumn]
+    //   if (!this.cleaningValues.includes(cleaningValue)) {
+    //     this.cleaningValues.push(cleaningValue)
+    //     await this.deleteCleaningValue(cleaningValue)
+    //   }
+    // }
+    const recordProcess = this.recordProcessor.pushRecord(data, chunkIndex, this.maxVer)
+    if (this.currentBatchRows >= this.config.max_batch_rows ||
+    this.currentBatchSize >= this.config.max_batch_size) {
+      try {
+        await this.saveNewRecords()
+      } catch (err) {
+        throw ono(err, "could not save new after threshold limit passed records")
       }
+      return new StreamProcessor(this.meta, this.config)
     }
-  }
 
-  // Make sure every needed data is set before attempting to process stream
-  protected abstract assertEverythingSet(): void;
-
-
-  private pushRecord(data: { [k: string]: any }, chunkIndex: number, maxVer: number): void {
-    if (!this.sqlProcessor) {
-      this.sqlProcessor = new RecordProcessor(this.meta)
-    }
-    this.sqlProcessor.pushRecord(data, chunkIndex, maxVer)
+    return new StreamProcessor(this.meta, this.config, recordProcess, this.currentBatchRows + 1, this.currentBatchSize + messageSize)
   }
 
 
@@ -176,8 +145,8 @@ export default abstract class StreamProcessor {
   protected async saveNewRecords(): Promise<void> {
     const asyncPipeline = util.promisify(pipeline)
 
-    if (this.sqlProcessor) {
-      const queries = await this.sqlProcessor.buildInsertQuery()
+    if (this.recordProcessor) {
+      const queries = await this.recordProcessor.buildInsertQuery()
       await Promise.all(queries.map(async (query) => {
         return new Promise(async (resolve, reject) => {
           const writeStream = await this.clickhouse.createWriteStream(query.baseQuery, (err, result) => {
@@ -208,7 +177,6 @@ export default abstract class StreamProcessor {
           }
         })
       }))
-      this.sqlProcessor = undefined
     }
   }
 
@@ -216,8 +184,9 @@ export default abstract class StreamProcessor {
     if (this.isReplacingMergeTree()) {
       const res = await this.clickhouse.runQuery(`SELECT max(_ver)
                                                   FROM ${this.meta.sqlTableName}`)
-      this.maxVer = Number(res.data[0][0])
+      return Number(res.data[0][0])
     }
+    return -1
   }
 
   // Improvement: concurrency
