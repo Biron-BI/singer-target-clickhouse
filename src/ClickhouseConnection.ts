@@ -1,6 +1,6 @@
 import {ono} from "ono"
 import * as retry from "retry"
-import {log_debug} from "singer-node"
+import {log_debug, log_warning} from "singer-node"
 import {List} from "immutable"
 import {IConfig} from "Config"
 import {Writable} from "stream"
@@ -18,13 +18,6 @@ interface ICHQueryResult {
     "rows_read": number,
   };
   "transferred": number;
-}
-
-export interface ISqlConnection {
-  database: string;
-  host: string;
-  password: string;
-  user: string;
 }
 
 export default class ClickhouseConnection {
@@ -70,15 +63,6 @@ export default class ClickhouseConnection {
         },
       })
 
-      /* fixme: this would be cleaner but doesn't work
-        const queryBuilder = util.promisify(this.connection.query);
-                  try {
-                      await queryBuilder("SELECT 1");
-                      this.connection = connection;
-                  } catch (err) {
-                      this.connection = undefined;
-                      throw ono(err, `fail to init data base connection pool [${this.connInfo.alias}]`);
-                  }*/
       return new Promise((resolve, reject) => {
         this.connection.query("SELECT 1", (err: Error, data: any) => {
           if (err) {
@@ -94,32 +78,14 @@ export default class ClickhouseConnection {
     }
   }
 
-//     // https://github.com/apla/node-clickhouse/blob/HEAD/README.md#inserting-with-stream
-//     private async createCHWriteStream(query: string, callback: (err: Error, result: any) => any): Promise<Writable> {
-//         const conn = await this.connectionPool();
-// //        const asyncQuery = util.promisify(conn.query);
-//
-//         debugtrace("building stream to query sql %s", query);
-//         try {
-//             return conn.query(query, {omitFormat: true}, callback);
-//         } catch (err) {
-//             throw ono("ch stream failed", err);
-//         }
-//     }
-//
-//     private pksToTuple(pks: string[], tableDenominator?: string): string {
-//         return pks.map((pk => tableDenominator ? `${tableDenominator}.${pk}` : pk)).join(",");
-//     }
-//
   // https://github.com/apla/node-clickhouse#promise-interface
-  // This way of querying is not recommended for large SELECT and INSERTS
   public async runQuery(query: string): Promise<ICHQueryResult> {
     const conn = await this.connectionPool()
 
     return new Promise((resolve, reject) => {
       const op = retry.operation({
         retries: 2,
-        factor: 5,
+        factor: 4,
       })
       op.attempt(async function () {
         try {
@@ -127,6 +93,7 @@ export default class ClickhouseConnection {
           const res = await conn.querying(query)
           resolve(res)
         } catch (err) {
+          log_warning(`query sql failed [${query}]: ${err.message}`)
           if (op.retry(err)) {
             return
           }

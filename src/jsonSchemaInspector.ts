@@ -83,7 +83,12 @@ const buildMetaPkProps = (ctx: JsonSchemaInspectorContext) => ctx.isRoot() ? ctx
   sqlIdentifier: escapeIdentifier(prop),
   ...getSimpleColumnType(ctx, prop),
   nullable: false,
-})) : Range(0, ctx.level).map((value) => {
+})) : ctx.getRootContext().key_properties.map((prop) => ({
+  prop,
+  sqlIdentifier: escapeIdentifier(formatRootPKColumn(prop)),
+  ...getSimpleColumnType(ctx.getRootContext(), prop),
+  nullable: false,
+})).concat(Range(0, ctx.level).map((value) => {
   const prop = formatLevelIndexColumn(value)
   return {
     prop,
@@ -91,12 +96,7 @@ const buildMetaPkProps = (ctx: JsonSchemaInspectorContext) => ctx.isRoot() ? ctx
     chType: "Int32",
     nullable: false,
   } as PkMap
-}).toList().concat(ctx.getRootContext().key_properties.map((prop) => ({
-  prop,
-  sqlIdentifier: escapeIdentifier(formatRootPKColumn(prop)),
-  ...getSimpleColumnType(ctx.getRootContext(), prop),
-  nullable: false,
-})))
+}).toList())
 
 export const buildMeta = (ctx: JsonSchemaInspectorContext): ISourceMeta => ({
   prop: ctx.alias,
@@ -182,6 +182,12 @@ function buildMetaProps(ctx: JsonSchemaInspectorContext): MetaProps {
       }, {simpleColumnMappings: List<ColumnMap>(), children: List<ISourceMeta>()})
     // return {simpleColumnMappings: simpleColumnsMappings, children}
   } else {
+    if (!ctx.schema.type) {
+      return {
+        simpleColumnMappings: List(),
+        children: List(),
+      }
+    }
     return {
       simpleColumnMappings: List<ColumnMap>([{
         sqlIdentifier: escapeIdentifier("value"),
@@ -231,9 +237,11 @@ export function getSimpleColumnSqlType(ctx: JsonSchemaInspectorContext, propDef:
     }
   } else if (type === "integer") {
     if (!format) {
-      return "Int32"
+      return "Int64"
     } else if (format === "int64") {
       return "Int64"
+    } else if (format === "int32") {
+      return "Int32"
     } else if (format === "int16") {
       return "Int16"
     } else {
@@ -245,7 +253,7 @@ export function getSimpleColumnSqlType(ctx: JsonSchemaInspectorContext, propDef:
       // For now we'll use a custom format
       //          const parsedFormat = parseCustomFormat(propDef.format);
 //            return "DECIMAL(" + (parsedFormat.precision || 10) + "," + (parsedFormat.decimals || 2) + ")";
-      return `Decimal(${propDef.precision || 10}, ${propDef.decimals || 2})`
+      return `Decimal(${propDef.precision || 16}, ${propDef.decimals || 2})`
     } else {
       throwError(ctx, `${key}: unsupported number format [${format}]`)
     }

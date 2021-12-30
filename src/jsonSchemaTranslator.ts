@@ -33,7 +33,7 @@ const resolveOrderBy = (meta: ISourceMeta): string => `${meta.pkMappings.size > 
 // From the schema inspection we build the query to create table in Clickhouse.
 // Must respect the SHOW CREATE TABLE syntax as we will use it to ensure schema didn't change
 export function translateCH(database: string, meta: ISourceMeta, parentMeta?: ISourceMeta, rootMeta?: ISourceMeta): List<string> {
-  if (meta.simpleColumnMappings.size < 1) {
+  if (meta.simpleColumnMappings.isEmpty() && meta.pkMappings.isEmpty()) {
     throw new Error("Attempting to create table without columns")
   }
   const isNodeRoot = rootMeta === undefined

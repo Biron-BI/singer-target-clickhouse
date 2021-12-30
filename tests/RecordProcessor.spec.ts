@@ -103,9 +103,9 @@ describe("RecordProcessor", () => {
     it("should handle simple schema and data", async () => {
       const res = new RecordProcessor(simpleMeta)
         .pushRecord(
-          {id: 1, name: "a"}, 0, 0,
+          {id: 1, name: "a"},  0,
         ).pushRecord(
-          {id: 2, name: "b"}, 0, 0,
+          {id: 2, name: "b"},  0,
         )
 
       assert.equal(res.values.get(0), 1)
@@ -136,17 +136,17 @@ describe("RecordProcessor", () => {
                 name: "value_e",
               }],
             }],
-          }, 50, 50,
+          }, 50,
         )
 
       assert.equal(res.children.size, 1)
 
       assert.deepEqual(res.children.get(0)?.children.get(0)?.values.toArray(), [
-        1234, 0, 0, "value_a", 101,
-        1234, 0, 1, "value_b", 101,
-        1234, 0, 2, "value_c", 101,
-        1234, 1, 0, "value_d", 101,
-        1234, 1, 1, "value_e", 101,
+        1234, 0, 0, "value_a", 51,
+        1234, 0, 1, "value_b", 51,
+        1234, 0, 2, "value_c", 51,
+        1234, 1, 0, "value_d", 51,
+        1234, 1, 1, "value_e", 51,
       ])
       assert.deepEqual(res.children.get(0)?.children.get(0)?.fields.toArray(), [
         "`_root_id`",

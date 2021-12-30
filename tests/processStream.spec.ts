@@ -11,7 +11,8 @@ const connInfo = new Config({
   user: "root",
   password: "azertyuiop",
   port: 8123,
-  database: "datbayse"
+  database: "datbayse",
+  // max_batch_rows: 1,
 })
 
 
@@ -80,12 +81,24 @@ describe("processStream - Records", () => {
     await container.stop();
   });
 
-  it('should insert records', async () => {
+  it('should insert simple records', async () => {
     await processStream(fs.createReadStream("./tests/data/stream_short.jsonl"), connInfo)
     const execResult = await runChQueryInContainer(container, connInfo, `select brand_id from tickets where assignee_id = 11`)
     assert.equal(execResult.output, '22\n')
 
   }).timeout(30000)
+
+  it('should ingest stream from real data', async () => {
+    await processStream(fs.createReadStream("./tests/data/covidtracker.jsonl"), connInfo)
+    let execResult = await runChQueryInContainer(container, connInfo, `select sum(total_rows) from system.tables where database = '${connInfo.database}'`)
+    assert.equal(execResult.output, '5784\n')
+
+    // Ensure no duplicates are created when run second time
+    await processStream(fs.createReadStream("./tests/data/covidtracker.jsonl"), connInfo)
+    execResult = await runChQueryInContainer(container, connInfo, `select sum(total_rows) from system.tables where database = '${connInfo.database}'`)
+    assert.equal(execResult.output, '5784\n')
+
+  }).timeout(60000)
 
 }).timeout(30000)
 

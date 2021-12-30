@@ -1,6 +1,6 @@
 import * as readline from 'readline'
 import {List, Map} from "immutable"
-import {log_debug, log_fatal, log_info, MessageContent, MessageType, SchemaMessageContent} from "singer-node"
+import {log_debug, log_fatal, MessageContent, MessageType, SchemaMessageContent} from "singer-node"
 import {buildMeta, escapeIdentifier, JsonSchemaInspectorContext} from "jsonSchemaInspector"
 import {Readable} from "stream"
 import {listTableNames, translateCH} from "jsonSchemaTranslator"
@@ -52,10 +52,12 @@ async function processLine(line: string, config: Config, streamProcessors: Map<s
       if (!streamProcessors.has(msg.stream)) {
         throw new Error("Record message received before Schema is defined")
       }
-
       return streamProcessors.set(msg.stream,
-        await streamProcessors.get(msg.stream)!!.processChunk(msg.record, 0, line.length)
+        await streamProcessors.get(msg.stream)!!.processRecord(msg.record, line.length)
       )
+    case MessageType.state:
+      console.log("todo")
+      return streamProcessors
     default:
       throw new Error("not implemented")
   }
@@ -82,7 +84,12 @@ export async function processStream(stream: Readable, config: Config) {
     streamProcessors = await processLine(line, config, streamProcessors)
   }
 
-  await Promise.all(streamProcessors.map((processor) => processor.doneProcessing()))
-  log_info("closing stream, done processing")
+  // Fixme the concurrent version does not work correctly for some reason
+  for await (const processor of streamProcessors.toList().toArray()) {
+    await processor.doneProcessing()
+  }
+
+  // const synced = await Promise.all(streamProcessors.map(async (processor) => processor.doneProcessing()))
+
   rl.close()
 }

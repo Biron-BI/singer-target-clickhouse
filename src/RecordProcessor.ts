@@ -61,7 +61,6 @@ export default class RecordProcessor {
    */
   pushRecord(
     data: Record<string, any>,
-    chunkIndex: number,
     maxVer: number,
     parentMeta?: SourceMetaPK,
     rootVer?: number,
@@ -71,15 +70,17 @@ export default class RecordProcessor {
 
     const isRoot = indexInParent === undefined
 
-    // Root version number is computed only for a root who has children
+    // Root version number is computed only for a root who has primaryKeys
     //version start at max existing version, + position in stream + 1
-    const resolvedRootVer = (isRoot && !this.meta.children.isEmpty()) ? maxVer + chunkIndex + 1 : rootVer
+    const resolvedRootVer = (isRoot && !this.meta.pkMappings.isEmpty()) ? maxVer + 1 : rootVer
 
     // In children we only add index to previous PKS
     const pkValues = isRoot ? this.meta.pkMappings.map(pkMapping => extractValue(data, pkMapping)) : parentMeta?.values.push(indexInParent) ?? List()
 
     const meAsParent: SourceMetaPK = {...this.meta, values: pkValues}
 
+    // console.log("resolved root ver", resolvedRootVer)
+    // console.log("pk", isRoot, this.meta.children.size, maxVer, chunkIndex, rootVer)
     return new RecordProcessor(
       this.meta,
       this.buildSQLInsertField(this.meta, isRoot),
@@ -89,7 +90,7 @@ export default class RecordProcessor {
         const childData: List<Record<string, any>> = List(get(data, child.prop.split(".")))
         if (!childData.isEmpty()) {
           return childData.reduce((acc, elem, idx) => {
-            return acc.pushRecord(elem, chunkIndex, maxVer, meAsParent, resolvedRootVer, level + 1, idx)
+            return acc.pushRecord(elem, maxVer, meAsParent, resolvedRootVer, level + 1, idx)
           }, processor)
         }
         return processor
@@ -107,8 +108,8 @@ export default class RecordProcessor {
       .map((pkMap) => pkMap.sqlIdentifier)
       .concat(meta.simpleColumnMappings
         .map((cMap) => cMap.sqlIdentifier))
-      .concat(fillIf("_ver", isRoot && !this.meta.pkMappings.isEmpty()))
-      .concat(fillIf("_root_ver", !isRoot))
+      .concat(fillIf("`_ver`", isRoot && !this.meta.pkMappings.isEmpty()))
+      .concat(fillIf("`_root_ver`", !isRoot))
   }
 
   /**

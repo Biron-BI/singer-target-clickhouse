@@ -5,7 +5,7 @@ import RecordProcessor from "RecordProcessor"
 import {ono} from "ono"
 import {pipeline, Transform} from "stream"
 import ClickhouseConnection from "ClickhouseConnection"
-import {log_debug} from "singer-node"
+import {log_debug, log_fatal, log_info} from "singer-node"
 import {List} from "immutable"
 import {Config} from "Config"
 
@@ -45,7 +45,9 @@ export default class StreamProcessor {
     } catch (err) {
       throw ono(err, "could not save new records")
     }
+    log_info(`${this.meta.prop}: finalizing processing`)
     await this.finalizeBatchProcessing()
+    log_info("done finalizing processing")
 
     return this.currentBatchRows
   }
@@ -61,7 +63,7 @@ export default class StreamProcessor {
     return new StreamProcessor(this.meta, this.config, undefined, undefined, undefined, await this.retrieveMaxRecordVersion())
   }
 
-  public async processChunk(data: Record<string, any>, chunkIndex: number, messageSize: number) {
+  public async processRecord(record: Record<string, any>, messageSize: number) {
     // if (this.meta.cleaningColumn) {
     //   const cleaningValue = elem[this.meta.cleaningColumn]
     //   if (!this.cleaningValues.includes(cleaningValue)) {
@@ -69,18 +71,20 @@ export default class StreamProcessor {
     //     await this.deleteCleaningValue(cleaningValue)
     //   }
     // }
-    const recordProcess = this.recordProcessor.pushRecord(data, chunkIndex, this.maxVer)
+    const recordProcessor = this.recordProcessor.pushRecord(record, this.maxVer)
     if (this.currentBatchRows >= this.config.max_batch_rows ||
       this.currentBatchSize >= this.config.max_batch_size) {
+      log_info(`Inserting current batch (rows: ${this.currentBatchRows} / ${this.config.max_batch_rows} -- size: ${this.currentBatchSize} / ${this.config.max_batch_size})`)
       try {
         await this.saveNewRecords()
       } catch (err) {
-        throw ono(err, "could not save new after threshold limit passed records")
+        log_fatal("could not save records")
+        throw err
       }
       return new StreamProcessor(this.meta, this.config)
     }
 
-    return new StreamProcessor(this.meta, this.config, recordProcess, this.currentBatchRows + 1, this.currentBatchSize + messageSize)
+    return new StreamProcessor(this.meta, this.config, recordProcessor, this.currentBatchRows + 1, this.currentBatchSize + messageSize, this.maxVer + 1)
   }
 
 
@@ -105,10 +109,14 @@ export default class StreamProcessor {
 
   protected async finalizeBatchProcessing(): Promise<void> {
     if (this.isReplacingMergeTree()) {
+      log_info("removing root duplicates")
       await this.clickhouse.runQuery(`OPTIMIZE TABLE ${this.meta.sqlTableName} FINAL`)
 
-      await Promise.all(this.meta.children.map(this.deleteChildDuplicates.bind(this)))
+      log_info("removing children orphans")
+      await Promise.all(this.meta.children.map(
+        (child) => this.deleteChildDuplicates(child)))
     }
+    log_info("ensuring PK integrity is maintained")
     await this.assertPKIntegrity(this.meta)
   }
 
@@ -145,6 +153,7 @@ export default class StreamProcessor {
     const asyncPipeline = util.promisify(pipeline)
 
     if (this.recordProcessor) {
+      log_debug(`fields for ${this.meta.prop}: ${this.recordProcessor.fields.join(",")}`)
       const queries = await this.recordProcessor.buildInsertQuery()
       await Promise.all(queries.map(async (query) => {
         return new Promise(async (resolve, reject) => {
@@ -163,7 +172,7 @@ export default class StreamProcessor {
           const transform: Transform = new Transform({
               objectMode: true,
               transform(chunk, encoding, callback) {
-                log_debug(`inserting: ${chunk}`)
+                log_debug(`${query.baseQuery}: ${chunk}`)
                 this.push(chunk)
                 callback()
               },
@@ -181,16 +190,14 @@ export default class StreamProcessor {
 
   protected async retrieveMaxRecordVersion() {
     if (this.isReplacingMergeTree()) {
-      const res = await this.clickhouse.runQuery(`SELECT max(_ver)
-                                                  FROM ${this.meta.sqlTableName}`)
+      const res = await this.clickhouse.runQuery(`SELECT max(_ver) FROM ${this.meta.sqlTableName}`)
       return Number(res.data[0][0])
     }
     return -1
   }
 
-  // Improvement: concurrency
   private async assertPKIntegrity(meta: ISourceMeta) {
-    await Promise.all(meta.children.map(this.assertPKIntegrity.bind(this)))
+    await Promise.all(meta.children.map((child) => this.assertPKIntegrity(child)))
 
     if (meta.pkMappings.size === 0) {
       return
