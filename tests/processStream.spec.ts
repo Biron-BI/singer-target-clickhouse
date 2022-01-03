@@ -74,7 +74,7 @@ describe("processStream - Records", () => {
     } catch (err) {
       console.log("err", err);
     }
-    set_level("trace")
+    set_level("info")
   });
 
   afterEach(async function () {

@@ -45,7 +45,7 @@ export default class StreamProcessor {
     } catch (err) {
       throw ono(err, "could not save new records")
     }
-    log_info(`${this.meta.prop}: finalizing processing`)
+    log_info(`[${this.meta.prop}]: finalizing processing`)
     await this.finalizeBatchProcessing()
     log_info("done finalizing processing")
 
@@ -60,7 +60,10 @@ export default class StreamProcessor {
       await this.clearTables()
     }
 
-    return new StreamProcessor(this.meta, this.config, undefined, undefined, undefined, await this.retrieveMaxRecordVersion())
+    const maxVersion = await this.retrieveMaxRecordVersion()
+    log_info(`[${this.meta.prop}]: initial max version is [${maxVersion}]`)
+
+    return new StreamProcessor(this.meta, this.config, undefined, undefined, undefined, maxVersion)
   }
 
   public async processRecord(record: Record<string, any>, messageSize: number) {
@@ -81,7 +84,7 @@ export default class StreamProcessor {
         log_fatal("could not save records")
         throw err
       }
-      return new StreamProcessor(this.meta, this.config)
+      return new StreamProcessor(this.meta, this.config, undefined, undefined, undefined, this.maxVer + 1)
     }
 
     return new StreamProcessor(this.meta, this.config, recordProcessor, this.currentBatchRows + 1, this.currentBatchSize + messageSize, this.maxVer + 1)
@@ -121,6 +124,9 @@ export default class StreamProcessor {
   }
 
   private async deleteChildDuplicates(currentNode: ISourceMeta) {
+    // currentNode = child node
+    // this.meta = root node
+
     const query = `ALTER
                    TABLE
                    ${currentNode.sqlTableName}

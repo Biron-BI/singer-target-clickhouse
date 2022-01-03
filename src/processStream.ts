@@ -88,7 +88,6 @@ export async function processStream(stream: Readable, config: Config) {
   for await (const processor of streamProcessors.toList().toArray()) {
     await processor.doneProcessing()
   }
-
   // const synced = await Promise.all(streamProcessors.map(async (processor) => processor.doneProcessing()))
 
   rl.close()
