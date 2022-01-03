@@ -90,7 +90,7 @@ describe("getSimpleColumnSqlType", () => {
   it("should handle simple stream", () => {
     const res = getSimpleColumnSqlType(new JsonSchemaInspectorContext("audits", simpleSchema, List()),
       {"type": ["null", "integer"]})
-    assert.equal(res, "Int32")
+    assert.equal(res, "Int64")
   })
 })
 
@@ -99,7 +99,7 @@ describe("JSON Schema Inspector", () => {
     const res = buildMeta(new JsonSchemaInspectorContext("audits", simpleSchema, List(["id"])))
     assert.equal(res.sqlTableName, "`audits`")
     assert.equal(res.pkMappings.size, 1)
-    assert.equal(res.pkMappings.get(0)?.chType, "Int32")
+    assert.equal(res.pkMappings.get(0)?.chType, "Int64")
     assert.equal(res.simpleColumnMappings.size, 3)
     assert.equal(res.simpleColumnMappings.find((elem) => elem.prop === "created_at")?.nullable, false)
   })
@@ -109,11 +109,11 @@ describe("JSON Schema Inspector", () => {
     assert.equal(res.children.size, 1)
     assert.equal(res.children.get(0)?.sqlTableName, "`audits__collaborator_ids`")
     assert.equal(res.children.get(0)?.pkMappings.size, 2)
-    assert.equal(res.children.get(0)?.pkMappings.get(0)?.prop, "_level_0_index")
-    assert.equal(res.children.get(0)?.pkMappings.get(0)?.chType, "Int32")
-    assert.equal(res.children.get(0)?.pkMappings.get(0)?.nullable, false)
-    assert.equal(res.children.get(0)?.pkMappings.get(1)?.prop, "id")
+    assert.equal(res.children.get(0)?.pkMappings.get(1)?.prop, "_level_0_index")
     assert.equal(res.children.get(0)?.pkMappings.get(1)?.chType, "Int32")
+    assert.equal(res.children.get(0)?.pkMappings.get(1)?.nullable, false)
+    assert.equal(res.children.get(0)?.pkMappings.get(0)?.prop, "id")
+    assert.equal(res.children.get(0)?.pkMappings.get(0)?.chType, "Int64")
   })
 
   it("should handle nested object", () => {
@@ -131,10 +131,11 @@ describe("JSON Schema Inspector", () => {
     assert.equal(res.children.get(0)?.simpleColumnMappings.size, 1)
     assert.equal(res.children.get(0)?.simpleColumnMappings.get(0)?.sqlIdentifier, "`field`")
     assert.equal(res.children.get(0)?.pkMappings.size, 2)
-    assert.equal(res.children.get(0)?.pkMappings.get(0)?.sqlIdentifier, "`_level_0_index`")
-    assert.equal(res.children.get(0)?.pkMappings.get(1)?.sqlIdentifier, "`_root_id`")
+    assert.equal(res.children.get(0)?.pkMappings.get(1)?.sqlIdentifier, "`_level_0_index`")
+    assert.equal(res.children.get(0)?.pkMappings.get(0)?.sqlIdentifier, "`_root_id`")
   })
 
+  // Fixme
   it("should handle nest object with arrays", () => {
     const res = buildMeta(new JsonSchemaInspectorContext("audits", nestedObjectWithArraysSchema, List(["id"])))
     assert.equal(res.children.size, 1)

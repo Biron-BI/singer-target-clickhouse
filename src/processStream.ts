@@ -1,6 +1,6 @@
 import * as readline from 'readline'
 import {List, Map} from "immutable"
-import {log_debug, log_fatal, MessageContent, MessageType, SchemaMessageContent} from "singer-node"
+import {log_debug, log_fatal, log_info, MessageContent, MessageType, SchemaMessageContent} from "singer-node"
 import {buildMeta, escapeIdentifier, JsonSchemaInspectorContext} from "jsonSchemaInspector"
 import {Readable} from "stream"
 import {listTableNames, translateCH} from "jsonSchemaTranslator"
@@ -22,6 +22,9 @@ async function processSchemaMessage(msg: SchemaMessageContent, config: Config): 
     msg.schema,
     List(msg.key_properties),
     undefined,
+    undefined,
+    undefined,
+    msg.cleaningColumn
   ))
   const queries = translateCH(ch.getDatabase(), meta)
 
@@ -38,9 +41,10 @@ If you wish to update schemas, run with --update-schemas.`)
       }
     }))
   } else {
+    log_info(`Creating tables for schema [${msg.stream}]`)
     await Promise.all(queries.map(ch.runQuery.bind(ch)))
   }
-  return new StreamProcessor(meta, config).prepareStreamProcessing()
+  return new StreamProcessor(meta, config).prepareStreamProcessing(msg.cleanFirst)
 }
 
 async function processLine(line: string, config: Config, streamProcessors: Map<string, StreamProcessor>): Promise<Map<string, StreamProcessor>> {
@@ -57,7 +61,8 @@ async function processLine(line: string, config: Config, streamProcessors: Map<s
         await streamProcessors.get(msg.stream)!!.processRecord(msg.record, line.length)
       )
     case MessageType.state:
-      // On a state message, we insert every batch we are currently building and echo state for tap
+      // On a state message, we insert every batch we are currently building and echo state for tap.
+      // If the tap emits state too often, we may need to bufferize state messages
       const clearedStreamProcessors = awaitMapValues(streamProcessors.map(async (processor, key) => {
         return (await processor.saveNewRecords()).clearIngestion()
       }))
@@ -90,11 +95,10 @@ export async function processStream(stream: Readable, config: Config) {
     streamProcessors = await processLine(line, config, streamProcessors)
   }
 
-  // Fixme the concurrent version does not work correctly for some reason
+  // concurrent version does not work correctly for some reason : await Promise.all(streamProcessors.map(async (processor) => processor.doneProcessing()))
   for await (const processor of streamProcessors.toList().toArray()) {
     await processor.doneProcessing()
   }
-  // const synced = await Promise.all(streamProcessors.map(async (processor) => processor.doneProcessing()))
 
   rl.close()
 }

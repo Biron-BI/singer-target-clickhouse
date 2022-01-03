@@ -153,7 +153,7 @@ describe("RecordProcessor", () => {
         "`_level_0_index`",
         "`_level_1_index`",
         "`name`",
-        "_root_ver",
+        "`_root_ver`",
       ])
     })
   })

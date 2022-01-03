@@ -22,6 +22,7 @@ export class JsonSchemaInspectorContext {
     public readonly parentCtx?: JsonSchemaInspectorContext,
     public readonly level: number = 0,
     public readonly tableName = JsonSchemaInspectorContext.defaultTableName(alias, parentCtx),
+    public readonly cleaningColumn?: string
   ) {
   }
 
@@ -102,6 +103,7 @@ export const buildMeta = (ctx: JsonSchemaInspectorContext): ISourceMeta => ({
   prop: ctx.alias,
   sqlTableName: escapeIdentifier(ctx.tableName),
   pkMappings: buildMetaPkProps(ctx),
+  cleaningColumn: ctx.cleaningColumn,
   ...buildMetaProps(ctx),
 })
 

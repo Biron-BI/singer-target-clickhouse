@@ -79,8 +79,6 @@ export default class RecordProcessor {
 
     const meAsParent: SourceMetaPK = {...this.meta, values: pkValues}
 
-    // console.log("resolved root ver", resolvedRootVer)
-    // console.log("pk", isRoot, this.meta.children.size, maxVer, chunkIndex, rootVer)
     return new RecordProcessor(
       this.meta,
       this.buildSQLInsertField(this.meta, isRoot),

@@ -6,16 +6,13 @@ import {ono} from "ono"
 import {pipeline, Transform} from "stream"
 import ClickhouseConnection from "ClickhouseConnection"
 import {log_debug, log_fatal, log_info} from "singer-node"
-import {List} from "immutable"
+import {List, Set} from "immutable"
 import {Config} from "Config"
 
 const util = require("util")
 
 // To handle overall ingestion
 export default class StreamProcessor {
-  protected readonly cleanFirst: boolean = false
-  // protected cleaningValues: any[] = []
-
 
   // Will contain all values used to clear data based on 'cleaningColumn'
   private readonly clickhouse: ClickhouseConnection
@@ -27,6 +24,7 @@ export default class StreamProcessor {
     private readonly currentBatchRows: number = 0,
     private readonly currentBatchSize: number = 0,
     private readonly maxVer: number = -1,
+    private readonly cleaningValues: Set<string> = Set()
   ) {
     this.clickhouse = new ClickhouseConnection(config)
     // this.maxVer = maxVer ?? await this.retrieveMaxRecordVersion() // lacking a 'late init' feature
@@ -59,38 +57,51 @@ export default class StreamProcessor {
   /**
    * Prepares tables and local variables for JSON stream processing
    */
-  public async prepareStreamProcessing() {
-    if (this.cleanFirst) {
+  public async prepareStreamProcessing(cleanFirst: boolean) {
+    if (cleanFirst) {
       await this.clearTables()
     }
 
-    const maxVersion = await this.retrieveMaxRecordVersion()
+    const maxVersion = cleanFirst ? 0 : await this.retrieveMaxRecordVersion()
     log_info(`[${this.meta.prop}]: initial max version is [${maxVersion}]`)
 
     return new StreamProcessor(this.meta, this.config, undefined, undefined, undefined, maxVersion)
   }
 
   public async processRecord(record: Record<string, any>, messageSize: number) {
-    // if (this.meta.cleaningColumn) {
-    //   const cleaningValue = elem[this.meta.cleaningColumn]
-    //   if (!this.cleaningValues.includes(cleaningValue)) {
-    //     this.cleaningValues.push(cleaningValue)
-    //     await this.deleteCleaningValue(cleaningValue)
-    //   }
-    // }
+    const cleaningValue = this.meta.cleaningColumn && record[this.meta.cleaningColumn]
+    if (cleaningValue && !this.cleaningValues.includes(cleaningValue)) {
+        await this.deleteCleaningValue(cleaningValue)
+    }
     const recordProcessor = this.recordProcessor.pushRecord(record, this.maxVer)
     if (this.currentBatchRows >= this.config.max_batch_rows ||
       this.currentBatchSize >= this.config.max_batch_size) {
       log_info(`Inserting current batch (rows: ${this.currentBatchRows} / ${this.config.max_batch_rows} -- size: ${this.currentBatchSize} / ${this.config.max_batch_size})`)
       try {
-        return (await this.saveNewRecords()).clearIngestion()
+        return (await this.saveNewRecords()).clearIngestion().addCleaningValue(cleaningValue)
       } catch (err) {
         log_fatal("could not save records")
         throw err
       }
     }
 
-    return new StreamProcessor(this.meta, this.config, recordProcessor, this.currentBatchRows + 1, this.currentBatchSize + messageSize, this.maxVer + 1)
+    return new StreamProcessor(this.meta,
+      this.config,
+      recordProcessor,
+      this.currentBatchRows + 1,
+      this.currentBatchSize + messageSize,
+      this.maxVer + 1, this.cleaningValues.add(cleaningValue))
+  }
+
+  private addCleaningValue(value: any) {
+    return new StreamProcessor(this.meta,
+      this.config,
+      this.recordProcessor,
+      this.currentBatchRows,
+      this.currentBatchSize,
+      this.maxVer + 1,
+      this.cleaningValues.add(value)
+      )
   }
 
 

@@ -16,6 +16,7 @@ processStream(process.stdin, new Config(args.config)).then(() => {
 function graceFullShutdown() {
   log_info("gracefully shutting down")
   new Config(args.config)
+  throw new Error("not implemented") // TODO: for each stream that received a SCHEMA message, run 'finalizeBatchProcessing' to clear duplicates in root and children
   process.exit(0)
 }
 

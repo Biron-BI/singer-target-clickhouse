@@ -74,7 +74,7 @@ describe("processStream - Records", () => {
     } catch (err) {
       console.log("err", err);
     }
-    set_level("info")
+    set_level("debug")
   });
 
   afterEach(async function () {
@@ -100,9 +100,31 @@ describe("processStream - Records", () => {
 
   }).timeout(60000)
 
-}).timeout(30000)
+  it('should handle cleanFirst', async () => {
+    await processStream(fs.createReadStream("./tests/data/stream_vanilla.jsonl"), connInfo)
+    let execResult = await runChQueryInContainer(container, connInfo, `select count() from \`users\``)
+    assert.equal(execResult.output, '4\n')
 
-describe("processStream - State", () => {
+    await processStream(fs.createReadStream("./tests/data/stream_cleanFirst.jsonl"), connInfo)
+    execResult = await runChQueryInContainer(container, connInfo, `select count() from \`users\``)
+    assert.equal(execResult.output, '2\n')
+
+  }).timeout(60000)
+
+  it('should handle cleaning column', async () => {
+    await processStream(fs.createReadStream("./tests/data/stream_vanilla.jsonl"), connInfo)
+    let execResult = await runChQueryInContainer(container, connInfo, `select count() from \`users\``)
+    assert.equal(execResult.output, '4\n')
+
+    await processStream(fs.createReadStream("./tests/data/stream_cleaningColumn.jsonl"), connInfo)
+    execResult = await runChQueryInContainer(container, connInfo, `select count() from \`users\``)
+    assert.equal(execResult.output, '5\n')
+
+    execResult = await runChQueryInContainer(container, connInfo, `select id from \`users\` where name = 'bill'`)
+    assert.equal(execResult.output, '7\n')
+
+
+  }).timeout(60000)
 
 }).timeout(30000)
 
