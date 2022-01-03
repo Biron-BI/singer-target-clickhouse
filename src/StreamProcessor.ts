@@ -39,6 +39,10 @@ export default class StreamProcessor {
     return this.meta && (!this.meta.simpleColumnMappings.isEmpty() || !this.meta.pkMappings.isEmpty())
   }
 
+  public clearIngestion() {
+    return new StreamProcessor(this.meta, this.config, undefined, undefined, undefined, this.maxVer + 1)
+  }
+
   public async doneProcessing(): Promise<number> {
     try {
       await this.saveNewRecords()
@@ -79,12 +83,11 @@ export default class StreamProcessor {
       this.currentBatchSize >= this.config.max_batch_size) {
       log_info(`Inserting current batch (rows: ${this.currentBatchRows} / ${this.config.max_batch_rows} -- size: ${this.currentBatchSize} / ${this.config.max_batch_size})`)
       try {
-        await this.saveNewRecords()
+        return (await this.saveNewRecords()).clearIngestion()
       } catch (err) {
         log_fatal("could not save records")
         throw err
       }
-      return new StreamProcessor(this.meta, this.config, undefined, undefined, undefined, this.maxVer + 1)
     }
 
     return new StreamProcessor(this.meta, this.config, recordProcessor, this.currentBatchRows + 1, this.currentBatchSize + messageSize, this.maxVer + 1)
@@ -155,7 +158,7 @@ export default class StreamProcessor {
   }
 
 
-  protected async saveNewRecords(): Promise<void> {
+  public async saveNewRecords(): Promise<StreamProcessor> {
     const asyncPipeline = util.promisify(pipeline)
 
     if (this.recordProcessor) {
@@ -192,6 +195,7 @@ export default class StreamProcessor {
         })
       }))
     }
+    return this
   }
 
   protected async retrieveMaxRecordVersion() {

@@ -1,6 +1,6 @@
 import {ExtendedJSONSchema7, log_warning} from "singer-node"
 import {List, Range} from "immutable"
-import {asArray} from "asArray"
+import {asArray} from "utils"
 import {JSONSchema7Definition, JSONSchema7TypeName} from "json-schema"
 
 const sha1 = require('sha1')

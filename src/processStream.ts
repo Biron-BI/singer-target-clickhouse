@@ -7,6 +7,7 @@ import {listTableNames, translateCH} from "jsonSchemaTranslator"
 import ClickhouseConnection from "ClickhouseConnection"
 import {Config} from "Config"
 import StreamProcessor from "StreamProcessor"
+import {awaitMapValues} from "utils"
 
 // Remove magic quotes used to escape queries so we can compare content
 function unescape(query?: string) {
@@ -56,8 +57,13 @@ async function processLine(line: string, config: Config, streamProcessors: Map<s
         await streamProcessors.get(msg.stream)!!.processRecord(msg.record, line.length)
       )
     case MessageType.state:
-      console.log("todo")
-      return streamProcessors
+      // On a state message, we insert every batch we are currently building and echo state for tap
+      const clearedStreamProcessors = awaitMapValues(streamProcessors.map(async (processor, key) => {
+        return (await processor.saveNewRecords()).clearIngestion()
+      }))
+      // Should be the one and only console log in this package: the tap expects output in stdout to save state
+      console.log(JSON.stringify(msg.value))
+      return clearedStreamProcessors
     default:
       throw new Error("not implemented")
   }
