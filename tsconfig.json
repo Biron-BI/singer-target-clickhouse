@@ -5,12 +5,11 @@
     "module": "commonjs",
     "removeComments": true,
     "allowJs": false,
-    "noImplicitAny": true,
-    "sourceMap": true,
-    "baseUrl": "./src",
+    "noImplicitAny": true
+//    "sourceMap": true,
+//    "baseUrl": ".",
   },
   "include": ["src"],
-  "exclude": ["node_modules", "dist"],
   "ts-node": {
     "require": ["tsconfig-paths/register"]
   }

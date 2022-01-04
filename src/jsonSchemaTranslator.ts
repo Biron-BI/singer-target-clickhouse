@@ -1,7 +1,7 @@
 // import SchemaTranslator from "SchemaTranslator"
-import {ColumnMap, ISourceMeta, PkMap} from "jsonSchemaInspector"
 import {List} from "immutable"
-import SchemaTranslator from "SchemaTranslator"
+import {ColumnMap, ISourceMeta, PkMap} from "./jsonSchemaInspector"
+import SchemaTranslator from "./SchemaTranslator"
 
 const get = require("lodash.get")
 

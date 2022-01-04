@@ -1,13 +1,13 @@
 import * as readline from 'readline'
 import {List, Map} from "immutable"
 import {log_fatal, log_info, MessageContent, MessageType, SchemaMessageContent} from "singer-node"
-import {buildMeta, escapeIdentifier, JsonSchemaInspectorContext} from "jsonSchemaInspector"
 import {Readable} from "stream"
-import {listTableNames, translateCH} from "jsonSchemaTranslator"
-import ClickhouseConnection from "ClickhouseConnection"
-import {Config} from "Config"
-import StreamProcessor from "StreamProcessor"
-import {awaitMapValues} from "utils"
+import ClickhouseConnection from "./ClickhouseConnection"
+import {buildMeta, escapeIdentifier, JsonSchemaInspectorContext} from "./jsonSchemaInspector"
+import StreamProcessor from "./StreamProcessor"
+import {Config} from "./Config"
+import {listTableNames, translateCH} from "./jsonSchemaTranslator"
+import {awaitMapValues} from "./utils"
 
 // Remove magic quotes used to escape queries so we can compare content
 function unescape(query?: string) {
@@ -87,7 +87,7 @@ export async function processStream(stream: Readable, config: Config) {
   })
 
   const streamProcessors = (await reduce(processLine, Map<string, StreamProcessor>(), rl, config))
-  await Promise.all(streamProcessors.map(async (processor) => processor.doneProcessing()))
+
   // concurrent version does not work correctly for some reason : await Promise.all(streamProcessors.map(async (processor) => processor.doneProcessing()))
   for await (const processor of streamProcessors.toList().toArray()) {
     await processor.doneProcessing()

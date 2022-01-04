@@ -1,4 +1,4 @@
-import {ColumnMap, PkMap} from "jsonSchemaInspector"
+import {ColumnMap, PkMap} from "./jsonSchemaInspector"
 
 function isoDate(d: Date) {
   // Handle time zone

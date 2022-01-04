@@ -2,8 +2,8 @@ import {ono} from "ono"
 import * as retry from "retry"
 import {log_debug, log_warning} from "singer-node"
 import {List} from "immutable"
-import {IConfig} from "Config"
 import {Writable} from "stream"
+import {IConfig} from "./Config"
 
 const ClickHouse = require("@apla/clickhouse")
 

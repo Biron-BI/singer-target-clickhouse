@@ -2,7 +2,7 @@ import {strict as assert} from 'assert'
 import * as fs from "fs"
 import {processStream} from "../src/processStream"
 import {StartedTestContainer} from "testcontainers"
-import {set_level} from "singer-node"
+import {LogLevel, set_level} from "singer-node"
 import {bootClickhouseContainer, runChQueryInContainer} from "./helpers"
 import {Config} from '../src/Config'
 
@@ -27,7 +27,7 @@ describe("processStream - Schemas", () => {
     } catch (err) {
       console.log("err", err);
     }
-    set_level("trace")
+    set_level(LogLevel.TRACE)
   });
 
   afterEach(async function () {
@@ -74,7 +74,7 @@ describe("processStream - Records", () => {
     } catch (err) {
       console.log("err", err);
     }
-    set_level("debug")
+    set_level(LogLevel.DEBUG)
   });
 
   afterEach(async function () {

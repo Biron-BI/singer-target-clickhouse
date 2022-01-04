@@ -1,6 +1,6 @@
 import {strict as assert} from 'assert'
 import {StartedTestContainer} from "testcontainers"
-import {set_level} from "singer-node"
+import {LogLevel, set_level} from "singer-node"
 import {bootClickhouseContainer, runChQueryInContainer} from "./helpers"
 import ClickhouseConnection from "../src/ClickhouseConnection"
 import {IConfig} from "../src/Config"
@@ -29,7 +29,7 @@ describe("ClickhouseConnection", () => {
     } catch (err) {
       console.log("err", err);
     }
-    set_level("trace")
+    set_level(LogLevel.TRACE)
   });
 
   after(async function () {

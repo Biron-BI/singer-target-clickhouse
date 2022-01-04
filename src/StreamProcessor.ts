@@ -1,14 +1,14 @@
 // abstract class intended to be inherited by each storage destination: mySQL, clickhouse, snowflake, ... based on the connectionAlias
 
-import {formatRootPKColumn, ISourceMeta, PkMap} from "jsonSchemaInspector"
-import RecordProcessor from "RecordProcessor"
 import {ono} from "ono"
 import {pipeline, Transform} from "stream"
-import ClickhouseConnection from "ClickhouseConnection"
 import {log_debug, log_fatal, log_info} from "singer-node"
 import {List, Set} from "immutable"
-import {Config} from "Config"
-import {escapeValue} from "utils"
+import ClickhouseConnection from "./ClickhouseConnection"
+import {formatRootPKColumn, ISourceMeta, PkMap} from "./jsonSchemaInspector"
+import {Config} from "./Config"
+import {escapeValue} from "./utils"
+import RecordProcessor from "./RecordProcessor"
 
 const util = require("util")
 

@@ -1,7 +1,7 @@
 import {Readable} from "stream"
-import {ISourceMeta} from "jsonSchemaInspector"
-import {extractValue} from "jsonSchemaTranslator"
 import {List, Range} from "immutable"
+import {ISourceMeta} from "./jsonSchemaInspector"
+import {extractValue} from "./jsonSchemaTranslator"
 
 const get = require("lodash.get")
 
