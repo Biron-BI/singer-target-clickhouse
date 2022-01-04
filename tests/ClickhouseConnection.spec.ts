@@ -7,7 +7,7 @@ import {IConfig} from "../src/Config"
 
 const connInfo: IConfig = {
   host: "localhost",
-  user: "root",
+  username: "root",
   password: "azertyuiop",
   port: 8123,
   database: "datbayse"

@@ -1,6 +1,6 @@
 import * as readline from 'readline'
 import {List, Map} from "immutable"
-import {log_fatal, log_info, MessageContent, MessageType, SchemaMessageContent} from "singer-node"
+import {log_debug, log_fatal, log_info, MessageContent, MessageType, SchemaMessageContent} from "singer-node"
 import {Readable} from "stream"
 import ClickhouseConnection from "./ClickhouseConnection"
 import {buildMeta, escapeIdentifier, JsonSchemaInspectorContext} from "./jsonSchemaInspector"
@@ -74,6 +74,7 @@ async function processLine(line: string, config: Config, streamProcessors: Map<s
   }
 }
 
+type StreamProcessors = Map<string, StreamProcessor>
 
 export async function processStream(stream: Readable, config: Config) {
 
@@ -96,11 +97,12 @@ export async function processStream(stream: Readable, config: Config) {
   rl.close()
 }
 
-async function reduce<T>(func: (line: string, config: Config, streamProcessors: T) => Promise<T>, item: T, rl: readline.Interface, config: Config): Promise<T> {
-  let o = item
+async function reduce(func: (line: string, config: Config, streamProcessors: StreamProcessors) => Promise<StreamProcessors>, item: StreamProcessors, rl: readline.Interface, config: Config): Promise<StreamProcessors> {
+  let itemCpy = Map(item)
+  for await (const line of rl) {
+    log_debug(`processing line starting with ${line.substring(0, 40)} ...`)
+    itemCpy = await func(line, config, itemCpy)
+  }
 
-  for await (let line of rl)
-    o = await func(line, config, o)
-
-  return o
+  return itemCpy
 }

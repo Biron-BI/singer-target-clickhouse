@@ -8,7 +8,7 @@ import {List} from "immutable"
 export async function bootClickhouseContainer(connInfo: IConfig): Promise<StartedTestContainer> {
   const container = await new GenericContainer("yandex/clickhouse-server:21.9.2.17")
     .withEnv("CLICKHOUSE_DB", connInfo.database)
-    .withEnv("CLICKHOUSE_USER", connInfo.user)
+    .withEnv("CLICKHOUSE_USER", connInfo.username)
     .withEnv("CLICKHOUSE_PASSWORD", connInfo.password)
     .withExposedPorts(Number(connInfo.port))
     .start()
@@ -25,7 +25,7 @@ export async function bootClickhouseContainer(connInfo: IConfig): Promise<Starte
 }
 
 export async function runChQueryInContainer(container: StartedTestContainer, connInfo: IConfig, query: string, checkOk = true) {
-  const ret = await container.exec(["clickhouse-client", "-u", connInfo.user, "--password=" + connInfo.password, "-d", connInfo.database, `--query=${query}`])
+  const ret = await container.exec(["clickhouse-client", "-u", connInfo.username, "--password=" + connInfo.password, "-d", connInfo.database, `--query=${query}`])
 
   if (checkOk) {
     assert.equal(ret.exitCode, 0)

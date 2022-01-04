@@ -53,7 +53,7 @@ export default class ClickhouseConnection {
     if (!this.connection) {
       this.connection = new ClickHouse({
         host: this.connInfo.host,
-        user: this.connInfo.user,
+        user: this.connInfo.username,
         port: this.connInfo.port,
         password: this.connInfo.password,
         queryOptions: {

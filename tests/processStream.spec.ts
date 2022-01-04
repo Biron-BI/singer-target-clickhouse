@@ -8,7 +8,7 @@ import {Config} from '../src/Config'
 
 const connInfo = new Config({
   host: "localhost",
-  user: "root",
+  username: "root",
   password: "azertyuiop",
   port: 8123,
   database: "datbayse",
@@ -91,12 +91,12 @@ describe("processStream - Records", () => {
   it('should ingest stream from real data', async () => {
     await processStream(fs.createReadStream("./tests/data/covidtracker.jsonl"), connInfo)
     let execResult = await runChQueryInContainer(container, connInfo, `select sum(total_rows) from system.tables where database = '${connInfo.database}'`)
-    assert.equal(execResult.output, '5784\n')
+    assert.equal(execResult.output, '5789\n')
 
     // Ensure no duplicates are created when run second time
     await processStream(fs.createReadStream("./tests/data/covidtracker.jsonl"), connInfo)
     execResult = await runChQueryInContainer(container, connInfo, `select sum(total_rows) from system.tables where database = '${connInfo.database}'`)
-    assert.equal(execResult.output, '5784\n')
+    assert.equal(execResult.output, '5789\n')
 
   }).timeout(60000)
 

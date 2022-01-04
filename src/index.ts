@@ -6,7 +6,8 @@ import {Config} from "./Config"
 
 const args = parse_args(List(["database", "host", "port", "username", "password"]))
 
-set_level(args.config.log_level || "debug")
+const config = new Config(args.config)
+set_level(config.log_level)
 processStream(process.stdin, new Config(args.config)).then(() => {
   log_info("Stream processing done")
 }).catch((err: Error) => {
