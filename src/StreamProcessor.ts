@@ -8,6 +8,7 @@ import ClickhouseConnection from "ClickhouseConnection"
 import {log_debug, log_fatal, log_info} from "singer-node"
 import {List, Set} from "immutable"
 import {Config} from "Config"
+import {escapeValue} from "utils"
 
 const util = require("util")
 
@@ -112,7 +113,7 @@ export default class StreamProcessor {
                      TABLE
                      ${this.meta.sqlTableName}
                      DELETE
-                     WHERE \`${this.meta.cleaningColumn}\` = '${value}'`
+                     WHERE \`${this.meta.cleaningColumn}\` = '${escapeValue(value)}'`
       await this.clickhouse.runQuery(query)
     } else {
       throw new Error("Trying to delete based on cleaning column but it is undefined")

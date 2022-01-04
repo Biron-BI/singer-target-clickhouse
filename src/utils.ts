@@ -15,3 +15,6 @@ export async function awaitMapValues<T>(map: Map<string, Promise<T>>): Promise<M
     return acc.set(key, values[index])
   }, Map<string, T>())
 }
+
+// To escape values already wrapped in delimiter
+export const escapeValue = (value: string, delimiter = "'"): string => value.split(delimiter).join(`\\${delimiter}\\`)

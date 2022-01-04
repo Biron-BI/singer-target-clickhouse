@@ -1,6 +1,6 @@
 import * as readline from 'readline'
 import {List, Map} from "immutable"
-import {log_debug, log_fatal, log_info, MessageContent, MessageType, SchemaMessageContent} from "singer-node"
+import {log_fatal, log_info, MessageContent, MessageType, SchemaMessageContent} from "singer-node"
 import {buildMeta, escapeIdentifier, JsonSchemaInspectorContext} from "jsonSchemaInspector"
 import {Readable} from "stream"
 import {listTableNames, translateCH} from "jsonSchemaTranslator"
@@ -86,19 +86,21 @@ export async function processStream(stream: Readable, config: Config) {
     input: stream,
   })
 
-  // The one and only let that I'm not sure how to make immutable
-  let streamProcessors = Map<string, StreamProcessor>()
-
-  // We read input stream sequentially to correctly handle message ordering and echo State messages at regular intervals
-  for await (const line of rl) {
-    log_debug(`Processing new line ${line.substring(0, 40)}...`)
-    streamProcessors = await processLine(line, config, streamProcessors)
-  }
-
+  const streamProcessors = (await reduce(processLine, Map<string, StreamProcessor>(), rl, config))
+  await Promise.all(streamProcessors.map(async (processor) => processor.doneProcessing()))
   // concurrent version does not work correctly for some reason : await Promise.all(streamProcessors.map(async (processor) => processor.doneProcessing()))
   for await (const processor of streamProcessors.toList().toArray()) {
     await processor.doneProcessing()
   }
 
   rl.close()
+}
+
+async function reduce<T>(func: (line: string, config: Config, streamProcessors: T) => Promise<T>, item: T, rl: readline.Interface, config: Config): Promise<T> {
+  let o = item
+
+  for await (let line of rl)
+    o = await func(line, config, o)
+
+  return o
 }
