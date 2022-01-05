@@ -19,7 +19,7 @@ export class Config implements IConfig {
   username: string
   max_batch_rows: number = 1000
   max_batch_size: number = 1048576 // 1 Mo
-  log_level: LogLevel = LogLevel.DEBUG
+  log_level: LogLevel = LogLevel.INFO
 
   constructor({
                 database,

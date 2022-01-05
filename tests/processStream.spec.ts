@@ -27,7 +27,7 @@ describe("processStream - Schemas", () => {
     } catch (err) {
       console.log("err", err);
     }
-    set_level(LogLevel.TRACE)
+    set_level(LogLevel.INFO)
   });
 
   afterEach(async function () {
@@ -74,7 +74,7 @@ describe("processStream - Records", () => {
     } catch (err) {
       console.log("err", err);
     }
-    set_level(LogLevel.DEBUG)
+    set_level(LogLevel.INFO)
   });
 
   afterEach(async function () {
