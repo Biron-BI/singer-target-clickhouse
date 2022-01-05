@@ -53,3 +53,7 @@ export function translateCH(database: string, meta: ISourceMeta, parentMeta?: IS
 
 export const listTableNames = (meta: ISourceMeta): List<string> => List<string>([meta.sqlTableName])
   .concat(meta.children.flatMap(listTableNames))
+
+export const dropStreamTablesQueries = (meta: ISourceMeta): List<string> => List<string>()
+  .push(`DROP TABLE if exists ${meta.sqlTableName}`)
+  .concat(meta.children.flatMap(dropStreamTablesQueries))

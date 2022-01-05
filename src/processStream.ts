@@ -6,7 +6,7 @@ import ClickhouseConnection from "./ClickhouseConnection"
 import {buildMeta, escapeIdentifier, JsonSchemaInspectorContext} from "./jsonSchemaInspector"
 import StreamProcessor from "./StreamProcessor"
 import {Config} from "./Config"
-import {listTableNames, translateCH} from "./jsonSchemaTranslator"
+import {dropStreamTablesQueries, listTableNames, translateCH} from "./jsonSchemaTranslator"
 import {awaitMapValues} from "./utils"
 
 // Remove magic quotes used to escape queries so we can compare content
@@ -28,6 +28,11 @@ async function processSchemaMessage(msg: SchemaMessageContent, config: Config): 
   ))
   const queries = translateCH(ch.getDatabase(), meta)
 
+  if (config.streamToReplace.includes(meta.prop)) {
+    log_info(`[${meta.prop}]: recreating all tables`)
+    await Promise.all(dropStreamTablesQueries(meta).map(async (query) => ch.runQuery(query)))
+  }
+
   const rootAlreadyExists = (await ch.listTables()).map(escapeIdentifier).includes(meta.sqlTableName)
   if (rootAlreadyExists) {
     await Promise.all(listTableNames(meta).map(async (tableName, idx) => {
@@ -37,7 +42,7 @@ async function processSchemaMessage(msg: SchemaMessageContent, config: Config): 
         throw new Error(`Schema modification detected.
 Current:  ${currentTable}
 New:      ${newTable}
-If you wish to update schemas, run with --update-schemas.`)
+If you wish to update schemas, run with --update-schemas <schema>.`)
       }
     }))
   } else {
@@ -63,9 +68,7 @@ async function processLine(line: string, config: Config, streamProcessors: Map<s
     case MessageType.state:
       // On a state message, we insert every batch we are currently building and echo state for tap.
       // If the tap emits state too often, we may need to bufferize state messages
-      const clearedStreamProcessors = awaitMapValues(streamProcessors.map(async (processor, key) => {
-        return (await processor.saveNewRecords()).clearIngestion()
-      }))
+      const clearedStreamProcessors = awaitMapValues(streamProcessors.map(async (processor) => (await processor.saveNewRecords()).clearIngestion()))
       // Should be the one and only console log in this package: the tap expects output in stdout to save state
       console.log(JSON.stringify(msg.value))
       return clearedStreamProcessors

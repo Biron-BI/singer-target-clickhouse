@@ -1,5 +1,7 @@
 import {LogLevel} from "singer-node"
+import {List} from "immutable"
 
+// Represents content of config.json
 export interface IConfig {
   host: string
   port: number
@@ -12,14 +14,14 @@ export interface IConfig {
 }
 
 export class Config implements IConfig {
-  database: string
-  host: string
-  password: string
-  port: number
-  username: string
-  max_batch_rows: number = 1000
-  max_batch_size: number = 1048576 // 1 Mo
-  log_level: LogLevel = LogLevel.INFO
+  readonly database: string
+  readonly host: string
+  readonly password: string
+  readonly port: number
+  readonly username: string
+  readonly max_batch_rows: number = 1000
+  readonly max_batch_size: number = 1048576 // 1 Mo
+  readonly log_level: LogLevel = LogLevel.INFO
 
   constructor({
                 database,
@@ -30,7 +32,7 @@ export class Config implements IConfig {
                 port,
                 username,
                 logging_level,
-              }: IConfig) {
+              }: IConfig, public readonly streamToReplace: List<string> = List()) {
     this.database = database
     this.host = host
     this.max_batch_rows = max_batch_rows ?? this.max_batch_rows

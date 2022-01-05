@@ -5,8 +5,9 @@ import {StartedTestContainer} from "testcontainers"
 import {LogLevel, set_level} from "singer-node"
 import {bootClickhouseContainer, runChQueryInContainer} from "./helpers"
 import {Config} from '../src/Config'
+import {List} from "immutable"
 
-const connInfo = new Config({
+const initialConnInfo = new Config({
   host: "localhost",
   username: "root",
   password: "azertyuiop",
@@ -18,12 +19,15 @@ const connInfo = new Config({
 
 describe("processStream - Schemas", () => {
   let container: StartedTestContainer
+  let connInfo: Config
   beforeEach(async function () {
     this.timeout(30000)
     try {
-      connInfo.port = 8123
-      container = await bootClickhouseContainer(connInfo);
-      connInfo.port = container.getMappedPort(connInfo.port)
+      container = await bootClickhouseContainer(initialConnInfo)
+      connInfo = new Config({
+        ...initialConnInfo,
+        port: container.getMappedPort(initialConnInfo.port)
+      })
     } catch (err) {
       console.log("err", err);
     }
@@ -61,16 +65,29 @@ describe("processStream - Schemas", () => {
     }, Error)
   }).timeout(30000)
 
+  it('should recreate if schemas already exists, new is different but specified to be recreated', async () => {
+    await processStream(fs.createReadStream("./tests/data/stream_1.jsonl"), connInfo)
+
+    const config = new Config({...connInfo}, List(["tickets"]))
+    await processStream(fs.createReadStream("./tests/data/stream_1_modified.jsonl"), config)
+    const execResult = await runChQueryInContainer(container, connInfo, `show tables from ${connInfo.database}`)
+
+    assert.equal(execResult.output.split("\n").length, 22)
+  }).timeout(30000)
+
 }).timeout(30000)
 
 describe("processStream - Records", () => {
   let container: StartedTestContainer
+  let connInfo: Config
   beforeEach(async function () {
     this.timeout(30000)
     try {
-      connInfo.port = 8123
-      container = await bootClickhouseContainer(connInfo);
-      connInfo.port = container.getMappedPort(connInfo.port)
+      container = await bootClickhouseContainer(initialConnInfo);
+      connInfo = new Config({
+        ...initialConnInfo,
+        port: container.getMappedPort(initialConnInfo.port)
+      })
     } catch (err) {
       console.log("err", err);
     }

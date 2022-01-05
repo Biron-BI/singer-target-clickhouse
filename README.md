@@ -88,3 +88,9 @@ Special thanks to the people who built
 * [singer](https://github.com/singer-io/getting-started)
 * [target-postgres](https://github.com/datamill-co/target-postgres)
 * [immutable-js](https://immutable-js.com/)
+
+## License
+
+Copyright © 2021 Biron
+
+Distributed under the AGPLv3
