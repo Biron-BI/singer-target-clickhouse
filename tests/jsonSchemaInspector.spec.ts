@@ -78,6 +78,7 @@ const nestedObjectWithArraysSchema: IExtendedJSONSchema7 = {
                 type: "integer",
               },
             },
+            type: "object"
           },
         },
       },
@@ -135,7 +136,6 @@ describe("JSON Schema Inspector", () => {
     assert.equal(res.children.get(0)?.pkMappings.get(0)?.sqlIdentifier, "`_root_id`")
   })
 
-  // Fixme
   it("should handle nest object with arrays", () => {
     const res = buildMeta(new JsonSchemaInspectorContext("audits", nestedObjectWithArraysSchema, List(["id"])))
     assert.equal(res.children.size, 1)

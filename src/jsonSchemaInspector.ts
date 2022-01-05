@@ -9,8 +9,6 @@ const sha1 = require('sha1')
 export interface IExtendedJSONSchema7 extends ExtendedJSONSchema7 {
   decimals?: number;
   precision?: number;
-  // primaryKey?: string[]; // todo pk and cleaning column may be moved elsewhere, in schema message metadata
-  // cleaningColumn?: string;
 }
 
 export class JsonSchemaInspectorContext {
@@ -22,7 +20,7 @@ export class JsonSchemaInspectorContext {
     public readonly parentCtx?: JsonSchemaInspectorContext,
     public readonly level: number = 0,
     public readonly tableName = JsonSchemaInspectorContext.defaultTableName(alias, parentCtx),
-    public readonly cleaningColumn?: string
+    public readonly cleaningColumn?: string,
   ) {
   }
 
@@ -70,7 +68,6 @@ export interface ISourceMeta {
   children: List<ISourceMeta>;
   pkMappings: List<PkMap>;
   simpleColumnMappings: List<ColumnMap>;
-  // tableName: string
   sqlTableName: string;
   cleaningColumn?: string;
 }
@@ -78,27 +75,34 @@ export interface ISourceMeta {
 export const formatLevelIndexColumn = (level: number) => `_level_${level}_index`
 export const formatRootPKColumn = (prop: string) => `_root_${prop}`
 
-// To refactor
-const buildMetaPkProps = (ctx: JsonSchemaInspectorContext) => ctx.isRoot() ? ctx.key_properties.map((prop) => ({
-  prop,
-  sqlIdentifier: escapeIdentifier(prop),
-  ...getSimpleColumnType(ctx, prop),
-  nullable: false,
-})) : ctx.getRootContext().key_properties.map((prop) => ({
-  prop,
-  sqlIdentifier: escapeIdentifier(formatRootPKColumn(prop)),
-  ...getSimpleColumnType(ctx.getRootContext(), prop),
-  nullable: false,
-})).concat(Range(0, ctx.level).map((value) => {
-  const prop = formatLevelIndexColumn(value)
-  return {
-    prop,
-    sqlIdentifier: escapeIdentifier(prop),
-    chType: "Int32",
-    nullable: false,
-  } as PkMap
-}).toList())
+function buildMetaPkProps(ctx: JsonSchemaInspectorContext) {
+  const rootCtx = ctx.getRootContext()
 
+  // Key properties are only stored in root context, but are also used by children as columns _root_...
+  const keyPropertiesMeta = rootCtx.key_properties.map((prop) => ({
+    prop,
+    sqlIdentifier: escapeIdentifier(ctx.isRoot() ? prop: formatRootPKColumn(prop)),
+    ...getSimpleColumnType(rootCtx, prop),
+    nullable: false,
+  }))
+
+  if (ctx.isRoot()) {
+    return keyPropertiesMeta
+  } else {
+    // Append 'level_N_index' columns
+    return keyPropertiesMeta.concat(Range(0, ctx.level).map((value) => {
+      const prop = formatLevelIndexColumn(value)
+      return {
+        prop,
+        sqlIdentifier: escapeIdentifier(prop),
+        chType: "Int32",
+        nullable: false,
+      } as PkMap
+    }).toList())
+  }
+}
+
+// transform a schema to a data structure with metadata for Clickhouse (types, primary keys, nullable, ...)
 export const buildMeta = (ctx: JsonSchemaInspectorContext): ISourceMeta => ({
   prop: ctx.alias,
   sqlTableName: escapeIdentifier(ctx.tableName),
@@ -107,8 +111,8 @@ export const buildMeta = (ctx: JsonSchemaInspectorContext): ISourceMeta => ({
   ...buildMetaProps(ctx),
 })
 
+// flatten 1..1 relation properties into the current level
 function flattenNestedObject(propDef: IExtendedJSONSchema7, key: string, ctx: JsonSchemaInspectorContext) {
-  // flatten 1..1 relation properties into the current level
   const nestedSchema = {
     type: "object" as JSONSchema7TypeName, // ts is dumb
     properties: {} as Record<string, JSONSchema7Definition>,
@@ -161,7 +165,7 @@ function buildMetaProps(ctx: JsonSchemaInspectorContext): MetaProps {
         } else if (propDefTypes.includes("array")) {
           return {
             ...acc,
-            children: acc.children.push(createSubTable(propDef, key, ctx))
+            children: acc.children.push(createSubTable(propDef, key, ctx)),
           }
         } else {
           const colType = getSimpleColumnType(ctx, key)
@@ -174,7 +178,7 @@ function buildMetaProps(ctx: JsonSchemaInspectorContext): MetaProps {
                 prop: key,
                 sqlIdentifier: escapeIdentifier(key),
                 ...colType,
-              })
+              }),
             }
           } else {
             log_warning(`'${ctx.alias}': '${key}': could not be registered (type '${propDef.type}' unrecognized)`)
@@ -182,7 +186,6 @@ function buildMetaProps(ctx: JsonSchemaInspectorContext): MetaProps {
           }
         }
       }, {simpleColumnMappings: List<ColumnMap>(), children: List<ISourceMeta>()})
-    // return {simpleColumnMappings: simpleColumnsMappings, children}
   } else {
     if (!ctx.schema.type) {
       return {
@@ -201,12 +204,12 @@ function buildMetaProps(ctx: JsonSchemaInspectorContext): MetaProps {
   }
 }
 
-
+// To sanitize "types" keys in JSON Schemas
 function excludeNullFromArray(array?: JSONSchema7TypeName | JSONSchema7TypeName[]) {
   return asArray(array).filter((type) => type !== "null")
 }
 
-export function getSimpleColumnType(ctx: JsonSchemaInspectorContext, key?: string): ISimpleColumnType | undefined {
+function getSimpleColumnType(ctx: JsonSchemaInspectorContext, key?: string): ISimpleColumnType | undefined {
   const propDef = key ? ctx.schema.properties?.[key] : ctx.schema
   if (!propDef || typeof propDef === "boolean") {
     throwError(ctx, `Key '${key}' does not match any usable prop in schema props '${ctx.schema.properties}'`)
@@ -251,10 +254,6 @@ export function getSimpleColumnSqlType(ctx: JsonSchemaInspectorContext, propDef:
     }
   } else if (type === "number") {
     if (!format) {
-      // To better comply with json schema, we could changing "precision" and "decimals" to "maximum" and "multipleOf"
-      // For now we'll use a custom format
-      //          const parsedFormat = parseCustomFormat(propDef.format);
-//            return "DECIMAL(" + (parsedFormat.precision || 10) + "," + (parsedFormat.decimals || 2) + ")";
       return `Decimal(${propDef.precision || 16}, ${propDef.decimals || 2})`
     } else {
       throwError(ctx, `${key}: unsupported number format [${format}]`)
@@ -271,20 +270,17 @@ export function getSimpleColumnSqlType(ctx: JsonSchemaInspectorContext, propDef:
   return undefined
 }
 
-/**
- * ensure that id is not longer than 64 chars and enclose it within backquotes
- * @param id
- * @return {string}
- */
+// ensure that id is not longer than 64 chars and enclose it within backquotes
 export function escapeIdentifier(id: string): string {
   id = id.replace(/\./g, "__")
   if (id.length > 64) {
-    const uid = sha1(id).substr(0, 10)
-    id = id.substr(0, 64 - uid.length - 27) + uid + id.substring(id.length - 27)
+    const uid = sha1(id).substring(0, 10)
+    id = id.substring(0, 64 - uid.length - 27) + uid + id.substring(id.length - 27)
   }
   return `\`${id}\``
 }
 
+// throws error with additional context
 function throwError(ctx: JsonSchemaInspectorContext, msg: string, childAlias?: string): void {
   const alias = `${ctx.alias}${childAlias ? (`.${childAlias}`) : ""}`
   if (ctx.parentCtx) {
