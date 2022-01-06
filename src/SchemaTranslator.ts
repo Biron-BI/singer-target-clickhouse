@@ -8,6 +8,8 @@ function isoDate(d: Date) {
   return d.toISOString().substring(0, ("YYYY-MM-DD".length));
 }
 
+type Value = any
+
 export default class SchemaTranslator {
   protected mapping: ColumnMap | PkMap;
 
@@ -15,7 +17,7 @@ export default class SchemaTranslator {
     this.mapping = mapping;
   }
 
-  extractValue(v: any): any {
+  extractValue(v: Value): Value {
     if (v === undefined || v === null) {
       return v;
     }
@@ -34,7 +36,7 @@ export default class SchemaTranslator {
     }
   }
 
-  extractString(v: any): string {
+  extractString(v: Value): string {
     // Excel date may be either an actual date or the number of days since 01-01-1900
     if (this.mapping.typeFormat === "x-excel-date") {
       // We start by checking if it is an actual date
@@ -55,7 +57,7 @@ export default class SchemaTranslator {
     return String(v);
   }
 
-  extractBoolean(v: any): 1 | 0 {
+  extractBoolean(v: Value): 1 | 0 {
     if (v === "true" || v === true || v === 1) {
       return 1;
     } else {
@@ -63,7 +65,7 @@ export default class SchemaTranslator {
     }
   }
 
-  extractNumber(v: any): number | undefined {
+  extractNumber(v: Value): number | undefined {
     const ret = parseFloat(v);
     if (isNaN(ret)) {
       return undefined;
@@ -71,7 +73,7 @@ export default class SchemaTranslator {
     return ret;
   }
 
-  extractInteger(v: any): number | undefined {
+  extractInteger(v: Value): number | undefined {
     const ret = parseInt(v);
     if (isNaN(ret)) {
       return undefined

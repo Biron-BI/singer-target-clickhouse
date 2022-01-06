@@ -1,5 +1,5 @@
 import {ExtendedJSONSchema7, log_warning} from "singer-node"
-import {List, Range} from "immutable"
+import {List, Map, Range} from "immutable"
 import {JSONSchema7Definition, JSONSchema7TypeName} from "json-schema"
 import {asArray} from "./utils"
 
@@ -12,6 +12,11 @@ export interface IExtendedJSONSchema7 extends ExtendedJSONSchema7 {
   precision?: number;
 }
 
+export interface ChildrenPK {
+  props: List<string>
+  children: Map<string, ChildrenPK>
+}
+
 export class JsonSchemaInspectorContext {
 
   constructor(
@@ -22,7 +27,7 @@ export class JsonSchemaInspectorContext {
     public readonly level: number = 0,
     public readonly tableName = JsonSchemaInspectorContext.defaultTableName(alias, parentCtx),
     public readonly cleaningColumn?: string,
-    public readonly childrenPks = List<string>(),
+    public readonly childrenPks: ChildrenPK = {props: List(), children: Map()},
   ) {
   }
 
@@ -44,6 +49,13 @@ export class JsonSchemaInspectorContext {
   }
 }
 
+export interface ISimpleColumnType {
+  chType?: string;
+  type?: JSONSchema7TypeName;
+  typeFormat?: string;
+  nullable: boolean
+}
+
 export interface IColumnMapping {
   prop?: string;
   sqlIdentifier: string;
@@ -54,13 +66,6 @@ export type ColumnMap = IColumnMapping & ISimpleColumnType;
 export interface IPKMapping {
   prop: string;
   sqlIdentifier: string;
-}
-
-export interface ISimpleColumnType {
-  chType?: string;
-  type?: JSONSchema7TypeName;
-  typeFormat?: string;
-  nullable: boolean
 }
 
 export type PkMap = IPKMapping & ISimpleColumnType;
@@ -78,29 +83,24 @@ export const formatLevelIndexColumn = (level: number) => `_level_${level}_index`
 export const formatRootPKColumn = (prop: string) => `_root_${prop}`
 export const formatParentPKColumn = (prop: string) => `_parent_${prop}`
 
-function buildMetaPkProps(ctx: JsonSchemaInspectorContext) {
-  const rootCtx = ctx.getRootContext()
+const buildMetaPkProp = (prop: string, ctx: JsonSchemaInspectorContext, fieldFormatter?: (v: string) => string): PkMap => ({
+  prop,
+  sqlIdentifier: escapeIdentifier(fieldFormatter?.(prop) ?? prop),
+  ...getSimpleColumnType(ctx, prop),
+  nullable: false,
+})
 
-  // Key properties are only stored in root context, but are also used by children as columns _root_...
-  const keyPropertiesMeta = rootCtx.key_properties.map((prop) => ({
-    prop,
-    sqlIdentifier: escapeIdentifier(ctx.isRoot() ? prop : formatRootPKColumn(prop)),
-    ...getSimpleColumnType(rootCtx, prop),
-    nullable: false,
-  }))
-
+function buildMetaPkProps(ctx: JsonSchemaInspectorContext): List<PkMap> {
   if (ctx.isRoot()) {
-    return keyPropertiesMeta
+    return ctx.key_properties.map((prop => buildMetaPkProp(prop, ctx)))
   } else {
-    return keyPropertiesMeta
+    return List<PkMap>()
+      // Append '_root_X'
+      .concat(ctx.getRootContext().key_properties.map((prop => buildMetaPkProp(prop, ctx.getRootContext(), formatRootPKColumn))))
       // Append '_parent_X'
-      .concat(ctx.childrenPks.map((prop) => ({
-        prop,
-        sqlIdentifier: escapeIdentifier(formatParentPKColumn(prop)),
-        // @ts-ignore checked by isRoot()
-        ...getSimpleColumnType(ctx.parentCtx, prop),
-        nullable: false,
-      })))
+      // Parent Ctx is defined here
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+      .concat(ctx.parentCtx!.key_properties.map((prop => buildMetaPkProp(prop, ctx.parentCtx!, formatParentPKColumn))))
       // Append 'level_N_index' columns
       .concat(Range(0, ctx.level).map((value) => {
         const prop = formatLevelIndexColumn(value)
@@ -143,15 +143,16 @@ function flattenNestedObject(propDef: IExtendedJSONSchema7, key: string, ctx: Js
   ))
 }
 
-function createSubTable(propDef: IExtendedJSONSchema7, key: string, ctx: JsonSchemaInspectorContext): ISourceMeta {
-  return buildMeta(new JsonSchemaInspectorContext(
-    key,
-    (propDef.items || {type: "string"}) as IExtendedJSONSchema7,
-    List(),
-    ctx,
-    ctx.level + 1,
-  ))
-}
+const createSubTable = (propDef: IExtendedJSONSchema7, key: string, ctx: JsonSchemaInspectorContext): ISourceMeta => buildMeta(new JsonSchemaInspectorContext(
+  key,
+  (propDef.items || {type: "string"}) as IExtendedJSONSchema7,
+  ctx.childrenPks.children.get(key)?.props ?? List(),
+  ctx,
+  ctx.level + 1,
+  undefined,
+  undefined,
+  ctx.childrenPks.children.get(key)
+))
 
 type MetaProps = { children: List<ISourceMeta>, simpleColumnMappings: List<ColumnMap> }
 
