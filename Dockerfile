@@ -17,4 +17,4 @@ COPY ./tsconfig.json ./tsconfig.json
 RUN yarn build
 
 # improve so config.json isn't forced
-ENTRYPOINT ["node", "dist/index.js", "-c", "/config/config.json"]
+ENTRYPOINT ["node", "dist/index.js"]
