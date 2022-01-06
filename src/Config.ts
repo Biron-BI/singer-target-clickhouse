@@ -37,6 +37,7 @@ export class Config implements IConfig {
     this.host = host
     this.max_batch_rows = max_batch_rows ?? this.max_batch_rows
     this.max_batch_size = max_batch_size ?? this.max_batch_size
+
     // @ts-ignore
     this.log_level = logging_level ? LogLevel[logging_level] : this.log_level
     this.password = password

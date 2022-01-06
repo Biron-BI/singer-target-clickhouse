@@ -3,6 +3,7 @@ import {List, Range} from "immutable"
 import {ISourceMeta} from "./jsonSchemaInspector"
 import {extractValue} from "./jsonSchemaTranslator"
 
+// eslint-disable-next-line @typescript-eslint/no-var-requires
 const get = require("lodash.get")
 
 type SourceMetaPK = ISourceMeta & { values: List<string | number> };
@@ -39,8 +40,9 @@ export default class RecordProcessor {
 
     if (this.fields.size > 0) {
 
-      const query: string = `INSERT INTO ${tableToInsertTo} FORMAT JSONCompactEachRow`
+      const query = `INSERT INTO ${tableToInsertTo} FORMAT JSONCompactEachRow`
       const stream: Readable = new Readable({
+        // eslint-disable-next-line @typescript-eslint/no-empty-function
         objectMode: true, read(size) {
         },
       })

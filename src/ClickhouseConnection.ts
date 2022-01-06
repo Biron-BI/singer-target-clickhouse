@@ -5,11 +5,11 @@ import {List} from "immutable"
 import {Writable} from "stream"
 import {IConfig} from "./Config"
 
+// eslint-disable-next-line @typescript-eslint/no-var-requires
 const ClickHouse = require("@apla/clickhouse")
 
 interface ICHQueryResult {
-  data: any[];
-  meta: any[];
+  data: string[][];
   rows: number;
   "rows_before_limit_at_least": number;
   "statistics": {

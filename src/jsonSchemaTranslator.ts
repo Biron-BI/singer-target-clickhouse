@@ -3,10 +3,11 @@ import {List} from "immutable"
 import {ColumnMap, ISourceMeta, PkMap} from "./jsonSchemaInspector"
 import SchemaTranslator from "./SchemaTranslator"
 
+// eslint-disable-next-line @typescript-eslint/no-var-requires
 const get = require("lodash.get")
 
 export function extractValue(data: { [k: string]: any }, mapping: ColumnMap | PkMap): string {
-  let v = mapping.prop ? get(data, mapping.prop.split(".")) : data
+  const v = mapping.prop ? get(data, mapping.prop.split(".")) : data
   const translator = new SchemaTranslator(mapping)
   return translator.extractValue(v)
 }

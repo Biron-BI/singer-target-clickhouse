@@ -136,6 +136,17 @@ describe("JSON Schema Inspector", () => {
     assert.equal(res.children.get(0)?.pkMappings.get(0)?.sqlIdentifier, "`_root_id`")
   })
 
+  it("should handle array of nested object with specifying childrenPK", () => {
+    const res = buildMeta(new JsonSchemaInspectorContext("audits", arrayObjectSchema, List(["id"]), undefined, undefined, undefined, undefined, List(["field"])))
+    assert.equal(res.children.get(0)?.sqlTableName, "`audits__custom_fields`")
+    assert.equal(res.children.get(0)?.simpleColumnMappings.size, 1)
+    assert.equal(res.children.get(0)?.simpleColumnMappings.get(0)?.sqlIdentifier, "`field`")
+    assert.equal(res.children.get(0)?.pkMappings.size, 3)
+    assert.equal(res.children.get(0)?.pkMappings.get(0)?.sqlIdentifier, "`_root_id`")
+    assert.equal(res.children.get(0)?.pkMappings.get(1)?.sqlIdentifier, "`_parent_id`")
+    assert.equal(res.children.get(0)?.pkMappings.get(2)?.sqlIdentifier, "`_level_0_index`")
+  })
+
   it("should handle nest object with arrays", () => {
     const res = buildMeta(new JsonSchemaInspectorContext("audits", nestedObjectWithArraysSchema, List(["id"])))
     assert.equal(res.children.size, 1)

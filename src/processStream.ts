@@ -63,7 +63,9 @@ async function processLine(line: string, config: Config, streamProcessors: Map<s
         throw new Error("Record message received before Schema is defined")
       }
       return streamProcessors.set(msg.stream,
-        await streamProcessors.get(msg.stream)!!.processRecord(msg.record, line.length)
+        // undefined has been checked by .has()
+        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+        await streamProcessors.get(msg.stream)!.processRecord(msg.record, line.length)
       )
     case MessageType.state:
       // On a state message, we insert every batch we are currently building and echo state for tap.

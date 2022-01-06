@@ -1,6 +1,4 @@
 node_modules
 dist
-.idea
-
-local_test
 singer-node
+tests

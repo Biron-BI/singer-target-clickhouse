@@ -43,7 +43,7 @@ export default class SchemaTranslator {
       }
       const value = parseInt(v);
       if (isNaN(value)) {
-        throw new Error("Could not parse excel date: " + v)
+        throw new Error(`Could not parse excel date: ${v}`)
       }
 
       const date = new Date(0);

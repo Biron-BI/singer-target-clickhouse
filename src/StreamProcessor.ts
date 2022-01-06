@@ -9,8 +9,7 @@ import {formatRootPKColumn, ISourceMeta, PkMap} from "./jsonSchemaInspector"
 import {Config} from "./Config"
 import {escapeValue} from "./utils"
 import RecordProcessor from "./RecordProcessor"
-
-const util = require("util")
+import * as util from "util"
 
 // To handle overall ingestion
 export default class StreamProcessor {
@@ -183,6 +182,9 @@ export default class StreamProcessor {
       log_debug(`fields for ${this.meta.prop}: ${this.recordProcessor.fields.join(",")}`)
       const queries = await this.recordProcessor.buildInsertQuery()
       await Promise.all(queries.map(async (query) => {
+
+        // fixme
+        // eslint-disable-next-line no-async-promise-executor
         return new Promise(async (resolve, reject) => {
           const writeStream = await this.clickhouse.createWriteStream(query.baseQuery, (err, result) => {
             if (err) {
