@@ -12,9 +12,9 @@ export interface IExtendedJSONSchema7 extends ExtendedJSONSchema7 {
   precision?: number;
 }
 
-export interface ChildrenPK {
+export interface SchemaKeyProperties {
   props: List<string>
-  children: Map<string, ChildrenPK>
+  children: Map<string, SchemaKeyProperties>
 }
 
 export class JsonSchemaInspectorContext {
@@ -22,12 +22,13 @@ export class JsonSchemaInspectorContext {
   constructor(
     public readonly alias: string,
     public readonly schema: IExtendedJSONSchema7,
-    public readonly key_properties: List<string>,
+    public readonly key_properties: List<string>, // For current level. Only root has if all_key_properties isn't defined
     public readonly parentCtx?: JsonSchemaInspectorContext,
     public readonly level: number = 0,
     public readonly tableName = JsonSchemaInspectorContext.defaultTableName(alias, parentCtx),
     public readonly cleaningColumn?: string,
-    public readonly childrenPks: ChildrenPK = {props: List(), children: Map()},
+    // Optional config to know all key properties at this level and lower. Used to compute _parent_... fields
+    public readonly all_key_properties: SchemaKeyProperties = {props: List(), children: Map()},
   ) {
   }
 
@@ -97,10 +98,10 @@ function buildMetaPkProps(ctx: JsonSchemaInspectorContext): List<PkMap> {
     return List<PkMap>()
       // Append '_root_X'
       .concat(ctx.getRootContext().key_properties.map((prop => buildMetaPkProp(prop, ctx.getRootContext(), formatRootPKColumn))))
-      // Append '_parent_X'
+      // Append '_parent_X' if parent has 'all_key_properties' filled with props
       // Parent Ctx is defined here
       // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-      .concat(ctx.parentCtx!.key_properties.map((prop => buildMetaPkProp(prop, ctx.parentCtx!, formatParentPKColumn))))
+      .concat(!ctx.parentCtx?.all_key_properties?.props.isEmpty() ? ctx.parentCtx!.key_properties.map((prop => buildMetaPkProp(prop, ctx.parentCtx!, formatParentPKColumn))) : [])
       // Append 'level_N_index' columns
       .concat(Range(0, ctx.level).map((value) => {
         const prop = formatLevelIndexColumn(value)
@@ -146,12 +147,12 @@ function flattenNestedObject(propDef: IExtendedJSONSchema7, key: string, ctx: Js
 const createSubTable = (propDef: IExtendedJSONSchema7, key: string, ctx: JsonSchemaInspectorContext): ISourceMeta => buildMeta(new JsonSchemaInspectorContext(
   key,
   (propDef.items || {type: "string"}) as IExtendedJSONSchema7,
-  ctx.childrenPks.children.get(key)?.props ?? List(),
+  ctx.all_key_properties.children.get(key)?.props ?? List(),
   ctx,
   ctx.level + 1,
   undefined,
   undefined,
-  ctx.childrenPks.children.get(key)
+  ctx.all_key_properties.children.get(key),
 ))
 
 type MetaProps = { children: List<ISourceMeta>, simpleColumnMappings: List<ColumnMap> }

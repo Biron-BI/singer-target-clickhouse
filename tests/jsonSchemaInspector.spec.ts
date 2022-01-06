@@ -1,5 +1,11 @@
 import {strict as assert} from 'assert'
-import {buildMeta, ChildrenPK, getSimpleColumnSqlType, IExtendedJSONSchema7, JsonSchemaInspectorContext} from "../src/jsonSchemaInspector"
+import {
+  buildMeta,
+  getSimpleColumnSqlType,
+  IExtendedJSONSchema7,
+  JsonSchemaInspectorContext,
+  SchemaKeyProperties,
+} from "../src/jsonSchemaInspector"
 import {List, Map} from "immutable"
 
 const simpleSchema: IExtendedJSONSchema7 = {
@@ -182,7 +188,7 @@ describe("JSON Schema Inspector", () => {
     const res = buildMeta(new JsonSchemaInspectorContext("audits", arrayObjectSchema, List(["id"]), undefined, undefined, undefined, undefined,
       {
         props: List(["id"]),
-        children: Map<string, ChildrenPK>().set("custom_fields", {
+        children: Map<string, SchemaKeyProperties>().set("custom_fields", {
           props: List<string>(),
           children: Map()
         })
@@ -200,9 +206,9 @@ describe("JSON Schema Inspector", () => {
     const res = buildMeta(new JsonSchemaInspectorContext("audits", deepNestedArrayObjectSchema, List(["id"]), undefined, undefined, undefined, undefined,
       {
         props: List(["id"]),
-        children: Map<string, ChildrenPK>().set("bill_fields", {
+        children: Map<string, SchemaKeyProperties>().set("bill_fields", {
           props: List(["bill_id"]),
-          children: Map<string, ChildrenPK>().set("john_fields", {
+          children: Map<string, SchemaKeyProperties>().set("john_fields", {
             props: List(["john_id"]),
             children: Map()
           })
