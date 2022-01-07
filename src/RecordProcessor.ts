@@ -72,11 +72,11 @@ export default class RecordProcessor {
 
     const isRoot = indexInParent === undefined
 
-    // Root version number is computed only for a root who has primaryKeys
-    //version start at max existing version, + position in stream + 1
+    // root version number is computed only for a root who has primaryKeys
+    // version start at max existing version + 1
     const resolvedRootVer = (isRoot && !this.meta.pkMappings.isEmpty()) ? maxVer + 1 : rootVer
 
-    // In children we only add index to previous PKS
+    // in children, we only add index to previous PKS
     const pkValues = isRoot ? this.meta.pkMappings.map(pkMapping => extractValue(data, pkMapping)) : parentMeta?.values.push(indexInParent) ?? List()
 
     const meAsParent: SourceMetaPK = {...this.meta, values: pkValues}

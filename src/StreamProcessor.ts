@@ -49,7 +49,6 @@ export default class StreamProcessor {
     }
     log_info(`[${this.meta.prop}]: finalizing processing`)
     await this.finalizeBatchProcessing()
-    log_info("done finalizing processing")
 
     return this.currentBatchRows
   }
@@ -112,7 +111,7 @@ export default class StreamProcessor {
 
 
   protected async deleteCleaningValue(value: string): Promise<void> {
-    log_debug(`Cleaning column: deleting based on ${value}`)
+    log_info(`[${this.meta.prop}]: cleaning column: deleting based on ${value}`)
     if (this.meta.cleaningColumn) {
       const query = `ALTER
                      TABLE
@@ -132,14 +131,14 @@ export default class StreamProcessor {
 
   protected async finalizeBatchProcessing(): Promise<void> {
     if (this.isReplacingMergeTree()) {
-      log_info("removing root duplicates")
+      log_info(`[${this.meta.prop}]: removing root duplicates`)
       await this.clickhouse.runQuery(`OPTIMIZE TABLE ${this.meta.sqlTableName} FINAL`)
 
-      log_info("removing children orphans")
+      log_info(`[${this.meta.prop}]: removing children orphans`)
       await Promise.all(this.meta.children.map(
         (child) => this.deleteChildDuplicates(child)))
     }
-    log_info("ensuring PK integrity is maintained")
+    log_info(`[${this.meta.prop}]: ensuring PK integrity is maintained`)
     await this.assertPKIntegrity(this.meta)
   }
 
@@ -174,8 +173,15 @@ export default class StreamProcessor {
     return this.meta.pkMappings.size > 0
   }
 
+  private printInsertRecordsStats(): this {
+    if (this.currentBatchRows) {
+      log_info(`[${this.meta.prop}]: inserted ${this.currentBatchRows} records (${this.currentBatchSize} bytes)`)
+    }
+    return this
+  }
 
-  public async saveNewRecords(): Promise<StreamProcessor> {
+
+  public async saveNewRecords(): Promise<this> {
     const asyncPipeline = util.promisify(pipeline)
 
     if (this.recordProcessor) {
@@ -215,7 +221,7 @@ export default class StreamProcessor {
         })
       }))
     }
-    return this
+    return this.printInsertRecordsStats()
   }
 
   protected async retrieveMaxRecordVersion() {

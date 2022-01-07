@@ -29,7 +29,7 @@ async function processSchemaMessage(msg: SchemaMessageContent, config: Config): 
   const queries = translateCH(ch.getDatabase(), meta)
 
   if (config.streamToReplace.includes(meta.prop)) {
-    log_info(`[${meta.prop}]: recreating all tables`)
+    log_info(`[${meta.prop}]: dropping root and children tables`)
     await Promise.all(dropStreamTablesQueries(meta).map(async (query) => ch.runQuery(query)))
   }
 
@@ -46,7 +46,7 @@ If you wish to update schemas, run with --update-schemas <schema>.`)
       }
     }))
   } else {
-    log_info(`Creating tables for schema [${msg.stream}]`)
+    log_info(`[${meta.prop}]: creating tables`)
     await Promise.all(queries.map(ch.runQuery.bind(ch)))
   }
   return new StreamProcessor(meta, config).prepareStreamProcessing(msg.cleanFirst)
@@ -84,7 +84,7 @@ type StreamProcessors = Map<string, StreamProcessor>
 export async function processStream(stream: Readable, config: Config) {
 
   stream.on("error", (err: any) => {
-    log_fatal(err.message)
+    log_fatal(`${err.message}`)
     throw new Error(`READ ERROR ${err}`)
   })
 
