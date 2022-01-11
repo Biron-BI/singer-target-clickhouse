@@ -51,9 +51,7 @@ export default class RecordProcessor {
     if (this.fields.size > 0) {
       const query = `INSERT INTO ${tableToInsertTo} FORMAT JSONCompactEachRow`
       const stream: Readable = new Readable({
-        // eslint-disable-next-line @typescript-eslint/no-empty-function
-        objectMode: true, read(size) {
-        },
+        objectMode: true
       })
 
       Range(0, this.values.size, this.fields.size).toList().map((idx) => stream.push(`[${this.values.slice(idx, this.fields.size + idx).map(jsonToJSONCompactEachRow).join(",")}]`))
@@ -129,13 +127,7 @@ export default class RecordProcessor {
       .concat(fillIf("`_root_ver`", !isRoot))
   }
 
-  /**
-   *
-   * @param data
-   * @param pkValues all current pkValues of parent (key_properties + level indexes)
-   * @param version to add root_ver
-   * @private
-   */
+  // Extract value for all simple columns in a record
   private buildSQLInsertValues = (
     data: Record<string, any>,
     pkValues: List<any> = List(),

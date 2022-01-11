@@ -17,13 +17,13 @@ export class JsonSchemaInspectorContext {
   constructor(
     public readonly alias: string,
     public readonly schema: IExtendedJSONSchema7,
-    public readonly key_properties: List<string>, // For current level. Only root has if all_key_properties isn't defined
+    public readonly keyProperties: List<string>, // For current level. Only root has if all_key_properties isn't defined
     public readonly parentCtx?: JsonSchemaInspectorContext,
     public readonly level: number = 0,
     public readonly tableName = JsonSchemaInspectorContext.defaultTableName(alias, parentCtx),
     public readonly cleaningColumn?: string,
     // Optional config to know all key properties at this level and lower. Used to compute _parent_... fields
-    public readonly all_key_properties: SchemaKeyProperties = {props: List(), children: Map()},
+    public readonly allKeyProperties: SchemaKeyProperties = {props: List(), children: Map()},
   ) {
   }
 
@@ -95,34 +95,25 @@ const buildMetaPkProp = (prop: string, ctx: JsonSchemaInspectorContext, pkType: 
   pkType,
 })
 
-function buildMetaPkProps(ctx: JsonSchemaInspectorContext): List<PkMap> {
-  if (ctx.isRoot()) {
-    return ctx.key_properties.map((prop => buildMetaPkProp(prop, ctx, PKType.CURRENT)))
-  } else {
-    return List<PkMap>()
-      // Append '_root_X'
-      .concat(ctx.getRootContext().key_properties.map((prop => buildMetaPkProp(prop, ctx.getRootContext(), PKType.ROOT, formatRootPKColumn))))
-      // Append '_parent_X' if parent has 'all_key_properties' filled with props
-      // Parent Ctx is defined here
-      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-      .concat(!ctx.parentCtx?.all_key_properties?.props.isEmpty() ? ctx.parentCtx!.key_properties.map((prop => buildMetaPkProp(prop, ctx.parentCtx!, PKType.PARENT, formatParentPKColumn))) : [])
-      // Append 'X' if defined
-      .concat(ctx.key_properties.map((prop => buildMetaPkProp(prop, ctx, PKType.CURRENT))))
-
-
-      // Append 'level_N_index' columns
-      .concat(Range(0, ctx.level).map((value) => {
-        const prop = formatLevelIndexColumn(value)
-        return {
-          prop,
-          sqlIdentifier: escapeIdentifier(prop),
-          chType: "Int32",
-          nullable: false,
-          pkType: PKType.LEVEL
-        } as PkMap
-      }).toList())
-  }
-}
+const buildMetaPkProps = (ctx: JsonSchemaInspectorContext): List<PkMap> => List<PkMap>()
+  // Append '_root_X'
+  .concat(ctx.isRoot() ? List<PkMap>() : ctx.getRootContext().keyProperties.map((prop => buildMetaPkProp(prop, ctx.getRootContext(), PKType.ROOT, formatRootPKColumn))))
+  // Append '_parent_X' if parent has 'all_key_properties' filled with props
+  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+  .concat(!ctx.parentCtx?.allKeyProperties?.props.isEmpty() ? ctx.parentCtx?.keyProperties.map((prop => buildMetaPkProp(prop, ctx.parentCtx!, PKType.PARENT, formatParentPKColumn))) ?? List<PkMap>() : List<PkMap>())
+  // Append 'X' if defined
+  .concat(ctx.keyProperties.map((prop => buildMetaPkProp(prop, ctx, PKType.CURRENT))))
+  // Append 'level_N_index' columns
+  .concat(Range(0, ctx.level).map((value) => {
+    const prop = formatLevelIndexColumn(value)
+    return {
+      prop,
+      sqlIdentifier: escapeIdentifier(prop),
+      chType: "Int32",
+      nullable: false,
+      pkType: PKType.LEVEL
+    } as PkMap
+  }).toList())
 
 // transform a schema to a data structure with metadata for Clickhouse (types, primary keys, nullable, ...)
 export const buildMeta = (ctx: JsonSchemaInspectorContext): ISourceMeta => ({
@@ -136,7 +127,7 @@ export const buildMeta = (ctx: JsonSchemaInspectorContext): ISourceMeta => ({
 // flatten 1..1 relation properties into the current level
 function flattenNestedObject(propDef: IExtendedJSONSchema7, key: string, ctx: JsonSchemaInspectorContext) {
   const nestedSchema = {
-    type: "object" as JSONSchema7TypeName, // ts is dumb
+    type: "object" as JSONSchema7TypeName,
     properties: {} as Record<string, JSONSchema7Definition>,
   }
   Object.entries(propDef.properties ?? {}).forEach(([nestedKey, nestedPropDef]) => {
@@ -156,12 +147,12 @@ function flattenNestedObject(propDef: IExtendedJSONSchema7, key: string, ctx: Js
 const createSubTable = (propDef: IExtendedJSONSchema7, key: string, ctx: JsonSchemaInspectorContext): ISourceMeta => buildMeta(new JsonSchemaInspectorContext(
   key,
   (propDef.items || {type: "string"}) as IExtendedJSONSchema7,
-  ctx.all_key_properties.children.get(key)?.props ?? List(),
+  ctx.allKeyProperties.children.get(key)?.props ?? List(),
   ctx,
   ctx.level + 1,
   undefined,
   undefined,
-  ctx.all_key_properties.children.get(key),
+  ctx.allKeyProperties.children.get(key),
 ))
 
 type MetaProps = { children: List<ISourceMeta>, simpleColumnMappings: List<ColumnMap> }
@@ -169,7 +160,7 @@ type MetaProps = { children: List<ISourceMeta>, simpleColumnMappings: List<Colum
 function buildMetaProps(ctx: JsonSchemaInspectorContext): MetaProps {
   if (ctx.isTypeObject()) {
     return Object.entries(ctx.schema.properties ?? {})
-      .filter(([key]) => !ctx.key_properties.includes(key)) // Exclude values already handled in PK
+      .filter(([key]) => !ctx.keyProperties.includes(key)) // Exclude values already handled in PK
       .reduce((acc: MetaProps, [key, propDef]) => {
         if (typeof propDef === "boolean") {
           throwError(ctx, "propDef as boolean not supported")
@@ -248,10 +239,7 @@ function getSimpleColumnType(ctx: JsonSchemaInspectorContext, key?: string): ISi
   } : undefined
 }
 
-/**
- * according to https://github.com/salviadev/phoenixdoc/wiki/JSON-Schema-Summary
- * @returns string if found, otherwise undefined, can throw error
- */
+// From a JSON Schema type, return Clickhouse type
 export function getSimpleColumnSqlType(ctx: JsonSchemaInspectorContext, propDef: IExtendedJSONSchema7, key?: string): string | undefined {
   const type = excludeNullFromArray(propDef.type).get(0)
   const format = propDef.format

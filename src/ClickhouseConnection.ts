@@ -22,7 +22,8 @@ interface ICHQueryResult {
 
 export default class ClickhouseConnection {
 
-  constructor(private connInfo: IConfig) {}
+  constructor(private connInfo: IConfig) {
+  }
 
   private connection: any
 
@@ -39,7 +40,6 @@ export default class ClickhouseConnection {
   }
 
   // Produces formatted create table query ready to be compared
-  // Example: CREATE TABLE db.table ( `idx` Int32, `id` Int32, `value` String, `_root_ver` UInt64 ) ENGINE = MergeTree ORDER BY (idx, id)
   public async describeCreateTable(table: string): Promise<string> {
     return List<string>((await this.runQuery(`SHOW CREATE TABLE ${table}`))
       .data[0][0]
@@ -64,7 +64,7 @@ export default class ClickhouseConnection {
       })
 
       return new Promise((resolve, reject) => {
-        this.connection.query("SELECT 1", (err: Error, data: any) => {
+        this.connection.query("SELECT 1", (err: Error) => {
           if (err) {
             this.connection = undefined
             reject(err)
@@ -105,14 +105,14 @@ export default class ClickhouseConnection {
 
   // https://github.com/apla/node-clickhouse/blob/HEAD/README.md#inserting-with-stream
   public async createWriteStream(query: string, callback: (err: Error, result: any) => any): Promise<Writable> {
-    const conn = await this.connectionPool();
+    const conn = await this.connectionPool()
 
     log_debug(`building stream to query sql ${query}`)
 
     try {
-      return conn.query(query, {omitFormat: true}, callback);
+      return conn.query(query, {omitFormat: true}, callback)
     } catch (err) {
-      throw ono("ch stream failed", err);
+      throw ono("ch stream failed", err)
     }
   }
 }

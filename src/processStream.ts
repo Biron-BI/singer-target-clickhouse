@@ -20,12 +20,12 @@ async function processSchemaMessage(msg: SchemaMessage, config: Config): Promise
   const meta = buildMeta(new JsonSchemaInspectorContext(
     msg.stream,
     msg.schema,
-    msg.key_properties,
+    msg.keyProperties,
     undefined,
     undefined,
     undefined,
     msg.cleaningColumn,
-    msg.all_key_properties
+    msg.allKeyProperties
   ))
   const queries = translateCH(ch.getDatabase(), meta)
 
@@ -43,7 +43,7 @@ async function processSchemaMessage(msg: SchemaMessage, config: Config): Promise
         throw new Error(`Schema modification detected.
 Current:  ${currentTable}
 New:      ${newTable}
-If you wish to update schemas, run with --update-schemas <schema>.`)
+If you wish to update schemas, run with --update-streams <stream>.`)
       }
     }))
   } else {
@@ -95,7 +95,6 @@ export async function processStream(stream: Readable, config: Config) {
 
   const streamProcessors = (await reduce(processLine, Map<string, StreamProcessor>(), rl, config))
 
-  // concurrent version does not work correctly for some reason : await Promise.all(streamProcessors.map(async (processor) => processor.doneProcessing()))
   for await (const processor of streamProcessors.toList().toArray()) {
     await processor.doneProcessing()
   }

@@ -15,7 +15,6 @@ import SchemaTranslator from "./SchemaTranslator"
 // To handle overall ingestion
 export default class StreamProcessor {
 
-  // Will contain all values used to clear data based on 'cleaningColumn'
   private readonly clickhouse: ClickhouseConnection
 
   public constructor(
@@ -25,17 +24,10 @@ export default class StreamProcessor {
     private readonly currentBatchRows: number = 0,
     private readonly currentBatchSize: number = 0,
     private readonly maxVer: number = -1,
-    private readonly cleaningValues: Set<string> = Set(),
+    private readonly cleaningValues: Set<string> = Set(), // All values used to clear data based on 'cleaningColumn'
+
   ) {
     this.clickhouse = new ClickhouseConnection(config)
-    // this.maxVer = maxVer ?? await this.retrieveMaxRecordVersion() // lacking a 'late init' feature
-  }
-
-  /**
-   * Returns true if main table has any column
-   */
-  public hasColumns(): boolean {
-    return this.meta && (!this.meta.simpleColumnMappings.isEmpty() || !this.meta.pkMappings.isEmpty())
   }
 
   public clearIngestion() {
@@ -113,7 +105,7 @@ export default class StreamProcessor {
   protected async deleteCleaningValue(value: string): Promise<void> {
     if (!this.meta.cleaningColumn) {
       log_warning(`[${this.meta.prop}]: unexpected request to clean values: cleaning column undefined`)
-      return;
+      return
     }
 
     const cleaningColumnMeta = this.meta.simpleColumnMappings.find((column) => column.prop === this.meta.cleaningColumn)
@@ -142,16 +134,14 @@ export default class StreamProcessor {
       await this.clickhouse.runQuery(`OPTIMIZE TABLE ${this.meta.sqlTableName} FINAL`)
 
       log_info(`[${this.meta.prop}]: removing children orphans`)
-      await Promise.all(this.meta.children.map(
-        (child) => this.deleteChildDuplicates(child)))
+      await Promise.all(this.meta.children.map((child) => this.deleteChildDuplicates(child)))
     }
     log_info(`[${this.meta.prop}]: ensuring PK integrity is maintained`)
     await this.assertPKIntegrity(this.meta)
   }
 
   private async deleteChildDuplicates(currentNode: ISourceMeta) {
-    // currentNode = child node
-    // this.meta = root node
+    // this.meta always refer to root node
 
     const query = `ALTER
                    TABLE
@@ -173,9 +163,8 @@ export default class StreamProcessor {
     await Promise.all(currentNode.children.map(this.deleteChildDuplicates.bind(this)))
   }
 
-  /**
-   Returns true if conditions were met to create a replacing merge tree
-   */
+
+  // returns true if conditions were met to create a replacing merge tree
   private isReplacingMergeTree(): boolean {
     return this.meta.pkMappings.size > 0
   }

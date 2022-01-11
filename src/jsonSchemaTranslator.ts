@@ -11,7 +11,6 @@ export function extractValue(data: { [k: string]: any }, mapping: ColumnMap | Pk
   return translator.extractValue(v)
 }
 
-
 function resolveVersionColumn(isRoot: boolean, hasPkMappings: boolean): string {
   if (isRoot) {
     // We add a versioning column when we want to handle duplicate: for root tables with PK
@@ -31,7 +30,7 @@ const resolveEngine = (isRoot: boolean, hasPkMappings: boolean): string => isRoo
 const resolveOrderBy = (meta: ISourceMeta): string => `${meta.pkMappings.size > 1 ? '(' : ''}${meta.pkMappings.size > 0 ? meta.pkMappings.map((elem) => elem.sqlIdentifier).join(", ") : "tuple()"}${meta.pkMappings.size > 1 ? ')' : ''}`
 
 // From the schema inspection we build the query to create table in Clickhouse.
-// Must respect the SHOW CREATE TABLE syntax as we will use it to ensure schema didn't change
+// Must respect the SHOW CREATE TABLE syntax as we also use it to ensure schema didn't change
 export function translateCH(database: string, meta: ISourceMeta, parentMeta?: ISourceMeta, rootMeta?: ISourceMeta): List<string> {
   if (meta.simpleColumnMappings.isEmpty() && meta.pkMappings.isEmpty()) {
     throw new Error("Attempting to create table without columns")

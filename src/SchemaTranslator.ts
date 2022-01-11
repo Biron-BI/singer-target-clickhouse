@@ -1,13 +1,5 @@
 import {ColumnMap, PkMap} from "./jsonSchemaInspector"
 
-function isoDate(d: Date) {
-  // Handle time zone
-  d.getTimezoneOffset();
-  d = new Date(d.getTime() - (d.getTimezoneOffset() * 60 * 1000))
-
-  return d.toISOString().substring(0, ("YYYY-MM-DD".length));
-}
-
 type Value = any
 
 export default class SchemaTranslator {
@@ -37,23 +29,6 @@ export default class SchemaTranslator {
   }
 
   extractString(v: Value): string {
-    // Excel date may be either an actual date or the number of days since 01-01-1900
-    if (this.mapping.typeFormat === "x-excel-date") {
-      // We start by checking if it is an actual date
-      if (String(v).match(/^(\d{4})-(\d{2})-(\d{2})$/) !== null) {
-        return String(v);
-      }
-      const value = parseInt(v);
-      if (isNaN(value)) {
-        throw new Error(`Could not parse excel date: ${v}`)
-      }
-
-      const date = new Date(0);
-      const offset = 25567; // Number of days between 01-01-1900 and 01-01-1970
-      date.setDate(date.getDate() + parseInt(v) - offset);
-
-      return isoDate(date);
-    }
     return String(v);
   }
 
