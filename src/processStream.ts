@@ -1,6 +1,6 @@
 import * as readline from 'readline'
-import {List, Map} from "immutable"
-import {log_debug, log_fatal, log_info, MessageContent, MessageType, SchemaMessageContent} from "singer-node"
+import {Map} from "immutable"
+import {log_debug, log_fatal, log_info, MessageType, parse_message, SchemaMessage} from "singer-node"
 import {Readable} from "stream"
 import ClickhouseConnection from "./ClickhouseConnection"
 import {buildMeta, escapeIdentifier, JsonSchemaInspectorContext} from "./jsonSchemaInspector"
@@ -14,17 +14,18 @@ function unescape(query?: string) {
   return query?.replace(/`/g, "")
 }
 
-async function processSchemaMessage(msg: SchemaMessageContent, config: Config): Promise<StreamProcessor> {
+async function processSchemaMessage(msg: SchemaMessage, config: Config): Promise<StreamProcessor> {
   const ch = new ClickhouseConnection(config)
 
   const meta = buildMeta(new JsonSchemaInspectorContext(
     msg.stream,
     msg.schema,
-    List(msg.key_properties),
+    msg.key_properties,
     undefined,
     undefined,
     undefined,
-    msg.cleaningColumn
+    msg.cleaningColumn,
+    msg.all_key_properties
   ))
   const queries = translateCH(ch.getDatabase(), meta)
 
@@ -53,7 +54,7 @@ If you wish to update schemas, run with --update-schemas <schema>.`)
 }
 
 async function processLine(line: string, config: Config, streamProcessors: Map<string, StreamProcessor>): Promise<Map<string, StreamProcessor>> {
-  const msg: MessageContent = JSON.parse(line)
+  const msg = parse_message(line)
 
   switch (msg.type) {
     case MessageType.schema:

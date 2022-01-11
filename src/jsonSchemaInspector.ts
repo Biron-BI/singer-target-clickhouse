@@ -1,4 +1,4 @@
-import {ExtendedJSONSchema7, log_warning} from "singer-node"
+import {ExtendedJSONSchema7, log_warning, SchemaKeyProperties} from "singer-node"
 import {List, Map, Range} from "immutable"
 import {JSONSchema7Definition, JSONSchema7TypeName} from "json-schema"
 import {asArray} from "./utils"
@@ -10,11 +10,6 @@ const sha1 = require('sha1')
 export interface IExtendedJSONSchema7 extends ExtendedJSONSchema7 {
   decimals?: number;
   precision?: number;
-}
-
-export interface SchemaKeyProperties {
-  props: List<string>
-  children: Map<string, SchemaKeyProperties>
 }
 
 export class JsonSchemaInspectorContext {
@@ -64,9 +59,17 @@ export interface IColumnMapping {
 
 export type ColumnMap = IColumnMapping & ISimpleColumnType;
 
+export enum PKType {
+  ROOT,
+  PARENT,
+  CURRENT,
+  LEVEL,
+}
+
 export interface IPKMapping {
   prop: string;
   sqlIdentifier: string;
+  pkType: PKType
 }
 
 export type PkMap = IPKMapping & ISimpleColumnType;
@@ -84,24 +87,29 @@ export const formatLevelIndexColumn = (level: number) => `_level_${level}_index`
 export const formatRootPKColumn = (prop: string) => `_root_${prop}`
 export const formatParentPKColumn = (prop: string) => `_parent_${prop}`
 
-const buildMetaPkProp = (prop: string, ctx: JsonSchemaInspectorContext, fieldFormatter?: (v: string) => string): PkMap => ({
+const buildMetaPkProp = (prop: string, ctx: JsonSchemaInspectorContext, pkType: PKType, fieldFormatter?: (v: string) => string): PkMap => ({
   prop,
   sqlIdentifier: escapeIdentifier(fieldFormatter?.(prop) ?? prop),
   ...getSimpleColumnType(ctx, prop),
   nullable: false,
+  pkType,
 })
 
 function buildMetaPkProps(ctx: JsonSchemaInspectorContext): List<PkMap> {
   if (ctx.isRoot()) {
-    return ctx.key_properties.map((prop => buildMetaPkProp(prop, ctx)))
+    return ctx.key_properties.map((prop => buildMetaPkProp(prop, ctx, PKType.CURRENT)))
   } else {
     return List<PkMap>()
       // Append '_root_X'
-      .concat(ctx.getRootContext().key_properties.map((prop => buildMetaPkProp(prop, ctx.getRootContext(), formatRootPKColumn))))
+      .concat(ctx.getRootContext().key_properties.map((prop => buildMetaPkProp(prop, ctx.getRootContext(), PKType.ROOT, formatRootPKColumn))))
       // Append '_parent_X' if parent has 'all_key_properties' filled with props
       // Parent Ctx is defined here
       // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-      .concat(!ctx.parentCtx?.all_key_properties?.props.isEmpty() ? ctx.parentCtx!.key_properties.map((prop => buildMetaPkProp(prop, ctx.parentCtx!, formatParentPKColumn))) : [])
+      .concat(!ctx.parentCtx?.all_key_properties?.props.isEmpty() ? ctx.parentCtx!.key_properties.map((prop => buildMetaPkProp(prop, ctx.parentCtx!, PKType.PARENT, formatParentPKColumn))) : [])
+      // Append 'X' if defined
+      .concat(ctx.key_properties.map((prop => buildMetaPkProp(prop, ctx, PKType.CURRENT))))
+
+
       // Append 'level_N_index' columns
       .concat(Range(0, ctx.level).map((value) => {
         const prop = formatLevelIndexColumn(value)
@@ -110,6 +118,7 @@ function buildMetaPkProps(ctx: JsonSchemaInspectorContext): List<PkMap> {
           sqlIdentifier: escapeIdentifier(prop),
           chType: "Int32",
           nullable: false,
+          pkType: PKType.LEVEL
         } as PkMap
       }).toList())
   }
@@ -160,7 +169,7 @@ type MetaProps = { children: List<ISourceMeta>, simpleColumnMappings: List<Colum
 function buildMetaProps(ctx: JsonSchemaInspectorContext): MetaProps {
   if (ctx.isTypeObject()) {
     return Object.entries(ctx.schema.properties ?? {})
-      .filter(([key]) => !ctx.isRoot() || !ctx.key_properties.includes(key))
+      .filter(([key]) => !ctx.key_properties.includes(key)) // Exclude values already handled in PK
       .reduce((acc: MetaProps, [key, propDef]) => {
         if (typeof propDef === "boolean") {
           throwError(ctx, "propDef as boolean not supported")

@@ -1,4 +1,3 @@
-// import SchemaTranslator from "SchemaTranslator"
 import {List} from "immutable"
 import {ColumnMap, ISourceMeta, PkMap} from "./jsonSchemaInspector"
 import SchemaTranslator from "./SchemaTranslator"
@@ -45,7 +44,6 @@ export function translateCH(database: string, meta: ISourceMeta, parentMeta?: IS
       return `${mapping.sqlIdentifier} ${type}`
     }))
     .push(resolveVersionColumn(isNodeRoot, meta.pkMappings.size > 0))
-
 
   return List<string>()
     .push(`CREATE TABLE ${database}.${meta.sqlTableName} ( ${createDefs.filter(Boolean).join(", ")} ) ENGINE = ${resolveEngine(isNodeRoot, meta.pkMappings.size > 0)} ORDER BY ${resolveOrderBy(meta)}`)

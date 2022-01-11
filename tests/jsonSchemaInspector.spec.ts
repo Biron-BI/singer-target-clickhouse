@@ -1,12 +1,7 @@
 import {strict as assert} from 'assert'
-import {
-  buildMeta,
-  getSimpleColumnSqlType,
-  IExtendedJSONSchema7,
-  JsonSchemaInspectorContext,
-  SchemaKeyProperties,
-} from "../src/jsonSchemaInspector"
+import {buildMeta, getSimpleColumnSqlType, IExtendedJSONSchema7, JsonSchemaInspectorContext} from "../src/jsonSchemaInspector"
 import {List, Map} from "immutable"
+import {SchemaKeyProperties} from "singer-node"
 
 const simpleSchema: IExtendedJSONSchema7 = {
   "properties": {
@@ -118,6 +113,9 @@ const deepNestedArrayObjectSchema: IExtendedJSONSchema7 = {
                 john_id: {
                   type: "number"
                 },
+                "name": {
+                  type: "string"
+                }
               },
               type: "object"
             },
@@ -203,27 +201,36 @@ describe("JSON Schema Inspector", () => {
   })
 
   it("should handle deep nested array of nested object with specifying childrenPK", () => {
-    const res = buildMeta(new JsonSchemaInspectorContext("audits", deepNestedArrayObjectSchema, List(["id"]), undefined, undefined, undefined, undefined,
-      {
-        props: List(["id"]),
-        children: Map<string, SchemaKeyProperties>().set("bill_fields", {
-          props: List(["bill_id"]),
-          children: Map<string, SchemaKeyProperties>().set("john_fields", {
-            props: List(["john_id"]),
-            children: Map()
-          })
+    const all_key_properties = {
+      props: List(["id"]),
+      children: Map<string, SchemaKeyProperties>().set("bill_fields", {
+        props: List(["bill_id"]),
+        children: Map<string, SchemaKeyProperties>().set("john_fields", {
+          props: List(["john_id"]),
+          children: Map()
         })
-      }))
+      })
+    }
+    // console.log(JSON.stringify(all_key_properties, null, 2))
+    // throw 1
+    const res = buildMeta(new JsonSchemaInspectorContext("audits", deepNestedArrayObjectSchema, List(["id"]), undefined, undefined, undefined, undefined, all_key_properties
+      ))
     assert.equal(res.children.get(0)?.sqlTableName, "`audits__bill_fields`")
     assert.equal(res.children.get(0)?.pkMappings.get(0)?.sqlIdentifier, "`_root_id`")
     assert.equal(res.children.get(0)?.pkMappings.get(1)?.sqlIdentifier, "`_parent_id`")
-    assert.equal(res.children.get(0)?.pkMappings.get(2)?.sqlIdentifier, "`_level_0_index`")
+    assert.equal(res.children.get(0)?.pkMappings.get(2)?.sqlIdentifier, "`bill_id`")
+    assert.equal(res.children.get(0)?.pkMappings.get(3)?.sqlIdentifier, "`_level_0_index`")
 
     assert.equal(res.children.get(0)?.children.get(0)?.sqlTableName, "`audits__bill_fields__john_fields`")
     assert.equal(res.children.get(0)?.children.get(0)?.pkMappings.get(0)?.sqlIdentifier, "`_root_id`")
     assert.equal(res.children.get(0)?.children.get(0)?.pkMappings.get(1)?.sqlIdentifier, "`_parent_bill_id`")
-    assert.equal(res.children.get(0)?.children.get(0)?.pkMappings.get(2)?.sqlIdentifier, "`_level_0_index`")
-    assert.equal(res.children.get(0)?.children.get(0)?.pkMappings.get(3)?.sqlIdentifier, "`_level_1_index`")
+    assert.equal(res.children.get(0)?.children.get(0)?.pkMappings.get(2)?.sqlIdentifier, "`john_id`")
+    assert.equal(res.children.get(0)?.children.get(0)?.pkMappings.get(3)?.sqlIdentifier, "`_level_0_index`")
+    assert.equal(res.children.get(0)?.children.get(0)?.pkMappings.get(4)?.sqlIdentifier, "`_level_1_index`")
+
+    // PK should not be in simple columns
+    assert.equal(res.children.get(0)?.children.get(0)?.simpleColumnMappings.find((col) => col.prop === 'john_id'), undefined)
+    assert.notEqual(res.children.get(0)?.children.get(0)?.simpleColumnMappings.find((col) => col.prop === 'name'), undefined)
 
     assert.equal(res.children.get(0)?.children.get(0)?.children.get(0)?.sqlTableName, "`audits__bill_fields__john_fields__jack_fields`")
     assert.equal(res.children.get(0)?.children.get(0)?.children.get(0)?.pkMappings.get(0)?.sqlIdentifier, "`_root_id`")

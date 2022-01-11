@@ -1,12 +1,21 @@
 import {Readable} from "stream"
 import {List, Range} from "immutable"
-import {ISourceMeta} from "./jsonSchemaInspector"
+import {ISourceMeta, PKType} from "./jsonSchemaInspector"
 import {extractValue} from "./jsonSchemaTranslator"
+import {log_debug} from "singer-node"
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const get = require("lodash.get")
 
-type SourceMetaPK = ISourceMeta & { values: List<string | number> };
+type PKValue = string | number
+type PKValues = List<PKValue>
+
+type SourceMetaPK = {
+  rootValues: PKValues,
+  parentValues: PKValues,
+  values: PKValues,
+  levelValues: PKValues
+};
 
 // https://clickhouse.tech/docs/en/interfaces/formats/#jsoncompacteachrow
 export function jsonToJSONCompactEachRow(v: any) {
@@ -38,8 +47,8 @@ export default class RecordProcessor {
 
     const childResult = () => this.children.flatMap((child) => child.buildInsertQuery())
 
+    log_debug(`[${this.meta.prop}]: fields to insert = [${this.fields.join(",")}]`)
     if (this.fields.size > 0) {
-
       const query = `INSERT INTO ${tableToInsertTo} FORMAT JSONCompactEachRow`
       const stream: Readable = new Readable({
         // eslint-disable-next-line @typescript-eslint/no-empty-function
@@ -76,22 +85,30 @@ export default class RecordProcessor {
     // version start at max existing version + 1
     const resolvedRootVer = (isRoot && !this.meta.pkMappings.isEmpty()) ? maxVer + 1 : rootVer
 
-    // in children, we only add index to previous PKS
-    const pkValues = isRoot ? this.meta.pkMappings.map(pkMapping => extractValue(data, pkMapping)) : parentMeta?.values.push(indexInParent) ?? List()
+    // Check if stream ingestion required parentPK
+    const isWithParentPK = this.meta.pkMappings.find((pk) => pk.pkType === PKType.PARENT) !== undefined
 
-    const meAsParent: SourceMetaPK = {...this.meta, values: pkValues}
+    const pkValues: SourceMetaPK = {
+      rootValues: parentMeta?.rootValues.isEmpty() ? parentMeta.values : parentMeta?.rootValues ?? List(), // On first recursion we retrieve root pk from parentMeta
+      parentValues: parentMeta?.values ?? List(),
+      values: this.meta.pkMappings.filter((pkMap) => pkMap.pkType === PKType.CURRENT).map((pkMapping) => extractValue(data, pkMapping)),
+      levelValues: isRoot ? List () : parentMeta?.levelValues.push(indexInParent) ?? List()
+    }
 
     return new RecordProcessor(
       this.meta,
       this.buildSQLInsertField(this.meta, isRoot),
-      this.values.concat(this.buildSQLInsertValues(data, pkValues, resolvedRootVer)),
+      this.values.concat(this.buildSQLInsertValues(data,
+        pkValues.rootValues
+          .concat(isWithParentPK ? pkValues.parentValues : List())
+          .concat(pkValues.values)
+          .concat(pkValues.levelValues),
+        resolvedRootVer)),
       this.meta.children.map((child) => {
         const processor = this.children.find((elem) => elem.meta.sqlTableName === child.sqlTableName) ?? new RecordProcessor(child)
         const childData: List<Record<string, any>> = List(get(data, child.prop.split(".")))
         if (!childData.isEmpty()) {
-          return childData.reduce((acc, elem, idx) => {
-            return acc.pushRecord(elem, maxVer, meAsParent, resolvedRootVer, level + 1, idx)
-          }, processor)
+          return childData.reduce((acc, elem, idx) => acc.pushRecord(elem, maxVer, pkValues, resolvedRootVer, level + 1, idx), processor)
         }
         return processor
       }),

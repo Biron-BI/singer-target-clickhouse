@@ -2,7 +2,7 @@
 
 import {ono} from "ono"
 import {pipeline, Transform} from "stream"
-import {log_debug, log_fatal, log_info} from "singer-node"
+import {log_debug, log_fatal, log_info, log_warning} from "singer-node"
 import {List, Set} from "immutable"
 import ClickhouseConnection from "./ClickhouseConnection"
 import {formatRootPKColumn, ISourceMeta, PkMap} from "./jsonSchemaInspector"
@@ -10,6 +10,7 @@ import {Config} from "./Config"
 import {escapeValue} from "./utils"
 import RecordProcessor from "./RecordProcessor"
 import * as util from "util"
+import SchemaTranslator from "./SchemaTranslator"
 
 // To handle overall ingestion
 export default class StreamProcessor {
@@ -109,19 +110,25 @@ export default class StreamProcessor {
     )
   }
 
-
   protected async deleteCleaningValue(value: string): Promise<void> {
-    log_info(`[${this.meta.prop}]: cleaning column: deleting based on ${value}`)
-    if (this.meta.cleaningColumn) {
-      const query = `ALTER
-                     TABLE
-                     ${this.meta.sqlTableName}
-                     DELETE
-                     WHERE \`${this.meta.cleaningColumn}\` = '${escapeValue(value)}'`
-      await this.clickhouse.runQuery(query)
-    } else {
-      throw new Error("Trying to delete based on cleaning column but it is undefined")
+    if (!this.meta.cleaningColumn) {
+      log_warning(`[${this.meta.prop}]: unexpected request to clean values: cleaning column undefined`)
+      return;
     }
+
+    const cleaningColumnMeta = this.meta.simpleColumnMappings.find((column) => column.prop === this.meta.cleaningColumn)
+    if (!cleaningColumnMeta) {
+      throw new Error(`[${this.meta.prop}] could not resolve cleaning column meta (looking for ${this.meta.cleaningColumn})`)
+    }
+    const resolvedValue = new SchemaTranslator(cleaningColumnMeta).extractValue(value)
+    log_info(`[${this.meta.prop}]: cleaning column: deleting based on ${resolvedValue}`)
+
+    const query = `ALTER
+                   TABLE
+                   ${this.meta.sqlTableName}
+                   DELETE
+                   WHERE \`${this.meta.cleaningColumn}\` = '${escapeValue(value)}'`
+    await this.clickhouse.runQuery(query)
   }
 
   async clearTables(): Promise<void> {
@@ -185,11 +192,9 @@ export default class StreamProcessor {
     const asyncPipeline = util.promisify(pipeline)
 
     if (this.recordProcessor) {
-      log_debug(`fields for ${this.meta.prop}: ${this.recordProcessor.fields.join(",")}`)
       const queries = await this.recordProcessor.buildInsertQuery()
       await Promise.all(queries.map(async (query) => {
 
-        // fixme
         // eslint-disable-next-line no-async-promise-executor
         return new Promise(async (resolve, reject) => {
           const writeStream = await this.clickhouse.createWriteStream(query.baseQuery, (err, result) => {

@@ -1,5 +1,5 @@
 import {strict as assert} from 'assert'
-import {ISourceMeta} from "../src/jsonSchemaInspector"
+import {ISourceMeta, PKType} from "../src/jsonSchemaInspector"
 import {List} from "immutable"
 import {listTableNames, translateCH} from "../src/jsonSchemaTranslator"
 
@@ -38,7 +38,8 @@ const metaWithPK: ISourceMeta = {
     sqlIdentifier: "`id`",
     chType: "UInt32",
     type: "integer",
-    nullable: false
+    nullable: false,
+    pkType: PKType.ROOT,
   }]),
   simpleColumnMappings: List([{
     nullable: true,
@@ -58,7 +59,8 @@ const metaWithPKAndChildren: ISourceMeta = {
     sqlIdentifier: "`id`",
     chType: "UInt32",
     type: "integer",
-    nullable: false
+    nullable: false,
+    pkType: PKType.ROOT,
   }]),
   simpleColumnMappings: List([{
     nullable: true,

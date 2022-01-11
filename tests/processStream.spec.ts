@@ -49,6 +49,14 @@ describe("processStream - Schemas", () => {
     assert.equal(execResult.output.includes("tickets__custom_fields"), true)
   }).timeout(30000)
 
+  it('should create schemas which specifiesPK', async () => {
+    await processStream(fs.createReadStream("./tests/data/stream_schema_with_all_pk.jsonl"), connInfo)
+    let execResult = await runChQueryInContainer(container, connInfo, `describe table ${connInfo.database}.tickets__follower_ids`)
+    const rows = execResult.output.split("\n")
+    assert.equal(rows[0].includes("_root_id"), true)
+    assert.equal(rows[1].includes("_parent_id"), true)
+    assert.equal(rows[2].includes("_level_0_index"), true)
+  }).timeout(30000)
 
   it('should do nothing if schemas already exists', async () => {
     await processStream(fs.createReadStream("./tests/data/stream_1.jsonl"), connInfo)
@@ -142,6 +150,35 @@ describe("processStream - Records", () => {
 
 
   }).timeout(60000)
+
+  it('should handle record when schema specifiesPK', async () => {
+    await processStream(fs.createReadStream("./tests/data/stream_short_with_all_pk.jsonl"), connInfo)
+    let execResult = await runChQueryInContainer(container, connInfo, `describe table ${connInfo.database}.tickets__follower_ids`)
+    const rows = execResult.output.split("\n")
+    assert.equal(rows[0].includes("_root_id"), true)
+    assert.equal(rows[1].includes("_parent_id"), true)
+    assert.equal(rows[2].includes("_level_0_index"), true)
+
+    execResult = await runChQueryInContainer(container, connInfo, `select count() from \`tickets\``)
+    assert.equal(execResult.output, '1\n')
+    execResult = await runChQueryInContainer(container, connInfo, `select count() from \`tickets__follower_ids\``)
+    assert.equal(execResult.output, '2\n')
+  }).timeout(30000)
+
+  it('should handle record when schema specifies complex PK', async () => {
+    await processStream(fs.createReadStream("./tests/data/stream_short_with_all_pk2.jsonl"), connInfo)
+    let execResult = await runChQueryInContainer(container, connInfo, `describe table ${connInfo.database}.tickets__follower_ids`)
+    const rows = execResult.output.split("\n")
+    assert.equal(rows[0].includes("_root_id"), true)
+    assert.equal(rows[1].includes("_parent_id"), true)
+    assert.equal(rows[2].includes("name"), true)
+    assert.equal(rows[3].includes("_level_0_index"), true)
+
+    execResult = await runChQueryInContainer(container, connInfo, `select count() from \`tickets\``)
+    assert.equal(execResult.output, '1\n')
+    execResult = await runChQueryInContainer(container, connInfo, `select count() from \`tickets__follower_ids\``)
+    assert.equal(execResult.output, '2\n')
+  }).timeout(30000)
 
 }).timeout(30000)
 

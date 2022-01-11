@@ -1,0 +1,2 @@
+{"type":"SCHEMA","stream":"tickets","schema":{"properties":{"id":{"type":["null","integer"]},"follower_ids":{"items":{"type":"object","properties":{"name":{"type":"string"}}},"type":["null","array"]}},"type":["null","object"]},"key_properties":["id"],"all_key_properties":{"props":["id"],"children":{"follower_ids":{"props":[],"children":{}}}}}
+{"type":"RECORD","stream":"tickets","record":{"id":23,"follower_ids":[{"name": "bill"},{"name": "burr"}]}}

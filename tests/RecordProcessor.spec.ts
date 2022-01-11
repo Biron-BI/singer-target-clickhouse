@@ -1,7 +1,7 @@
 import {List} from "immutable"
 import {strict as assert} from "assert"
 import RecordProcessor from "../src/RecordProcessor"
-import {ColumnMap, ISourceMeta, PkMap} from "../src/jsonSchemaInspector"
+import {ColumnMap, ISourceMeta, PkMap, PKType} from "../src/jsonSchemaInspector"
 import {streamToStrList} from "./helpers"
 
 // Represents an id column, for a PK for instance
@@ -11,6 +11,7 @@ const id: PkMap = {
   chType: "UInt32",
   type: "integer",
   nullable: false,
+  pkType: PKType.CURRENT,
 }
 
 // Represents an id column, for a PK for instance
@@ -20,6 +21,7 @@ const rootId: PkMap = {
   chType: "UInt32",
   type: "integer",
   nullable: false,
+  pkType: PKType.ROOT,
 }
 
 // Represents a name column, as a simple column
@@ -45,6 +47,7 @@ const levelColumn = (lvl: number): PkMap => ({
   chType: "UInt32",
   type: "integer",
   nullable: false,
+  pkType: PKType.LEVEL,
 })
 
 const metaWithPKAndChildren: ISourceMeta = {
