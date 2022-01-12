@@ -1,8 +1,10 @@
-import {Readable} from "stream"
-import {List, Range} from "immutable"
+import {pipeline, Readable, Transform} from "stream"
+import {List} from "immutable"
 import {ISourceMeta, PKType} from "./jsonSchemaInspector"
 import {extractValue} from "./jsonSchemaTranslator"
-import {log_debug} from "singer-node"
+import {log_debug, log_error, log_info} from "singer-node"
+import {fillIf} from "./utils"
+import ClickhouseConnection from "./ClickhouseConnection"
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const get = require("lodash.get")
@@ -32,35 +34,17 @@ export function jsonToJSONCompactEachRow(v: any) {
  * One node for one table
  */
 export default class RecordProcessor {
+  private readonly isWithParentPK: boolean
 
   constructor(
-    public readonly meta: ISourceMeta,
-    public readonly fields: List<string> = List(),
-    public readonly values: List<string | number> = List(),
-    public readonly children: List<RecordProcessor> = List(),
+    private readonly meta: ISourceMeta,
+    private readonly clickhouse: ClickhouseConnection,
+    private readonly children: List<RecordProcessor> = List(),
+    private readonly readStream?: Readable,
+    private readonly ingestionPromise?: Promise<void>,
   ) {
     this.meta = meta
-  }
-
-  public buildInsertQuery(): List<{ baseQuery: string, stream: Readable }> {
-    const tableToInsertTo: string = this.meta.sqlTableName
-
-    const childResult = () => this.children.flatMap((child) => child.buildInsertQuery())
-
-    log_debug(`[${this.meta.prop}]: fields to insert = [${this.fields.join(",")}]`)
-    if (this.fields.size > 0) {
-      const query = `INSERT INTO ${tableToInsertTo} FORMAT JSONCompactEachRow`
-      const stream: Readable = new Readable({
-        objectMode: true
-      })
-
-      Range(0, this.values.size, this.fields.size).toList().map((idx) => stream.push(`[${this.values.slice(idx, this.fields.size + idx).map(jsonToJSONCompactEachRow).join(",")}]`))
-
-      stream.push(null)
-      return List([{baseQuery: query, stream}])
-        .concat(childResult())
-    }
-    return childResult()
+    this.isWithParentPK = this.meta.pkMappings.find((pk) => pk.pkType === PKType.PARENT) !== undefined
   }
 
   /*
@@ -83,48 +67,91 @@ export default class RecordProcessor {
     // version start at max existing version + 1
     const resolvedRootVer = (isRoot && !this.meta.pkMappings.isEmpty()) ? maxVer + 1 : rootVer
 
-    // Check if stream ingestion required parentPK
-    const isWithParentPK = this.meta.pkMappings.find((pk) => pk.pkType === PKType.PARENT) !== undefined
-
     const pkValues: SourceMetaPK = {
       rootValues: parentMeta?.rootValues.isEmpty() ? parentMeta.values : parentMeta?.rootValues ?? List(), // On first recursion we retrieve root pk from parentMeta
       parentValues: parentMeta?.values ?? List(),
       values: this.meta.pkMappings.filter((pkMap) => pkMap.pkType === PKType.CURRENT).map((pkMapping) => extractValue(data, pkMapping)),
-      levelValues: isRoot ? List () : parentMeta?.levelValues.push(indexInParent) ?? List()
+      levelValues: isRoot ? List() : parentMeta?.levelValues.push(indexInParent) ?? List(),
     }
 
+    const ret = this.readStream ? this : this.startIngestion()
+
+    ret.readStream?.push(`[${this.buildSQLInsertValues(data,
+      pkValues.rootValues
+        .concat(ret.isWithParentPK ? pkValues.parentValues : List())
+        .concat(pkValues.values)
+        .concat(pkValues.levelValues),
+      resolvedRootVer).map(jsonToJSONCompactEachRow).join(",")}]`)
+
     return new RecordProcessor(
-      this.meta,
-      this.buildSQLInsertField(this.meta, isRoot),
-      this.values.concat(this.buildSQLInsertValues(data,
-        pkValues.rootValues
-          .concat(isWithParentPK ? pkValues.parentValues : List())
-          .concat(pkValues.values)
-          .concat(pkValues.levelValues),
-        resolvedRootVer)),
-      this.meta.children.map((child) => {
-        const processor = this.children.find((elem) => elem.meta.sqlTableName === child.sqlTableName) ?? new RecordProcessor(child)
+      ret.meta,
+      ret.clickhouse,
+      ret.meta.children.map((child) => {
+        const processor = ret.children.find((elem) => elem.meta.sqlTableName === child.sqlTableName) ?? new RecordProcessor(child, ret.clickhouse)
         const childData: List<Record<string, any>> = List(get(data, child.prop.split(".")))
         if (!childData.isEmpty()) {
           return childData.reduce((acc, elem, idx) => acc.pushRecord(elem, maxVer, pkValues, resolvedRootVer, level + 1, idx), processor)
         }
         return processor
       }),
+      ret.readStream,
+      ret.ingestionPromise,
     )
   }
 
-  // Fields that'll be inserted in the database
-  private buildSQLInsertField(meta: ISourceMeta, isRoot: boolean): List<string> {
-    if (this.fields.size > 0) {
-      return this.fields
-    }
+  public async endIngestion() {
+    this.readStream?.push(null)
 
-    return meta.pkMappings
+    await Promise.all(this.children.map((child) => child.endIngestion()))
+
+    await this.ingestionPromise
+  }
+
+  private buildSQLInsertField(): List<string> {
+    const isRoot = this.meta.pkMappings.find((pkMap) => pkMap.pkType === PKType.ROOT) === undefined
+    return this.meta.pkMappings
       .map((pkMap) => pkMap.sqlIdentifier)
-      .concat(meta.simpleColumnMappings
+      .concat(this.meta.simpleColumnMappings
         .map((cMap) => cMap.sqlIdentifier))
       .concat(fillIf("`_ver`", isRoot && !this.meta.pkMappings.isEmpty()))
       .concat(fillIf("`_root_ver`", !isRoot))
+  }
+
+  private startIngestion(): RecordProcessor {
+    const insertQuery = `INSERT INTO ${this.meta.sqlTableName} (${this.buildSQLInsertField().join(",")}) FORMAT JSONCompactEachRow`
+
+    const readStream = new Readable({
+      // eslint-disable-next-line @typescript-eslint/no-empty-function
+      objectMode: true, read() {
+      },
+    })
+
+
+    const transform: Transform = new Transform({
+        objectMode: true,
+        transform(chunk, encoding, callback) {
+          log_debug(`${insertQuery}: ${chunk}`)
+          this.push(chunk)
+          callback()
+        },
+      },
+    )
+
+
+    const promise = new Promise<void>((resolve, reject) => {
+      // We leave resolve and reject responsibility to insertion stream
+      const insertStream = this.clickhouse.createWriteStream(insertQuery, resolve, reject)
+      pipeline(readStream, transform, insertStream, (err) => {
+        if (err) {
+          log_error(`[${this.meta.prop}]: pipeline error: [${err.message}]`)
+          insertStream.destroy()
+        } else {
+          log_info(`[${this.meta.prop}]: pipeline ended`)
+        }
+      })
+    })
+
+    return new RecordProcessor(this.meta, this.clickhouse, this.children, readStream, promise)
   }
 
   // Extract value for all simple columns in a record
@@ -135,8 +162,4 @@ export default class RecordProcessor {
   ) => pkValues
     .concat(this.meta.simpleColumnMappings.map(cm => extractValue(data, cm)))
     .concat(fillIf(version, version !== undefined))
-}
-
-function fillIf<T>(value: T, apply: boolean): List<T> {
-  return apply ? List([value]) : List()
 }

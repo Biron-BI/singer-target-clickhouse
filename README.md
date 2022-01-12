@@ -57,8 +57,8 @@ The fields available to be specified in the config file.
 
 #### Optional fields
 
-* `max_batch_rows` The maximum number of rows to buffer in memory before writing to the destination table in Clickhouse. Default to `1000`
-* `max_batch_size` The maximum number of bytes to buffer in memory before writing to the destination table in Postgres. Default to `1048576`
+* `max_batch_rows` The maximum number of rows to buffer in memory before writing to the destination table in Clickhouse. Default to `100000`
+* `max_batch_size` The maximum number of bytes to buffer in memory before writing to the destination table in Postgres. Default to `104857600`
 * `logging_level` Default to `"INFO"`
 
 ## Singer specification extension
@@ -66,7 +66,7 @@ The fields available to be specified in the config file.
 Several features are supported that are not standard to the singer Spec:
 * **Update schemas** : Pass the repeatable CLI option ` --update-streams <stream>` to specify streams for which you want to recreate tables (root and children).
 * **Clean first** : Specify `clean_first: true` in SCHEMA messages to wipe table content before each ingestion.
-* **Cleaning column** : Specify `cleaning_column: "<column_name>"` in SCHEMA messages to wipe table content that matches column value during ingestion. For instance, if column "date" is specified as cleaning column, and the value "2022-01-01" is encountered in a record, all column with values "2022-01-01" are replaced with those contained in the stream
+* **Cleaning column** : Specify `cleaning_column: "<column_name>"` in SCHEMA messages to wipe table content that matches column value during ingestion. For instance, if column "date" is specified as cleaning column, and the value "2022-01-01" is encountered in a record, all rows with values "2022-01-01" are replaced with those contained in the stream
 * **All key properties** : Specify `all_key_properties: {props: [], children: {}}` in SCHEMA messages to specify primary keys for all children of a root table. This will allow children to create a foreign key to their parent (with the format `_parent_<column>`)
 
 ## Sponsorship
@@ -81,7 +81,5 @@ Special thanks to the people who built
 * [immutable-js](https://immutable-js.com/)
 
 ## License
-
-Copyright © 2022 Biron
 
 Distributed under the AGPLv3

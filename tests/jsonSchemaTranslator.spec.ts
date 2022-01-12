@@ -39,7 +39,7 @@ const metaWithPK: ISourceMeta = {
     chType: "UInt32",
     type: "integer",
     nullable: false,
-    pkType: PKType.ROOT,
+    pkType: PKType.CURRENT,
   }]),
   simpleColumnMappings: List([{
     nullable: true,
@@ -60,7 +60,7 @@ const metaWithPKAndChildren: ISourceMeta = {
     chType: "UInt32",
     type: "integer",
     nullable: false,
-    pkType: PKType.ROOT,
+    pkType: PKType.CURRENT,
   }]),
   simpleColumnMappings: List([{
     nullable: true,

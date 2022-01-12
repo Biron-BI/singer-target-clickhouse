@@ -1,5 +1,5 @@
 import {ExtendedJSONSchema7, log_warning, SchemaKeyProperties} from "singer-node"
-import {List, Map, Range} from "immutable"
+import {List, Map, Range, Record as ImmutableRecord} from "immutable"
 import {JSONSchema7Definition, JSONSchema7TypeName} from "json-schema"
 import {asArray} from "./utils"
 
@@ -28,7 +28,7 @@ export class JsonSchemaInspectorContext {
   }
 
   static defaultTableName(alias: string, parentCtx?: JsonSchemaInspectorContext): string {
-    return `${parentCtx ? (`${parentCtx.tableName}__`) : ""}${alias}`
+    return `${parentCtx ? `${parentCtx.tableName}__` : ""}${alias}`
   }
 
   public isTypeObject() {
@@ -40,8 +40,8 @@ export class JsonSchemaInspectorContext {
   }
 
   public getRootContext(): JsonSchemaInspectorContext {
-    // @ts-ignore ts failure, undefined check was done by isRoot
-    return this.isRoot() ? this : this.parentCtx?.getRootContext()
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+    return this.isRoot() ? this : this.parentCtx!.getRootContext()
   }
 }
 
@@ -59,11 +59,12 @@ export interface IColumnMapping {
 
 export type ColumnMap = IColumnMapping & ISimpleColumnType;
 
+// eslint-disable-next-line no-shadow
 export enum PKType {
-  ROOT,
-  PARENT,
-  CURRENT,
-  LEVEL,
+  ROOT = "ROOT",
+  PARENT = "PARENT",
+  CURRENT = "CURRENT",
+  LEVEL = "LEVEL",
 }
 
 export interface IPKMapping {
@@ -100,7 +101,7 @@ const buildMetaPkProps = (ctx: JsonSchemaInspectorContext): List<PkMap> => List<
   .concat(ctx.isRoot() ? List<PkMap>() : ctx.getRootContext().keyProperties.map((prop => buildMetaPkProp(prop, ctx.getRootContext(), PKType.ROOT, formatRootPKColumn))))
   // Append '_parent_X' if parent has 'all_key_properties' filled with props
   // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-  .concat(!ctx.parentCtx?.allKeyProperties?.props.isEmpty() ? ctx.parentCtx?.keyProperties.map((prop => buildMetaPkProp(prop, ctx.parentCtx!, PKType.PARENT, formatParentPKColumn))) ?? List<PkMap>() : List<PkMap>())
+  .concat((!ctx.parentCtx?.allKeyProperties?.props.isEmpty() && ctx.parentCtx?.keyProperties.map((prop => buildMetaPkProp(prop, ctx.parentCtx!, PKType.PARENT, formatParentPKColumn)))) || List<PkMap>())
   // Append 'X' if defined
   .concat(ctx.keyProperties.map((prop => buildMetaPkProp(prop, ctx, PKType.CURRENT))))
   // Append 'level_N_index' columns
@@ -111,7 +112,7 @@ const buildMetaPkProps = (ctx: JsonSchemaInspectorContext): List<PkMap> => List<
       sqlIdentifier: escapeIdentifier(prop),
       chType: "Int32",
       nullable: false,
-      pkType: PKType.LEVEL
+      pkType: PKType.LEVEL,
     } as PkMap
   }).toList())
 
@@ -126,13 +127,15 @@ export const buildMeta = (ctx: JsonSchemaInspectorContext): ISourceMeta => ({
 
 // flatten 1..1 relation properties into the current level
 function flattenNestedObject(propDef: IExtendedJSONSchema7, key: string, ctx: JsonSchemaInspectorContext) {
-  const nestedSchema = {
-    type: "object" as JSONSchema7TypeName,
-    properties: {} as Record<string, JSONSchema7Definition>,
-  }
-  Object.entries(propDef.properties ?? {}).forEach(([nestedKey, nestedPropDef]) => {
-    nestedSchema.properties[`${key}.${nestedKey}`] = nestedPropDef
-  })
+  const NestedSchemaRecord = ImmutableRecord<{
+    type: JSONSchema7TypeName,
+    properties: Record<string, JSONSchema7Definition>
+  }>({type: "object", properties: {}})
+
+  const nestedSchema = Object.entries(propDef.properties ?? {}).reduce((acc, [nestedKey, nestedPropDef]) => acc.set("properties", {
+    ...acc.properties,
+    [`${key}.${nestedKey}`]: nestedPropDef,
+  }), NestedSchemaRecord({type: "object", properties: {}}))
 
   return buildMetaProps(new JsonSchemaInspectorContext(
     ctx.alias,

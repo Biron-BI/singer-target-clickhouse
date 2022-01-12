@@ -4,6 +4,7 @@ import {log_debug, log_warning} from "singer-node"
 import {List} from "immutable"
 import {Writable} from "stream"
 import {IConfig} from "./Config"
+import {escapeValue} from "./utils"
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const ClickHouse = require("@apla/clickhouse")
@@ -20,6 +21,12 @@ interface ICHQueryResult {
   "transferred": number;
 }
 
+export interface Column {
+  name: string,
+  type: string,
+  is_in_sorting_key: boolean
+}
+
 export default class ClickhouseConnection {
 
   constructor(private connInfo: IConfig) {
@@ -27,8 +34,9 @@ export default class ClickhouseConnection {
 
   private connection: any
 
-  async checkConnection(): Promise<void> {
-    await this.connectionPool()
+  async checkConnection(): Promise<this> {
+    await this.getConnectionPooled()
+    return this
   }
 
   public getDatabase() {
@@ -36,7 +44,7 @@ export default class ClickhouseConnection {
   }
 
   public async listTables(): Promise<List<string>> {
-    return List((await this.runQuery("SHOW TABLES")).data).flatMap((elem) => elem)
+    return List((await this.runQuery("SHOW TABLES")).data).map(([tableName]) => tableName)
   }
 
   // Produces formatted create table query ready to be compared
@@ -49,38 +57,41 @@ export default class ClickhouseConnection {
       .join(" ")
   }
 
-  private async connectionPool(): Promise<any> {
-    if (!this.connection) {
-      this.connection = new ClickHouse({
-        host: this.connInfo.host,
-        user: this.connInfo.username,
-        port: this.connInfo.port,
-        password: this.connInfo.password,
-        queryOptions: {
-          mutations_sync: 2, // To run data deletion sync https://clickhouse.tech/docs/en/operations/settings/settings/#mutations_sync
-          database: this.connInfo.database,
-          date_time_input_format: "best_effort", // To handle all date types, https://clickhouse.tech/docs/en/operations/settings/settings/#settings-date_time_input_format
-        },
-      })
+  public async listColumns(table: string): Promise<List<Column>> {
+    const res = await this.runQuery(`SELECT name, type, is_in_sorting_key
+                                     FROM system.columns
+                                     WHERE database = '${escapeValue(this.connInfo.database)}'
+                                       AND table = '${escapeValue(table)}'`)
+    return List(res.data.map((row) => ({
+      name: row[0],
+      type: row[1],
+      is_in_sorting_key: Boolean(row[2]),
+    })))
+  }
 
-      return new Promise((resolve, reject) => {
-        this.connection.query("SELECT 1", (err: Error) => {
-          if (err) {
-            this.connection = undefined
-            reject(err)
-          } else {
-            resolve(this.connection)
-          }
-        })
+  // Expects connection to have been previously initialized, so we can instantly return stream
+  public createWriteStream(query: string, resolve: () => void, reject: (err: any) => void): Writable {
+    log_debug(`building stream to query sql ${query}`)
+    if (!this.connection) {
+      throw new Error("Clickhouse connection was not initialized")
+    }
+
+    try {
+      return this.connection.query(query, {omitFormat: true}, (err: Error) => {
+        if (err) {
+          reject(err.message)
+        } else {
+          resolve()
+        }
       })
-    } else {
-      return this.connection
+    } catch (err) {
+      throw ono("ch stream failed", err)
     }
   }
 
   // https://github.com/apla/node-clickhouse#promise-interface
   public async runQuery(query: string): Promise<ICHQueryResult> {
-    const conn = await this.connectionPool()
+    const conn = await this.getConnectionPooled()
 
     return new Promise((resolve, reject) => {
       const op = retry.operation({
@@ -103,16 +114,35 @@ export default class ClickhouseConnection {
     })
   }
 
-  // https://github.com/apla/node-clickhouse/blob/HEAD/README.md#inserting-with-stream
-  public async createWriteStream(query: string, callback: (err: Error, result: any) => any): Promise<Writable> {
-    const conn = await this.connectionPool()
+  private async getConnectionPooled(): Promise<any> {
+    if (!this.connection) {
+      this.connection = new ClickHouse({
+        host: this.connInfo.host,
+        user: this.connInfo.username,
+        port: this.connInfo.port,
+        password: this.connInfo.password,
+        queryOptions: {
+          mutations_sync: 2, // To run data deletion sync https://clickhouse.tech/docs/en/operations/settings/settings/#mutations_sync
+          database: this.connInfo.database,
+          date_time_input_format: "best_effort", // To handle all date types, https://clickhouse.tech/docs/en/operations/settings/settings/#settings-date_time_input_format
+          insert_null_as_default: 0, // https://clickhouse.com/docs/en/operations/settings/settings/#insert_null_as_default
+          input_format_null_as_default: 0,
+          input_format_defaults_for_omitted_fields: 0,
+        },
+      })
 
-    log_debug(`building stream to query sql ${query}`)
-
-    try {
-      return conn.query(query, {omitFormat: true}, callback)
-    } catch (err) {
-      throw ono("ch stream failed", err)
+      return new Promise((resolve, reject) => {
+        this.connection.query("SELECT 1", (err: Error) => {
+          if (err) {
+            this.connection = undefined
+            reject(err)
+          } else {
+            resolve(this.connection)
+          }
+        })
+      })
+    } else {
+      return this.connection
     }
   }
 }

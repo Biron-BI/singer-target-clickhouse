@@ -9,12 +9,13 @@ const args = parse_args(List(["database", "host", "port", "username", "password"
   description: "Schema whose root and children tables will be dropped / recreated on SCHEMA messages",
 }]))
 
-const config = new Config(args.config)
+const config = new Config(args.config, List(args.opts.updateStreams as string[] ?? []))
 set_level(config.log_level)
 set_prefix("TARGET")
 
-processStream(process.stdin, new Config(args.config, List(args.opts.updateStreams as string[] ?? []))).then(() => {
+processStream(process.stdin, config).then(() => {
   log_info("Stream processing done")
 }).catch((err: Error) => {
   log_error(`${err.name}: ${err.message}`)
+  process.exitCode = 1
 })

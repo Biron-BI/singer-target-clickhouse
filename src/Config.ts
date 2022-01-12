@@ -19,8 +19,8 @@ export class Config implements IConfig {
   readonly password: string
   readonly port: number
   readonly username: string
-  readonly max_batch_rows: number = 1000
-  readonly max_batch_size: number = 1048576 // 1 Mo
+  readonly max_batch_rows: number = 100000
+  readonly max_batch_size: number = 104857600 // 100 Mo
   readonly log_level: LogLevel = LogLevel.INFO
 
   constructor({

@@ -43,4 +43,31 @@ describe("ClickhouseConnection", () => {
   it('should show create table', async () => {
     assert.equal(await ch.describeCreateTable("tickets__tags"), `CREATE TABLE ${connInfo.database}.tickets__tags ( \`_level_0_index\` Int32, \`_root_id\` Int32, \`value\` String, \`_root_ver\` UInt64 ) ENGINE = MergeTree ORDER BY (_level_0_index, _root_id)`)
   })
+
+  it('should describe table', async () => {
+    assert.deepEqual((await ch.listColumns("tickets__tags"))
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .toArray(), [
+      {
+        "is_in_sorting_key": true,
+        "name": "_level_0_index",
+        "type": "Int32",
+      },
+      {
+        "is_in_sorting_key": true,
+        "name": "_root_id",
+        "type": "Int32",
+      },
+      {
+        "is_in_sorting_key": false,
+        "name": "_root_ver",
+        "type": "UInt64",
+      },
+      {
+        "is_in_sorting_key": false,
+        "name": "value",
+        "type": "String",
+      }
+    ])
+  })
 }).timeout(10000)

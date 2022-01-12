@@ -6,13 +6,8 @@ import ClickhouseConnection from "./ClickhouseConnection"
 import {buildMeta, escapeIdentifier, JsonSchemaInspectorContext} from "./jsonSchemaInspector"
 import StreamProcessor from "./StreamProcessor"
 import {Config} from "./Config"
-import {dropStreamTablesQueries, listTableNames, translateCH} from "./jsonSchemaTranslator"
+import {dropStreamTablesQueries, ensureSchemaIsEquivalent, translateCH} from "./jsonSchemaTranslator"
 import {awaitMapValues} from "./utils"
-
-// Remove magic quotes used to escape queries so we can compare content
-function unescape(query?: string) {
-  return query?.replace(/`/g, "")
-}
 
 async function processSchemaMessage(msg: SchemaMessage, config: Config): Promise<StreamProcessor> {
   const ch = new ClickhouseConnection(config)
@@ -25,32 +20,27 @@ async function processSchemaMessage(msg: SchemaMessage, config: Config): Promise
     undefined,
     undefined,
     msg.cleaningColumn,
-    msg.allKeyProperties
+    msg.allKeyProperties,
   ))
   const queries = translateCH(ch.getDatabase(), meta)
 
   if (config.streamToReplace.includes(meta.prop)) {
     log_info(`[${meta.prop}]: dropping root and children tables`)
-    await Promise.all(dropStreamTablesQueries(meta).map(async (query) => ch.runQuery(query)))
+    await Promise.all(dropStreamTablesQueries(meta).map((query) => ch.runQuery(query)))
   }
 
   const rootAlreadyExists = (await ch.listTables()).map(escapeIdentifier).includes(meta.sqlTableName)
   if (rootAlreadyExists) {
-    await Promise.all(listTableNames(meta).map(async (tableName, idx) => {
-      const currentTable = unescape(await ch.describeCreateTable(tableName))
-      const newTable = unescape(queries.get(idx))
-      if (!newTable || !currentTable || newTable.localeCompare(currentTable)) {
-        throw new Error(`Schema modification detected.
-Current:  ${currentTable}
-New:      ${newTable}
-If you wish to update schemas, run with --update-streams <stream>.`)
-      }
-    }))
+    await ensureSchemaIsEquivalent(meta, ch)
   } else {
     log_info(`[${meta.prop}]: creating tables`)
     await Promise.all(queries.map(ch.runQuery.bind(ch)))
   }
-  return new StreamProcessor(meta, config).prepareStreamProcessing(msg.cleanFirst)
+  const streamProcessor = await StreamProcessor.createStreamProcessor(meta, config, msg.cleanFirst)
+  if (msg.cleanFirst) {
+    await streamProcessor.clearTables()
+  }
+  return streamProcessor
 }
 
 async function processLine(line: string, config: Config, streamProcessors: Map<string, StreamProcessor>): Promise<Map<string, StreamProcessor>> {
@@ -66,7 +56,7 @@ async function processLine(line: string, config: Config, streamProcessors: Map<s
       return streamProcessors.set(msg.stream,
         // undefined has been checked by .has()
         // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-        await streamProcessors.get(msg.stream)!.processRecord(msg.record, line.length)
+        await streamProcessors.get(msg.stream)!.processRecord(msg.record, line.length),
       )
     case MessageType.state:
       // On a state message, we insert every batch we are currently building and echo state for tap.
@@ -93,7 +83,14 @@ export async function processStream(stream: Readable, config: Config) {
     input: stream,
   })
 
-  const streamProcessors = (await reduce(processLine, Map<string, StreamProcessor>(), rl, config))
+  const streamProcessors = await awaitReduce(
+    rl[Symbol.asyncIterator](),
+    (sp: StreamProcessors, line: string) => {
+      log_debug(`processing line starting with ${line.substring(0, 40)} ...`)
+      return processLine(line, config, sp)
+    },
+    Map<string, StreamProcessor>(),
+  )
 
   for await (const processor of streamProcessors.toList().toArray()) {
     await processor.doneProcessing()
@@ -102,12 +99,14 @@ export async function processStream(stream: Readable, config: Config) {
   rl.close()
 }
 
-async function reduce(func: (line: string, config: Config, streamProcessors: StreamProcessors) => Promise<StreamProcessors>, item: StreamProcessors, rl: readline.Interface, config: Config): Promise<StreamProcessors> {
-  let itemCpy = Map(item)
-  for await (const line of rl) {
-    log_debug(`processing line starting with ${line.substring(0, 40)} ...`)
-    itemCpy = await func(line, config, itemCpy)
+async function awaitReduce<S, T>(
+  awaitIterable: AsyncIterableIterator<S>,
+  reducer: (acc: T, line: S) => Promise<T>,
+  initial: T,
+): Promise<T> {
+  let acc = initial
+  for await (const item of awaitIterable) {
+    acc = await reducer(acc, item)
   }
-
-  return itemCpy
+  return acc
 }
