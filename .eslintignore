@@ -1,0 +1,4 @@
+node_modules
+dist
+singer-node
+tests

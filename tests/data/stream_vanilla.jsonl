@@ -1,0 +1,5 @@
+{"type":"SCHEMA","stream":"users","schema":{"properties":{"id":{"type":["null","integer"]},"name":{"type":["null","string"]}},"type":["null","object"]},"key_properties":["id"]}
+{"type": "RECORD", "stream": "users", "record": {"id":  1, "name": "bill"}}
+{"type": "RECORD", "stream": "users", "record": {"id":  2, "name": "bill"}}
+{"type": "RECORD", "stream": "users", "record": {"id":  3, "name": "jack"}}
+{"type": "RECORD", "stream": "users", "record": {"id":  4, "name": "joe"}}
