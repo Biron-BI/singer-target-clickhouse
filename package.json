@@ -1,7 +1,7 @@
 {
   "name": "target-clickhouse",
   "version": "1.0.0",
-  "description": "",
+  "description": "A Singer target for Clickhouse",
   "main": "index.js",
   "scripts": {
     "test": "mocha",
@@ -11,7 +11,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Biron-BI/target-clickhouse.git"
+    "url": "git+https://github.com/Biron-BI/singer-target-clickhouse.git"
   },
   "author": "",
   "license": "ISC",
