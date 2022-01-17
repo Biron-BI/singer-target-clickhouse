@@ -1,6 +1,6 @@
 {
   "name": "target-clickhouse",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "A Singer target for Clickhouse",
   "main": "index.js",
   "scripts": {
@@ -46,5 +46,9 @@
     "tsconfig-paths": "^3.12.0",
     "typescript": "^4.5.2"
   },
-  "keywords": ["singer", "clickhouse", "target"]
+  "keywords": [
+    "singer",
+    "clickhouse",
+    "target"
+  ]
 }
