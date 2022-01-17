@@ -7,10 +7,11 @@
     "test": "mocha",
     "build": "tsc",
     "start": "yarn run build && node dist/index.js",
-    "lint": "eslint . --ext .ts"
+    "lint": "eslint . --ext .ts",
+    "prepublish": "yarn run build"
   },
   "bin": {
-    "target-clickhouse": "./bin/target-clickhouse"
+    "target-clickhouse": "./bin/execute"
   },
   "repository": {
     "type": "git",
