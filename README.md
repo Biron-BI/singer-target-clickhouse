@@ -57,8 +57,6 @@ The fields available to be specified in the config file.
 
 #### Optional fields
 
-* `max_batch_rows` The maximum number of rows to buffer in memory before writing to the destination table in Clickhouse. Default to `100000`
-* `max_batch_size` The maximum number of bytes to buffer in memory before writing to the destination table in Postgres. Default to `104857600`
 * `logging_level` Default to `"INFO"`
 
 ## Singer specification extension

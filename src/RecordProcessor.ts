@@ -1,5 +1,5 @@
 import {pipeline, Readable, Transform} from "stream"
-import {List} from "immutable"
+import {List, Map} from "immutable"
 import {ISourceMeta, PKType} from "./jsonSchemaInspector"
 import {extractValue} from "./jsonSchemaTranslator"
 import {log_debug, log_error, log_info} from "singer-node"
@@ -39,7 +39,7 @@ export default class RecordProcessor {
   constructor(
     private readonly meta: ISourceMeta,
     private readonly clickhouse: ClickhouseConnection,
-    private readonly children: List<RecordProcessor> = List(),
+    private readonly children: Map<string, RecordProcessor> = Map(),
     private readonly readStream?: Readable,
     private readonly ingestionPromise?: Promise<void>,
   ) {
@@ -61,6 +61,11 @@ export default class RecordProcessor {
     indexInParent?: number,
   ): RecordProcessor {
 
+    // When first record is pushed we start by initializing stream
+    if (!this.readStream) {
+      return this.startIngestion().pushRecord(data, maxVer, parentMeta, rootVer, level, indexInParent)
+    }
+
     const isRoot = indexInParent === undefined
 
     // root version number is computed only for a root who has primaryKeys
@@ -74,28 +79,23 @@ export default class RecordProcessor {
       levelValues: isRoot ? List() : parentMeta?.levelValues.push(indexInParent) ?? List(),
     }
 
-    const ret = this.readStream ? this : this.startIngestion()
-
-    ret.readStream?.push(`[${this.buildSQLInsertValues(data,
+    this.readStream?.push(`[${this.buildSQLInsertValues(data,
       pkValues.rootValues
-        .concat(ret.isWithParentPK ? pkValues.parentValues : List())
+        .concat(this.isWithParentPK ? pkValues.parentValues : List())
         .concat(pkValues.values)
         .concat(pkValues.levelValues),
       resolvedRootVer).map(jsonToJSONCompactEachRow).join(",")}]`)
 
     return new RecordProcessor(
-      ret.meta,
-      ret.clickhouse,
-      ret.meta.children.map((child) => {
-        const processor = ret.children.find((elem) => elem.meta.sqlTableName === child.sqlTableName) ?? new RecordProcessor(child, ret.clickhouse)
+      this.meta,
+      this.clickhouse,
+      Map(this.meta.children.map((child) => {
+        const processor = this.children.get(child.sqlTableName) ?? new RecordProcessor(child, this.clickhouse)
         const childData: List<Record<string, any>> = List(get(data, child.prop.split(".")))
-        if (!childData.isEmpty()) {
-          return childData.reduce((acc, elem, idx) => acc.pushRecord(elem, maxVer, pkValues, resolvedRootVer, level + 1, idx), processor)
-        }
-        return processor
-      }),
-      ret.readStream,
-      ret.ingestionPromise,
+        return childData.reduce(([key, acc], elem, idx) => [key, acc.pushRecord(elem, maxVer, pkValues, resolvedRootVer, level + 1, idx)], [child.sqlTableName, processor])
+      })),
+      this.readStream,
+      this.ingestionPromise,
     )
   }
 
@@ -126,7 +126,6 @@ export default class RecordProcessor {
       },
     })
 
-
     const transform: Transform = new Transform({
         objectMode: true,
         transform(chunk, encoding, callback) {
@@ -136,7 +135,6 @@ export default class RecordProcessor {
         },
       },
     )
-
 
     const promise = new Promise<void>((resolve, reject) => {
       // We leave resolve and reject responsibility to insertion stream

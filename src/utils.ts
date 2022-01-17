@@ -20,3 +20,6 @@ export async function awaitMapValues<T>(map: Map<string, Promise<T>>): Promise<M
 export const escapeValue = (value: string, delimiter = "'"): string => value.split(delimiter).join(`\\${delimiter}\\`)
 
 export const fillIf = <T>(value: T, apply: boolean): List<T> => apply ? List([value]) : List()
+
+// Sorts by string
+export const sortObjectByPropValue = <T>(list: List<T>, key: keyof T): List<T> => list.sort((a, b) => String(a[key]).localeCompare(String(b[key])))

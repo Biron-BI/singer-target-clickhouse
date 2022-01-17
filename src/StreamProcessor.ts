@@ -72,7 +72,7 @@ export default class StreamProcessor {
     if (cleaningValue && !this.cleaningValues.includes(cleaningValue)) {
       await this.deleteCleaningValue(cleaningValue)
     }
-    return (new StreamProcessor(this.clickhouse, this.meta,
+    return new StreamProcessor(this.clickhouse, this.meta,
       this.config,
       this.maxVer + 1,
       await this.recordProcessor.pushRecord(record, this.maxVer),
@@ -80,7 +80,7 @@ export default class StreamProcessor {
       this.currentBatchSize + messageSize,
       cleaningValue ? this.cleaningValues.add(cleaningValue) : this.cleaningValues,
     )
-      .processBatchIfNeeded())
+      .processBatchIfNeeded()
   }
 
   protected async deleteCleaningValue(value: string): Promise<void> {
@@ -160,10 +160,8 @@ export default class StreamProcessor {
 
 
   public async saveNewRecords(): Promise<this> {
-    if (this.recordProcessor) {
-      log_info(`[${this.meta.prop}]: ending batch ingestion`)
-      await this.recordProcessor.endIngestion()
-    }
+    log_info(`[${this.meta.prop}]: ending batch ingestion`)
+    await this.recordProcessor.endIngestion()
     return this.printInsertRecordsStats()
   }
 

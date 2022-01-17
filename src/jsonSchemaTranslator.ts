@@ -3,7 +3,7 @@ import {ColumnMap, ISourceMeta, PkMap, PKType} from "./jsonSchemaInspector"
 import SchemaTranslator from "./SchemaTranslator"
 import ClickhouseConnection, {Column} from "./ClickhouseConnection"
 import * as assert from "assert"
-import {fillIf} from "./utils"
+import {fillIf, sortObjectByPropValue} from "./utils"
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const get = require("lodash.get")
@@ -111,6 +111,7 @@ export async function ensureSchemaIsEquivalent(meta: ISourceMeta, ch: Clickhouse
       is_in_sorting_key: false,
     }, !isRoot || (isRoot && meta.pkMappings.find((pk) => pk.pkType === PKType.CURRENT) !== undefined)))
 
-  assert.deepStrictEqual(existingColumns.sort((a, b) => a.name.localeCompare(b.name)).toArray(),
-    expectedColumns.sort((a, b) => a.name.localeCompare(b.name)).toArray(), `[${meta.prop}]: schema change detected in table [${meta.sqlTableName}]`)
+  assert.deepStrictEqual(sortObjectByPropValue(existingColumns, "name").toArray(),
+    sortObjectByPropValue(expectedColumns, "name").toArray(),
+    `[${meta.prop}]: schema change detected in table [${meta.sqlTableName}]`)
 }
