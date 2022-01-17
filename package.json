@@ -1,6 +1,6 @@
 {
   "name": "target-clickhouse",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "A Singer target for Clickhouse",
   "main": "index.js",
   "scripts": {
