@@ -4,11 +4,7 @@ COPY package.json .
 
 COPY yarn.lock .
 
-COPY ./singer-node ./singer-node
-
-RUN yarn add ./singer-node
-
-RUN yarn install --only=production
+RUN yarn install
 
 COPY ./src ./src
 
