@@ -1,12 +1,12 @@
 {
   "name": "target-clickhouse",
-  "version": "1.0.0",
+  "version": "0.0.1",
   "description": "",
   "main": "index.js",
   "scripts": {
     "test": "mocha",
     "build": "tsc",
-    "start": "npm run build && node dist/index.js",
+    "start": "yarn run build && node dist/index.js",
     "lint": "eslint . --ext .ts"
   },
   "repository": {
@@ -16,9 +16,9 @@
   "author": "",
   "license": "ISC",
   "bugs": {
-    "url": "https://github.com/Biron-BI/target-clickhouse/issues"
+    "url": "https://github.com/Biron-BI/singer-target-clickhouse/issues"
   },
-  "homepage": "https://github.com/Biron-BI/target-clickhouse#readme",
+  "homepage": "https://github.com/Biron-BI/singer-target-clickhouse#readme",
   "dependencies": {
     "@apla/clickhouse": "^1.6.4",
     "@types/retry": "^0.12.1",
@@ -27,7 +27,7 @@
     "ono": "^7.1.3",
     "retry": "^0.13.1",
     "sha1": "^1.1.1",
-    "singer-node": "../singer-node/"
+    "singer-node": "^0.1.0"
   },
   "devDependencies": {
     "@types/json-schema": "^7.0.9",
