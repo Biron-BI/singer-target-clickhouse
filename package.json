@@ -2,7 +2,8 @@
   "name": "target-clickhouse",
   "version": "1.0.3-0",
   "description": "A Singer target for Clickhouse",
-  "main": "index.js",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "scripts": {
     "test": "mocha",
     "build": "tsc",
@@ -22,6 +23,9 @@
   "bugs": {
     "url": "https://github.com/Biron-BI/singer-target-clickhouse/issues"
   },
+  "files": [
+    "dist/**/*"
+  ],
   "homepage": "https://github.com/Biron-BI/singer-target-clickhouse#readme",
   "dependencies": {
     "@apla/clickhouse": "^1.6.4",

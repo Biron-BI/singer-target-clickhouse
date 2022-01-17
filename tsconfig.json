@@ -1,11 +1,13 @@
 {
   "compilerOptions": {
+    "declaration": true,
     "strictNullChecks": true,
     "outDir": "dist",
     "module": "commonjs",
     "removeComments": true,
     "allowJs": false,
-    "noImplicitAny": true
+    "noImplicitAny": true,
+    "lib": ["es2015", "dom"]
   },
   "include": ["src"]
 }
