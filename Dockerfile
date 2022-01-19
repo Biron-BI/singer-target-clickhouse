@@ -1,16 +1,11 @@
 FROM node:16.13.1-stretch
 
-COPY package.json .
+# should be filled by the result of command:  npm pkg get version | sed 's/"//g'
+ARG TAG="0.0.0"
 
-COPY yarn.lock .
+# Install from npm registry to ensure both versions are identical
+RUN npm install -g target-clickhouse@${TAG}
 
-RUN yarn install
+LABEL org.opencontainers.image.source=https://github.com/biron-bi/singer-target-clickhouse
 
-COPY ./src ./src
-
-COPY ./tsconfig.json ./tsconfig.json
-
-RUN yarn build
-
-# improve so config.json isn't forced
-ENTRYPOINT ["node", "dist/index.js"]
+ENTRYPOINT ["target-clickhouse"]

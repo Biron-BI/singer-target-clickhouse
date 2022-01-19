@@ -13,7 +13,9 @@ using [singer-node](https://www.npmjs.com/package/singer-node).
 
 #### Docker image
 
-`docker pull biron-bi/target-clickhouse:latest`
+`docker pull ghcr.io/biron-bi/target-clickhouse`
+
+[Registry page](https://github.com/Biron-BI/singer-target-clickhouse/pkgs/container/target-clickhouse)
 
 ### Run
 
@@ -31,17 +33,27 @@ using [singer-node](https://www.npmjs.com/package/singer-node).
 
 2. Run `target-clickhouse` against a [Singer](https://singer.io) tap.
 
-Npm package:
+*In the following exemples:*
+ 
+* *We echo state at the end of a 'state.jsonl' file*
+
+* *The file current_state.json contains last line of state.jsonl*
+
+* *The file config.json contains clickhouse connection informations*
+
+**Npm package:**
 
    ```bash
-   <tap-anything> --state $(tail -n 1 state.jsonl) | target-clickhouse --config config.json >> state.jsonl
+   <tap-anything> --state current_state.json | target-clickhouse --config config.json >> state.jsonl
    ```
 
-Docker:
+**Docker:**
 
-   ```bash
-   <tap-anything> --state $(tail -n 1 state.jsonl) | docker run --rm -i -a STDIN -a STDOUT -a STDERR -v "{1}:/config:ro" biron-bi/target-clickhouse >> state.jsonl
-   ```
+*In this exemple, container reads config file in a `/config` directory*
+
+```bash
+<tap-anything> --state current_state.json | docker run --rm -i -a STDIN -a STDOUT -a STDERR -v "$(pwd):/config:ro" ghcr.io/biron-bi/target-clickhouse --config /config/config.json >> state.jsonl
+```
 
 ### Config.json
 
@@ -62,10 +74,15 @@ The fields available to be specified in the config file.
 ## Singer specification extension
 
 Several features are supported that are not standard to the singer Spec:
-* **Update schemas** : Pass the repeatable CLI option ` --update-streams <stream>` to specify streams for which you want to recreate tables (root and children).
+
+* **Update schemas** : Pass the repeatable CLI option ` --update-streams <stream>` to specify streams for which you want to recreate
+  tables (root and children).
 * **Clean first** : Specify `clean_first: true` in SCHEMA messages to wipe table content before each ingestion.
-* **Cleaning column** : Specify `cleaning_column: "<column_name>"` in SCHEMA messages to wipe table content that matches column value during ingestion. For instance, if column "date" is specified as cleaning column, and the value "2022-01-01" is encountered in a record, all rows with values "2022-01-01" are replaced with those contained in the stream
-* **All key properties** : Specify `all_key_properties: {props: [], children: {}}` in SCHEMA messages to specify primary keys for all children of a root table. This will allow children to create a foreign key to their parent (with the format `_parent_<column>`)
+* **Cleaning column** : Specify `cleaning_column: "<column_name>"` in SCHEMA messages to wipe table content that matches column value during
+  ingestion. For instance, if column "date" is specified as cleaning column, and the value "2022-01-01" is encountered in a record, all rows
+  with values "2022-01-01" are replaced with those contained in the stream
+* **All key properties** : Specify `all_key_properties: {props: [], children: {}}` in SCHEMA messages to specify primary keys for all
+  children of a root table. This will allow children to create a foreign key to their parent (with the format `_parent_<column>`)
 
 ## Sponsorship
 
@@ -74,6 +91,7 @@ Target Clickhouse is written and maintained by **Biron** https://birondata.com/
 ## Acknowledgements
 
 Special thanks to the people who built
+
 * [singer](https://github.com/singer-io/getting-started)
 * [target-postgres](https://github.com/datamill-co/target-postgres)
 * [immutable-js](https://immutable-js.com/)
