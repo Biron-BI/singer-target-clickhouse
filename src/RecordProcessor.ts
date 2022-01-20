@@ -30,7 +30,7 @@ export function jsonToJSONCompactEachRow(v: any) {
 /**
  * Ingests and store data values
  * Tree structure to process stream of data according to precomputed meta data
- * Call pushRecord for each row, and buildInsertQuery when batch is complete
+ * Call pushRecord for each row
  * One node for one table
  */
 export default class RecordProcessor {
@@ -107,7 +107,7 @@ export default class RecordProcessor {
     await this.ingestionPromise
   }
 
-  private buildSQLInsertField(): List<string> {
+  public buildSQLInsertField(): List<string> {
     const isRoot = this.meta.pkMappings.find((pkMap) => pkMap.pkType === PKType.ROOT) === undefined
     return this.meta.pkMappings
       .map((pkMap) => pkMap.sqlIdentifier)
