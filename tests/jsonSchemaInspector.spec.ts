@@ -132,6 +132,41 @@ const deepNestedArrayObjectSchema: IExtendedJSONSchema7 = {
   "type": "object",
 }
 
+const nestedValueArraySchema: IExtendedJSONSchema7 = {
+  "type": [
+    "null",
+    "object"
+  ],
+  "properties": {
+    "events": {
+      "type": [
+        "null",
+        "array"
+      ],
+      "items": {
+        "type": [
+          "null",
+          "object"
+        ],
+        "properties": {
+          "previous_value": {
+            "type": [
+              "null",
+              "array",
+              "string"
+            ],
+            "items": {
+              "type": [
+                "null",
+                "string"
+              ]
+            }
+          }
+        }
+      }
+    }
+  }
+}
 
 describe("getSimpleColumnSqlType", () => {
   it("should handle simple stream", () => {
@@ -245,5 +280,63 @@ describe("JSON Schema Inspector", () => {
     assert.equal(res.children.size, 1)
     assert.equal(res.children.get(0)?.sqlTableName, "`audits__nested__tags`")
     assert.equal(res.children.get(0)?.simpleColumnMappings.size, 1)
+  })
+
+  it("should handle nested value array schema", () => {
+    const res = buildMeta(new JsonSchemaInspectorContext("audits", nestedValueArraySchema, List([])))
+    const expectedResult = {
+      "prop": "audits",
+      "sqlTableName": "`audits`",
+      "pkMappings": [],
+      "simpleColumnMappings": [],
+      "children": [
+        {
+          "prop": "events",
+          "sqlTableName": "`audits__events`",
+          "pkMappings": [
+            {
+              "prop": "_level_0_index",
+              "sqlIdentifier": "`_level_0_index`",
+              "chType": "Int32",
+              "nullable": false,
+              "pkType": "LEVEL"
+            }
+          ],
+          "simpleColumnMappings": [],
+          "children": [
+            {
+              "prop": "previous_value",
+              "sqlTableName": "`audits__events__previous_value`",
+              "pkMappings": [
+                {
+                  "prop": "_level_0_index",
+                  "sqlIdentifier": "`_level_0_index`",
+                  "chType": "Int32",
+                  "nullable": false,
+                  "pkType": "LEVEL"
+                },
+                {
+                  "prop": "_level_1_index",
+                  "sqlIdentifier": "`_level_1_index`",
+                  "chType": "Int32",
+                  "nullable": false,
+                  "pkType": "LEVEL"
+                }
+              ],
+              "simpleColumnMappings": [
+                {
+                  "sqlIdentifier": "`value`",
+                  "type": "string",
+                  "chType": "String",
+                  "nullable": false
+                }
+              ],
+              "children": []
+            }
+          ]
+        }
+      ]
+    }
+    assert.equal(JSON.stringify(res), JSON.stringify(expectedResult))
   })
 })

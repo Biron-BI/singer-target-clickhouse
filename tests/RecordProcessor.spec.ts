@@ -78,6 +78,61 @@ const metaWithPKAndChildren: ISourceMeta = {
   sqlTableName: "`order`",
 }
 
+const metaWithNestedValueArray: ISourceMeta = {
+  "prop": "audits",
+  "sqlTableName": "`audits`",
+  "pkMappings": List([]),
+  "simpleColumnMappings": List([]),
+  "children": List([
+    {
+      "prop": "events",
+      "sqlTableName": "`audits__events`",
+      "pkMappings": List([
+        {
+          "prop": "_level_0_index",
+          "sqlIdentifier": "`_level_0_index`",
+          "chType": "Int32",
+          "nullable": false,
+          "pkType": PKType.LEVEL,
+        },
+      ]),
+      "simpleColumnMappings": List([]),
+      "children": List([
+        {
+          "prop": "previous_value",
+          "sqlTableName": "`audits__events__previous_value`",
+          "pkMappings": List([
+            {
+              "prop": "_level_0_index",
+              "sqlIdentifier": "`_level_0_index`",
+              "chType": "Int32",
+              "nullable": false,
+              "pkType": PKType.LEVEL,
+            },
+            {
+              "prop": "_level_1_index",
+              "sqlIdentifier": "`_level_1_index`",
+              "chType": "Int32",
+              "nullable": false,
+              "pkType": PKType.LEVEL,
+            },
+          ]),
+          "simpleColumnMappings": List([
+            {
+              "sqlIdentifier": "`value`",
+              "type": "string",
+              "chType": "String",
+              "nullable": false,
+            },
+          ]),
+          "children": List([]),
+        },
+      ]),
+    },
+  ]),
+}
+
+
 const initialConnInfo = new Config({
   host: "localhost",
   username: "root",
@@ -173,5 +228,22 @@ describe("RecordProcessor", () => {
       ])
     })
       .timeout(30000)
+
+    it("should handle nested value array", async () => {
+      const res = new RecordProcessor(metaWithNestedValueArray, new ClickhouseConnection(connInfo))
+        .pushRecord(
+          {events: [{previous_value: "Test"}]}, 0,
+        )
+
+      // @ts-ignore
+      const deepStream = res.children.get("`audits__events`")?.children.get("`audits__events__previous_value`")?.readStream!
+
+      deepStream.push(null)
+
+      const values = await streamToStrList(deepStream)
+
+      assert.equal(values.get(0), '[0,0,"Test"]')
+    }).timeout(30000)
+
   }).timeout(30000)
 })

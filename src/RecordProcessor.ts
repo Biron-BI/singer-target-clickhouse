@@ -91,8 +91,13 @@ export default class RecordProcessor {
       this.clickhouse,
       Map(this.meta.children.map((child) => {
         const processor = this.children.get(child.sqlTableName) ?? new RecordProcessor(child, this.clickhouse)
-        const childData: List<Record<string, any>> = List(get(data, child.prop.split(".")))
-        return childData.reduce(([key, acc], elem, idx) => [key, acc.pushRecord(elem, maxVer, pkValues, resolvedRootVer, level + 1, idx)], [child.sqlTableName, processor])
+
+        // In this record we expect a list, as that is the reason a children has been created. But some JSON Schema declaration may declare both an array and a list, so we check and create an array with only one item if it is not an array
+        const childData: Record<string, any> = get(data, child.prop.split("."))
+
+        const childDataAsArray: List<Record<string, any>> = Array.isArray(childData) ? List(childData) : List(childData ? [childData] : [])
+
+        return childDataAsArray.reduce(([key, acc], elem, idx) => [key, acc.pushRecord(elem, maxVer, pkValues, resolvedRootVer, level + 1, idx)], [child.sqlTableName, processor])
       })),
       this.readStream,
       this.ingestionPromise,
