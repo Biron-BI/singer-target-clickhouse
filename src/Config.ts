@@ -11,6 +11,7 @@ export interface IConfig {
   max_batch_rows?: number
   max_batch_size?: number // in bytes
   logging_level?: string
+  subtable_separator?: string
 }
 
 export class Config implements IConfig {
@@ -22,6 +23,7 @@ export class Config implements IConfig {
   readonly max_batch_rows: number = 100000
   readonly max_batch_size: number = 104857600 // 100 Mo
   readonly log_level: LogLevel = LogLevel.INFO
+  readonly subtable_separator: string = "__"
 
   constructor({
                 database,
@@ -32,6 +34,7 @@ export class Config implements IConfig {
                 port,
                 username,
                 logging_level,
+                subtable_separator,
               }: IConfig, public readonly streamToReplace: List<string> = List()) {
     this.database = database
     this.host = host
@@ -43,5 +46,6 @@ export class Config implements IConfig {
     this.password = password
     this.port = port
     this.username = username
+    this.subtable_separator = subtable_separator ?? this.subtable_separator
   }
 }

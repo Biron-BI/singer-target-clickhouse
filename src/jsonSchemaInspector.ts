@@ -18,17 +18,18 @@ export class JsonSchemaInspectorContext {
     public readonly alias: string,
     public readonly schema: IExtendedJSONSchema7,
     public readonly keyProperties: List<string>, // For current level. Only root has if all_key_properties isn't defined
+    public readonly subtableSeparator = "__",
     public readonly parentCtx?: JsonSchemaInspectorContext,
     public readonly level: number = 0,
-    public readonly tableName = JsonSchemaInspectorContext.defaultTableName(alias, parentCtx),
+    public readonly tableName = JsonSchemaInspectorContext.defaultTableName(alias, subtableSeparator, parentCtx),
     public readonly cleaningColumn?: string,
     // Optional config to know all key properties at this level and lower. Used to compute _parent_... fields
     public readonly allKeyProperties: SchemaKeyProperties = {props: List(), children: Map()},
   ) {
   }
 
-  static defaultTableName(alias: string, parentCtx?: JsonSchemaInspectorContext): string {
-    return `${parentCtx ? `${parentCtx.tableName}__` : ""}${alias}`
+  static defaultTableName(alias: string, subtableSeparator: string, parentCtx?: JsonSchemaInspectorContext): string {
+    return `${parentCtx ? `${parentCtx.tableName}${subtableSeparator}` : ""}${alias}`
   }
 
   public isTypeObject() {
@@ -90,7 +91,7 @@ export const formatParentPKColumn = (prop: string) => `_parent_${prop}`
 
 const buildMetaPkProp = (prop: string, ctx: JsonSchemaInspectorContext, pkType: PKType, fieldFormatter?: (v: string) => string): PkMap => ({
   prop,
-  sqlIdentifier: escapeIdentifier(fieldFormatter?.(prop) ?? prop),
+  sqlIdentifier: escapeIdentifier(fieldFormatter?.(prop) ?? prop, ctx.subtableSeparator),
   ...getSimpleColumnType(ctx, prop),
   nullable: false,
   pkType,
@@ -109,7 +110,7 @@ const buildMetaPkProps = (ctx: JsonSchemaInspectorContext): List<PkMap> => List<
     const prop = formatLevelIndexColumn(value)
     return {
       prop,
-      sqlIdentifier: escapeIdentifier(prop),
+      sqlIdentifier: escapeIdentifier(prop, ctx.subtableSeparator),
       chType: "Int32",
       nullable: false,
       pkType: PKType.LEVEL,
@@ -119,7 +120,7 @@ const buildMetaPkProps = (ctx: JsonSchemaInspectorContext): List<PkMap> => List<
 // transform a schema to a data structure with metadata for Clickhouse (types, primary keys, nullable, ...)
 export const buildMeta = (ctx: JsonSchemaInspectorContext): ISourceMeta => ({
   prop: ctx.alias,
-  sqlTableName: escapeIdentifier(ctx.tableName),
+  sqlTableName: escapeIdentifier(ctx.tableName, ctx.subtableSeparator),
   pkMappings: buildMetaPkProps(ctx),
   cleaningColumn: ctx.cleaningColumn,
   ...buildMetaProps(ctx),
@@ -141,6 +142,7 @@ function flattenNestedObject(propDef: IExtendedJSONSchema7, key: string, ctx: Js
     ctx.alias,
     nestedSchema,
     List(),
+    ctx.subtableSeparator,
     ctx,
     ctx.level,
     ctx.tableName,
@@ -151,6 +153,7 @@ const createSubTable = (propDef: IExtendedJSONSchema7, key: string, ctx: JsonSch
   key,
   (propDef.items || {type: "string"}) as IExtendedJSONSchema7,
   ctx.allKeyProperties.children.get(key)?.props ?? List(),
+  ctx.subtableSeparator,
   ctx,
   ctx.level + 1,
   undefined,
@@ -193,7 +196,7 @@ function buildMetaProps(ctx: JsonSchemaInspectorContext): MetaProps {
               ...acc,
               simpleColumnMappings: acc.simpleColumnMappings.push({
                 prop: key,
-                sqlIdentifier: escapeIdentifier(key),
+                sqlIdentifier: escapeIdentifier(key, ctx.subtableSeparator),
                 ...colType,
               }),
             }
@@ -212,7 +215,7 @@ function buildMetaProps(ctx: JsonSchemaInspectorContext): MetaProps {
     }
     return {
       simpleColumnMappings: List<ColumnMap>([{
-        sqlIdentifier: escapeIdentifier("value"),
+        sqlIdentifier: escapeIdentifier("value", ctx.subtableSeparator),
         ...getSimpleColumnType(ctx, undefined),
         nullable: false,
       }]),
@@ -285,8 +288,8 @@ export function getSimpleColumnSqlType(ctx: JsonSchemaInspectorContext, propDef:
 }
 
 // ensure that id is not longer than 64 chars and enclose it within backquotes
-export function escapeIdentifier(id: string): string {
-  id = id.replace(/\./g, "__")
+export function escapeIdentifier(id: string, subtableSeparator = "__"): string {
+  id = id.replace(/\./g, subtableSeparator)
   if (id.length > 64) {
     const uid = sha1(id).substring(0, 10)
     id = id.substring(0, 64 - uid.length - 27) + uid + id.substring(id.length - 27)
