@@ -3,7 +3,6 @@ import {List} from "immutable"
 import {processStream} from "./processStream"
 import {Config} from "./Config"
 
-
 const args = parse_args(List(["database", "host", "port", "username", "password"]), List([{
   flags: "-u | --update-streams <tables...>",
   description: "Schema whose root and children tables will be dropped / recreated on SCHEMA messages",
@@ -15,7 +14,7 @@ set_prefix("TARGET")
 
 processStream(process.stdin, config).then(() => {
   log_info("Stream processing done")
-}).catch((err: Error) => {
-  log_error(`${err.name}: ${err.message}`)
+}).catch((err) => {
+  log_error(`${err}`)
   process.exitCode = 1
 })

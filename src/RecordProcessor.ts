@@ -109,6 +109,7 @@ export default class RecordProcessor {
 
     await Promise.all(this.children.map((child) => child.endIngestion()))
 
+    // We await in case the promise hasn't resolved yet
     await this.ingestionPromise
   }
 
@@ -152,6 +153,8 @@ export default class RecordProcessor {
           log_info(`[${this.meta.prop}]: pipeline ended`)
         }
       })
+    }).catch((err) => {
+      throw new Error(err) // We throw error here, as an error may be thrown before endIngestion() is called
     })
 
     return new RecordProcessor(this.meta, this.clickhouse, this.children, readStream, promise)

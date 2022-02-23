@@ -4,6 +4,7 @@ import SchemaTranslator from "./SchemaTranslator"
 import ClickhouseConnection, {Column} from "./ClickhouseConnection"
 import * as assert from "assert"
 import {fillIf, sortObjectByPropValue} from "./utils"
+import {log_debug} from "singer-node"
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const get = require("lodash.get")
@@ -104,6 +105,8 @@ export async function ensureSchemaIsEquivalent(meta: ISourceMeta, ch: Clickhouse
       }
     })
     .map(pkMapToColumn)
+    .concat(meta.pkMappings
+      .filter((pkMap) => !isRoot && (pkMap.pkType === PKType.CURRENT || pkMap.pkType === PKType.PARENT)).map(mapToColumn)) // to handle properties added by "all_key_properties
     .concat(meta.simpleColumnMappings.map(mapToColumn))
     .concat(fillIf({
       name: isRoot ? "_ver" : "_root_ver",
@@ -111,7 +114,13 @@ export async function ensureSchemaIsEquivalent(meta: ISourceMeta, ch: Clickhouse
       is_in_sorting_key: false,
     }, !isRoot || (isRoot && meta.pkMappings.find((pk) => pk.pkType === PKType.CURRENT) !== undefined)))
 
-  assert.deepStrictEqual(sortObjectByPropValue(existingColumns, "name").toArray(),
-    sortObjectByPropValue(expectedColumns, "name").toArray(),
-    `[${meta.prop}]: schema change detected in table [${meta.sqlTableName}]`)
+  const sortedExisting = sortObjectByPropValue(existingColumns, "name").toArray()
+  const sortedExpected = sortObjectByPropValue(expectedColumns, "name").toArray()
+  try {
+      assert.deepStrictEqual(sortedExisting, sortedExpected, `[${meta.prop}]: schema change detected in table [${meta.sqlTableName}]`)
+    } catch (err) {
+    log_debug(JSON.stringify(meta, null, 2))
+    log_debug(`Schema change: current columns = ${JSON.stringify(sortedExisting, null, 2)}, new would be = ${JSON.stringify(sortedExpected, null, 2)}`)
+    throw err
+  }
 }

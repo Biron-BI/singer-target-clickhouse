@@ -1,6 +1,6 @@
 import {ono} from "ono"
 import * as retry from "retry"
-import {log_debug, log_warning} from "singer-node"
+import {log_debug, log_error, log_warning} from "singer-node"
 import {List} from "immutable"
 import {Writable} from "stream"
 import {IConfig} from "./Config"
@@ -79,8 +79,10 @@ export default class ClickhouseConnection {
     try {
       return this.connection.query(query, {omitFormat: true}, (err: Error) => {
         if (err) {
+          log_error(`rejecting query ${query}`)
           reject(err.message)
         } else {
+          log_debug(`resolving query ${query}`)
           resolve()
         }
       })
