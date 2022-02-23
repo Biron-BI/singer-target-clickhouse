@@ -67,6 +67,7 @@ export function translateCH(database: string, meta: ISourceMeta, parentMeta?: IS
     // @formatter:off
     .push(`CREATE TABLE ${database}.${meta.sqlTableName} ( ${createDefs.filter(Boolean).join(", ")} ) ENGINE = ${resolveEngine(isNodeRoot, meta.pkMappings.size > 0)} ORDER BY ${resolveOrderBy(meta, isNodeRoot)}`)
     .concat(meta.children.flatMap((child: ISourceMeta) => translateCH(database, child, meta, rootMeta || meta)))
+    // @formatter:on
 }
 
 export const listTableNames = (meta: ISourceMeta): List<string> => List<string>([meta.sqlTableName])
@@ -114,11 +115,12 @@ export async function ensureSchemaIsEquivalent(meta: ISourceMeta, ch: Clickhouse
       is_in_sorting_key: false,
     }, !isRoot || (isRoot && meta.pkMappings.find((pk) => pk.pkType === PKType.CURRENT) !== undefined)))
 
+
   const sortedExisting = sortObjectByPropValue(existingColumns, "name").toArray()
   const sortedExpected = sortObjectByPropValue(expectedColumns, "name").toArray()
   try {
-      assert.deepStrictEqual(sortedExisting, sortedExpected, `[${meta.prop}]: schema change detected in table [${meta.sqlTableName}]`)
-    } catch (err) {
+    assert.deepStrictEqual(sortedExisting, sortedExpected, `[${meta.prop}]: schema change detected in table [${meta.sqlTableName}]`)
+  } catch (err) {
     log_debug(JSON.stringify(meta, null, 2))
     log_debug(`Schema change: current columns = ${JSON.stringify(sortedExisting, null, 2)}, new would be = ${JSON.stringify(sortedExpected, null, 2)}`)
     throw err
