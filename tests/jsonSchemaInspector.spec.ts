@@ -218,7 +218,7 @@ describe("JSON Schema Inspector", () => {
   })
 
   it("should handle array of nested object with specifying childrenPK", () => {
-    const res = buildMeta(new JsonSchemaInspectorContext("audits", arrayObjectSchema, List(["id"]), undefined, undefined, undefined, undefined,
+    const res = buildMeta(new JsonSchemaInspectorContext("audits", arrayObjectSchema, List(["id"]), undefined, undefined, undefined, undefined, undefined,
       {
         props: List(["id"]),
         children: Map<string, SchemaKeyProperties>().set("custom_fields", {
@@ -246,9 +246,8 @@ describe("JSON Schema Inspector", () => {
         })
       })
     }
-    // console.log(JSON.stringify(all_key_properties, null, 2))
-    // throw 1
-    const res = buildMeta(new JsonSchemaInspectorContext("audits", deepNestedArrayObjectSchema, List(["id"]), undefined, undefined, undefined, undefined, all_key_properties
+
+    const res = buildMeta(new JsonSchemaInspectorContext("audits", deepNestedArrayObjectSchema, List(["id"]), undefined, undefined, undefined, undefined, undefined, all_key_properties
       ))
     assert.equal(res.children.get(0)?.sqlTableName, "`audits__bill_fields`")
     assert.equal(res.children.get(0)?.pkMappings.get(0)?.sqlIdentifier, "`_root_id`")

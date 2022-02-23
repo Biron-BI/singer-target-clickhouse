@@ -70,6 +70,7 @@ The fields available to be specified in the config file.
 #### Optional fields
 
 * `logging_level` Default to `"INFO"`
+* `subtable_separator` Default to `"__"`
 
 ## Singer specification extension
 

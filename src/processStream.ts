@@ -16,6 +16,7 @@ async function processSchemaMessage(msg: SchemaMessage, config: Config): Promise
     msg.stream,
     msg.schema,
     msg.keyProperties,
+    config.subtable_separator,
     undefined,
     undefined,
     undefined,
@@ -29,7 +30,7 @@ async function processSchemaMessage(msg: SchemaMessage, config: Config): Promise
     await Promise.all(dropStreamTablesQueries(meta).map((query) => ch.runQuery(query)))
   }
 
-  const rootAlreadyExists = (await ch.listTables()).map(escapeIdentifier).includes(meta.sqlTableName)
+  const rootAlreadyExists = (await ch.listTables()).map((table) => escapeIdentifier(table)).includes(meta.sqlTableName)
   if (rootAlreadyExists) {
     await ensureSchemaIsEquivalent(meta, ch)
   } else {
