@@ -126,6 +126,15 @@ export const buildMeta = (ctx: JsonSchemaInspectorContext): ISourceMeta => ({
   ...buildMetaProps(ctx),
 })
 
+function makeNullable(type?: JSONSchema7TypeName | JSONSchema7TypeName[]): JSONSchema7TypeName[] {
+  if (!type) {
+    return []
+  }
+  return asArray(type)
+    .toArray()
+    .concat(!type.includes("null") ? ["null"] : [])
+}
+
 // flatten 1..1 relation properties into the current level
 function flattenNestedObject(propDef: IExtendedJSONSchema7, key: string, ctx: JsonSchemaInspectorContext) {
   const NestedSchemaRecord = ImmutableRecord<{
@@ -133,10 +142,20 @@ function flattenNestedObject(propDef: IExtendedJSONSchema7, key: string, ctx: Js
     properties: Record<string, JSONSchema7Definition>
   }>({type: "object", properties: {}})
 
-  const nestedSchema = Object.entries(propDef.properties ?? {}).reduce((acc, [nestedKey, nestedPropDef]) => acc.set("properties", {
-    ...acc.properties,
-    [`${key}.${nestedKey}`]: nestedPropDef,
-  }), NestedSchemaRecord({type: "object", properties: {}}))
+  const nullable = getNullable(propDef)
+  const nestedSchema = Object.entries(propDef.properties ?? {}).reduce((acc, [nestedKey, nestedPropDef]) => {
+    if (typeof nestedPropDef === "boolean") {
+      throw new Error("unhandled boolean propdef")
+    }
+    return acc.set("properties", {
+      ...acc.properties,
+      [`${key}.${nestedKey}`]: {
+        ...nestedPropDef,
+        type: nullable ? makeNullable(nestedPropDef.type) : nestedPropDef.type, // if parent is nullable, all children should also be
+      },
+    })
+  }, NestedSchemaRecord({type: "object", properties: {}}))
+
 
   return buildMetaProps(new JsonSchemaInspectorContext(
     ctx.alias,
@@ -229,6 +248,13 @@ function excludeNullFromArray(array?: JSONSchema7TypeName | JSONSchema7TypeName[
   return asArray(array).filter((type) => type !== "null")
 }
 
+function getNullable(propDef: JSONSchema7Definition) {
+  if (typeof propDef === "boolean") {
+    throw new Error(`boolean propDef not handled`)
+  }
+  return asArray(propDef.type).includes("null") ?? false
+}
+
 function getSimpleColumnType(ctx: JsonSchemaInspectorContext, key?: string): ISimpleColumnType | undefined {
   const propDef = key ? ctx.schema.properties?.[key] : ctx.schema
   if (!propDef || typeof propDef === "boolean") {
@@ -241,7 +267,7 @@ function getSimpleColumnType(ctx: JsonSchemaInspectorContext, key?: string): ISi
     type: excludeNullFromArray(propDef.type).get(0),
     typeFormat: propDef.format,
     chType: type,
-    nullable: asArray(propDef.type).includes("null") ?? false,
+    nullable: getNullable(propDef),
   } : undefined
 }
 

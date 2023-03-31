@@ -47,6 +47,9 @@ export default class RecordProcessor {
     this.isWithParentPK = this.meta.pkMappings.find((pk) => pk.pkType === PKType.PARENT) !== undefined
   }
 
+  public isInitialized(): boolean {
+    return this.readStream !== undefined
+  }
   /*
       Prepare sql query by splitting fields and values
       Creates children
@@ -59,14 +62,15 @@ export default class RecordProcessor {
     rootVer?: number,
     level = 0,
     indexInParent?: number,
+    messageCount = 0,
   ): RecordProcessor {
+    const isRoot = indexInParent === undefined
 
     // When first record is pushed we start by initializing stream
-    if (!this.readStream) {
-      return this.startIngestion().pushRecord(data, maxVer, parentMeta, rootVer, level, indexInParent)
+    if (!this.isInitialized()) {
+      return this.startIngestion(messageCount, isRoot).pushRecord(data, maxVer, parentMeta, rootVer, level, indexInParent, messageCount)
     }
 
-    const isRoot = indexInParent === undefined
 
     // root version number is computed only for a root who has primaryKeys
     // version start at max existing version + 1
@@ -97,7 +101,7 @@ export default class RecordProcessor {
 
         const childDataAsArray: List<Record<string, any>> = Array.isArray(childData) ? List(childData) : List(childData ? [childData] : [])
 
-        return childDataAsArray.reduce(([key, acc], elem, idx) => [key, acc.pushRecord(elem, maxVer, pkValues, resolvedRootVer, level + 1, idx)], [child.sqlTableName, processor])
+        return childDataAsArray.reduce(([key, acc], elem, idx) => [key, acc.pushRecord(elem, maxVer, pkValues, resolvedRootVer, level + 1, idx, messageCount)], [child.sqlTableName, processor])
       })),
       this.readStream,
       this.ingestionPromise,
@@ -105,12 +109,21 @@ export default class RecordProcessor {
   }
 
   public async endIngestion() {
-    this.readStream?.push(null)
-
-    await Promise.all(this.children.map((child) => child.endIngestion()))
-
-    // We await in case the promise hasn't resolved yet
-    await this.ingestionPromise
+    return new Promise<void>((resolve, reject) => {
+      log_debug(`closing stream to insert data in ${this.meta.prop}, ${this.meta.sqlTableName}`)
+      this.readStream?.push(null)
+      Promise.all(this.children.map((child) => child.endIngestion()))
+        .then(() => {
+          if (this.ingestionPromise) {
+            this.ingestionPromise
+              .then(resolve)
+              .catch(reject)
+          } else {
+            resolve()
+          }
+        })
+        .catch(reject)
+    })
   }
 
   public buildSQLInsertField(): List<string> {
@@ -123,8 +136,11 @@ export default class RecordProcessor {
       .concat(fillIf("`_root_ver`", !isRoot))
   }
 
-  private startIngestion(): RecordProcessor {
+  private startIngestion(messageCount: number, isRoot: boolean): RecordProcessor {
     const insertQuery = `INSERT INTO ${this.meta.sqlTableName} (${this.buildSQLInsertField().join(",")}) FORMAT JSONCompactEachRow`
+    if (isRoot) {
+      log_info(`[${this.meta.prop}] handling lines starting at ${messageCount}`)
+    }
 
     const readStream = new Readable({
       // eslint-disable-next-line @typescript-eslint/no-empty-function
@@ -148,7 +164,7 @@ export default class RecordProcessor {
       pipeline(readStream, transform, insertStream, (err) => {
         if (err) {
           log_error(`[${this.meta.prop}]: pipeline error: [${err.message}]`)
-          insertStream.destroy()
+          insertStream.destroy(err)
         } else {
           log_info(`[${this.meta.prop}]: pipeline ended`)
         }
@@ -156,6 +172,10 @@ export default class RecordProcessor {
     }).catch((err) => {
       throw new Error(err) // We throw error here, as an error may be thrown before endIngestion() is called
     })
+    //   .catch((err) => {
+    //   readStream?.emit("error", err)
+    //   throw new Error(err)
+    // })
 
     return new RecordProcessor(this.meta, this.clickhouse, this.children, readStream, promise)
   }

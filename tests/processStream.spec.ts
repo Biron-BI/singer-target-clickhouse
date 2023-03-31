@@ -73,6 +73,12 @@ describe("processStream - Schemas", () => {
     }, Error)
   }).timeout(30000)
 
+  it('should throw if stream defines schema multiple times', async () => {
+    await assert.rejects(async () => {
+      await processStream(fs.createReadStream("./tests/data/stream_multiple_schema.jsonl"), connInfo)
+    }, Error)
+  }).timeout(30000)
+
   it('should recreate if schemas already exists, new is different but specified to be recreated', async () => {
     await processStream(fs.createReadStream("./tests/data/stream_1.jsonl"), connInfo)
 

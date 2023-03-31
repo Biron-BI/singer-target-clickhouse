@@ -21,7 +21,7 @@ export default class StreamProcessor {
     private readonly recordProcessor = new RecordProcessor(meta, clickhouse),
     private readonly currentBatchRows = 0,
     private readonly currentBatchSize = 0,
-    private readonly cleaningValues: Set<string> = Set(), // All values used to clear data based on 'cleaningColumn'
+    private readonly cleaningValues: Set<string> = Set(), // All values used to clear data based on 'cleaningColumn',
   ) {
   }
 
@@ -54,7 +54,9 @@ export default class StreamProcessor {
   private async processBatchIfNeeded() {
     if (this.currentBatchRows >= this.config.max_batch_rows ||
       this.currentBatchSize >= this.config.max_batch_size) {
-      log_info(`Inserting current batch (rows: ${this.currentBatchRows} / ${this.config.max_batch_rows} -- size: ${this.currentBatchSize} / ${this.config.max_batch_size})`)
+      log_info(`Inserting batch`)
+      log_info(`rows quota: ${this.currentBatchRows} / ${this.config.max_batch_rows}`)
+      log_info(`size quota: ${this.currentBatchSize} / ${this.config.max_batch_size}`)
       try {
         return (await this.saveNewRecords())
           .clearIngestion()
@@ -67,7 +69,7 @@ export default class StreamProcessor {
     return this
   }
 
-  public async processRecord(record: Record<string, any>, messageSize: number): Promise<StreamProcessor> {
+  public async processRecord(record: Record<string, any>, messageSize: number, messageCount: number): Promise<StreamProcessor> {
     const cleaningValue = this.meta.cleaningColumn && record[this.meta.cleaningColumn]
     if (cleaningValue && !this.cleaningValues.includes(cleaningValue)) {
       await this.deleteCleaningValue(cleaningValue)
@@ -75,7 +77,7 @@ export default class StreamProcessor {
     return new StreamProcessor(this.clickhouse, this.meta,
       this.config,
       this.maxVer + 1,
-      await this.recordProcessor.pushRecord(record, this.maxVer),
+      await this.recordProcessor.pushRecord(record, this.maxVer, undefined, undefined, undefined, undefined, messageCount),
       this.currentBatchRows + 1,
       this.currentBatchSize + messageSize,
       cleaningValue ? this.cleaningValues.add(cleaningValue) : this.cleaningValues,
@@ -160,9 +162,13 @@ export default class StreamProcessor {
 
 
   public async saveNewRecords(): Promise<this> {
-    log_info(`[${this.meta.prop}]: ending batch ingestion`)
-    await this.recordProcessor.endIngestion()
-    return this.printInsertRecordsStats()
+    if (this.recordProcessor.isInitialized()) {
+      log_info(`[${this.meta.prop}]: ending batch ingestion`)
+      await this.recordProcessor.endIngestion()
+      return this.printInsertRecordsStats()
+    } else {
+      return this
+    }
   }
 
   private async assertPKIntegrity(meta: ISourceMeta) {

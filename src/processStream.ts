@@ -44,11 +44,14 @@ async function processSchemaMessage(msg: SchemaMessage, config: Config): Promise
   return streamProcessor
 }
 
-async function processLine(line: string, config: Config, streamProcessors: Map<string, StreamProcessor>): Promise<Map<string, StreamProcessor>> {
+async function processLine(line: string, config: Config, streamProcessors: Map<string, StreamProcessor>, lineCount: number): Promise<Map<string, StreamProcessor>> {
   const msg = parse_message(line)
 
   switch (msg.type) {
     case MessageType.schema:
+      if (streamProcessors.has(msg.stream)) {
+        throw new Error("Multiple Schema message received for same stream")
+      }
       return streamProcessors.set(msg.stream, await processSchemaMessage(msg, config))
     case MessageType.record:
       if (!streamProcessors.has(msg.stream)) {
@@ -57,7 +60,7 @@ async function processLine(line: string, config: Config, streamProcessors: Map<s
       return streamProcessors.set(msg.stream,
         // undefined has been checked by .has()
         // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-        await streamProcessors.get(msg.stream)!.processRecord(msg.record, line.length),
+        await streamProcessors.get(msg.stream)!.processRecord(msg.record, line.length, lineCount),
       )
     case MessageType.state:
       // On a state message, we insert every batch we are currently building and echo state for tap.
@@ -74,7 +77,7 @@ async function processLine(line: string, config: Config, streamProcessors: Map<s
 type StreamProcessors = Map<string, StreamProcessor>
 
 export async function processStream(stream: Readable, config: Config) {
-
+  let lineCount = 0
   stream.on("error", (err: any) => {
     log_fatal(`${err.message}`)
     throw new Error(`READ ERROR ${err}`)
@@ -88,7 +91,7 @@ export async function processStream(stream: Readable, config: Config) {
     rl[Symbol.asyncIterator](),
     (sp: StreamProcessors, line: string) => {
       log_debug(`processing line starting with ${line.substring(0, 40)} ...`)
-      return processLine(line, config, sp)
+      return processLine(line, config, sp, lineCount++)
     },
     Map<string, StreamProcessor>(),
   )
