@@ -1,6 +1,6 @@
 import * as readline from 'readline'
 import {Map} from "immutable"
-import {log_debug, log_fatal, log_info, MessageType, parse_message, SchemaMessage} from "singer-node"
+import {log_debug, log_fatal, log_info, log_warning, MessageType, parse_message, SchemaMessage} from "singer-node"
 import {Readable} from "stream"
 import ClickhouseConnection from "./ClickhouseConnection"
 import {buildMeta, escapeIdentifier, JsonSchemaInspectorContext} from "./jsonSchemaInspector"
@@ -50,7 +50,8 @@ async function processLine(line: string, config: Config, streamProcessors: Map<s
   switch (msg.type) {
     case MessageType.schema:
       if (streamProcessors.has(msg.stream)) {
-        throw new Error("Multiple Schema message received for same stream")
+        log_warning(`A schema has already been received for stream [${msg.stream}]. Ignoring message`)
+        return streamProcessors
       }
       return streamProcessors.set(msg.stream, await processSchemaMessage(msg, config))
     case MessageType.record:
