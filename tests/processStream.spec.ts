@@ -26,17 +26,17 @@ describe("processStream - Schemas", () => {
       container = await bootClickhouseContainer(initialConnInfo)
       connInfo = new Config({
         ...initialConnInfo,
-        port: container.getMappedPort(initialConnInfo.port)
+        port: container.getMappedPort(initialConnInfo.port),
       })
     } catch (err) {
-      console.log("err", err);
+      console.log("err", err)
     }
     set_level(LogLevel.INFO)
-  });
+  })
 
   afterEach(async function () {
-    await container.stop();
-  });
+    await container.stop()
+  })
 
   it('should create schemas', async () => {
     await processStream(fs.createReadStream("./tests/data/stream_1.jsonl"), connInfo)
@@ -73,10 +73,8 @@ describe("processStream - Schemas", () => {
     }, Error)
   }).timeout(30000)
 
-  it('should throw if stream defines schema multiple times', async () => {
-    await assert.rejects(async () => {
-      await processStream(fs.createReadStream("./tests/data/stream_multiple_schema.jsonl"), connInfo)
-    }, Error)
+  it('should ignore second schema definition', async () => {
+    await processStream(fs.createReadStream("./tests/data/stream_multiple_schema.jsonl"), connInfo)
   }).timeout(30000)
 
   it('should recreate if schemas already exists, new is different but specified to be recreated', async () => {
@@ -97,16 +95,16 @@ describe("processStream - Records", () => {
   beforeEach(async function () {
     this.timeout(30000)
     try {
-      container = await bootClickhouseContainer(initialConnInfo);
+      container = await bootClickhouseContainer(initialConnInfo)
       connInfo = new Config({
         ...initialConnInfo,
-        port: container.getMappedPort(initialConnInfo.port)
+        port: container.getMappedPort(initialConnInfo.port),
       })
     } catch (err) {
-      console.log("err", err);
+      console.log("err", err)
     }
     set_level(LogLevel.INFO)
-  });
+  })
 
   afterEach(async function () {
     await container.stop()
@@ -153,25 +151,31 @@ describe("processStream - Records", () => {
 
   it('should handle cleanFirst', async () => {
     await processStream(fs.createReadStream("./tests/data/stream_vanilla.jsonl"), connInfo)
-    let execResult = await runChQueryInContainer(container, connInfo, `select count() from \`users\``)
+    let execResult = await runChQueryInContainer(container, connInfo, `select count()
+                                                                       from \`users\``)
     assert.equal(execResult.output, '4\n')
 
     await processStream(fs.createReadStream("./tests/data/stream_cleanFirst.jsonl"), connInfo)
-    execResult = await runChQueryInContainer(container, connInfo, `select count() from \`users\``)
+    execResult = await runChQueryInContainer(container, connInfo, `select count()
+                                                                   from \`users\``)
     assert.equal(execResult.output, '2\n')
 
   }).timeout(60000)
 
   it('should handle cleaning column', async () => {
     await processStream(fs.createReadStream("./tests/data/stream_vanilla.jsonl"), connInfo)
-    let execResult = await runChQueryInContainer(container, connInfo, `select count() from \`users\``)
+    let execResult = await runChQueryInContainer(container, connInfo, `select count()
+                                                                       from \`users\``)
     assert.equal(execResult.output, '4\n')
 
     await processStream(fs.createReadStream("./tests/data/stream_cleaningColumn.jsonl"), connInfo)
-    execResult = await runChQueryInContainer(container, connInfo, `select count() from \`users\``)
+    execResult = await runChQueryInContainer(container, connInfo, `select count()
+                                                                   from \`users\``)
     assert.equal(execResult.output, '5\n')
 
-    execResult = await runChQueryInContainer(container, connInfo, `select id from \`users\` where name = 'bill'`)
+    execResult = await runChQueryInContainer(container, connInfo, `select id
+                                                                   from \`users\`
+                                                                   where name = 'bill'`)
     assert.equal(execResult.output, '7\n')
 
 
@@ -185,9 +189,11 @@ describe("processStream - Records", () => {
     assert.equal(rows[1].includes("_parent_id"), true)
     assert.equal(rows[2].includes("_level_0_index"), true)
 
-    execResult = await runChQueryInContainer(container, connInfo, `select count() from \`tickets\``)
+    execResult = await runChQueryInContainer(container, connInfo, `select count()
+                                                                   from \`tickets\``)
     assert.equal(execResult.output, '1\n')
-    execResult = await runChQueryInContainer(container, connInfo, `select count() from \`tickets__follower_ids\``)
+    execResult = await runChQueryInContainer(container, connInfo, `select count()
+                                                                   from \`tickets__follower_ids\``)
     assert.equal(execResult.output, '2\n')
   }).timeout(30000)
 
@@ -200,9 +206,11 @@ describe("processStream - Records", () => {
     assert.equal(rows[2].includes("name"), true)
     assert.equal(rows[3].includes("_level_0_index"), true)
 
-    execResult = await runChQueryInContainer(container, connInfo, `select count() from \`tickets\``)
+    execResult = await runChQueryInContainer(container, connInfo, `select count()
+                                                                   from \`tickets\``)
     assert.equal(execResult.output, '1\n')
-    execResult = await runChQueryInContainer(container, connInfo, `select count() from \`tickets__follower_ids\``)
+    execResult = await runChQueryInContainer(container, connInfo, `select count()
+                                                                   from \`tickets__follower_ids\``)
     assert.equal(execResult.output, '2\n')
   }).timeout(30000)
 
