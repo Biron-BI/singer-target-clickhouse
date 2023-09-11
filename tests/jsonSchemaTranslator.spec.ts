@@ -1,5 +1,5 @@
 import {strict as assert} from 'assert'
-import {ISourceMeta, PKType} from "../src/jsonSchemaInspector"
+import {ColumnMap, ISourceMeta, PKType} from "../src/jsonSchemaInspector"
 import {List} from "immutable"
 import {listTableNames, translateCH} from "../src/jsonSchemaTranslator"
 
@@ -10,13 +10,15 @@ const simpleMeta: ISourceMeta = {
     prop: "id",
     sqlIdentifier: "`id`",
     chType: "Int32",
-    type: "integer"
+    type: "integer",
+    lowCardinality: false,
   }, {
     nullable: true,
     prop: "name",
     sqlIdentifier: "`name`",
     chType: "String",
-    type: "string"
+    type: "string",
+    lowCardinality: false,
   }]),
   children: List(),
   sqlTableName: "`order`",
@@ -40,13 +42,15 @@ const metaWithPK: ISourceMeta = {
     type: "integer",
     nullable: false,
     pkType: PKType.CURRENT,
+    lowCardinality: false,
   }]),
   simpleColumnMappings: List([{
     nullable: true,
     prop: "name",
     sqlIdentifier: "`name`",
     chType: "String",
-    type: "string"
+    type: "string",
+    lowCardinality: false,
   }]),
   children: List(),
   sqlTableName: "`order`",
@@ -61,13 +65,15 @@ const metaWithPKAndChildren: ISourceMeta = {
     type: "integer",
     nullable: false,
     pkType: PKType.CURRENT,
+    lowCardinality: false,
   }]),
   simpleColumnMappings: List([{
     nullable: true,
     prop: "name",
     sqlIdentifier: "`name`",
     chType: "String",
-    type: "string"
+    type: "string",
+    lowCardinality: false,
   }]),
   children: List([{...simpleMeta, sqlTableName: "`order_child`", tableName: "order_child"}]),
   sqlTableName: "`order`",
@@ -99,6 +105,20 @@ describe("translateCH", () => {
     assert.equal(res.size, 2)
     assert.equal(res.get(0), "CREATE TABLE db.`order` ( `id` UInt32, `name` Nullable(String), `_ver` UInt64 ) ENGINE = ReplacingMergeTree(_ver) ORDER BY `id`")
     assert.equal(res.get(1), "CREATE TABLE db.`order_child` ( `id` Int32, `name` Nullable(String), `_root_ver` UInt64 ) ENGINE = MergeTree ORDER BY tuple()")
+  })
+
+  it("should translate cardinality", () => {
+    const mappings = simpleMeta.simpleColumnMappings
+    const res = translateCH("db",
+      {
+        ...simpleMeta, simpleColumnMappings: List([mappings.get(0), {
+          ...mappings.get(1),
+          lowCardinality: true,
+        }] as ColumnMap[]),
+      },
+    )
+    assert.equal(res.size, 1)
+    assert.equal(res.get(0), "CREATE TABLE db.`order` ( `id` Int32, `name` LowCardinality(Nullable(String)) ) ENGINE = MergeTree ORDER BY tuple()")
   })
 })
 

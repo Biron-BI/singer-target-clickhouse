@@ -10,6 +10,7 @@ const sha1 = require('sha1')
 export interface IExtendedJSONSchema7 extends ExtendedJSONSchema7 {
   decimals?: number;
   precision?: number;
+  lowCardinality?: boolean
 }
 
 export class JsonSchemaInspectorContext {
@@ -50,7 +51,8 @@ export interface ISimpleColumnType {
   chType?: string;
   type?: JSONSchema7TypeName;
   typeFormat?: string;
-  nullable: boolean
+  nullable: boolean,
+  lowCardinality: boolean,
 }
 
 export interface IColumnMapping {
@@ -94,6 +96,7 @@ const buildMetaPkProp = (prop: string, ctx: JsonSchemaInspectorContext, pkType: 
   sqlIdentifier: escapeIdentifier(fieldFormatter?.(prop) ?? prop, ctx.subtableSeparator),
   ...getSimpleColumnType(ctx, prop),
   nullable: false,
+  lowCardinality: false,
   pkType,
 })
 
@@ -113,6 +116,7 @@ const buildMetaPkProps = (ctx: JsonSchemaInspectorContext): List<PkMap> => List<
       sqlIdentifier: escapeIdentifier(prop, ctx.subtableSeparator),
       chType: "Int32",
       nullable: false,
+      lowCardinality: false,
       pkType: PKType.LEVEL,
     } as PkMap
   }).toList())
@@ -237,6 +241,7 @@ function buildMetaProps(ctx: JsonSchemaInspectorContext): MetaProps {
         sqlIdentifier: escapeIdentifier("value", ctx.subtableSeparator),
         ...getSimpleColumnType(ctx, undefined),
         nullable: false,
+        lowCardinality: false,
       }]),
       children: List<ISourceMeta>(),
     }
@@ -255,6 +260,8 @@ function getNullable(propDef: JSONSchema7Definition) {
   return asArray(propDef.type).includes("null") ?? false
 }
 
+const getLowCardinality = (propDef: IExtendedJSONSchema7) => propDef.lowCardinality !== null && propDef.lowCardinality === true
+
 function getSimpleColumnType(ctx: JsonSchemaInspectorContext, key?: string): ISimpleColumnType | undefined {
   const propDef = key ? ctx.schema.properties?.[key] : ctx.schema
   if (!propDef || typeof propDef === "boolean") {
@@ -268,6 +275,7 @@ function getSimpleColumnType(ctx: JsonSchemaInspectorContext, key?: string): ISi
     typeFormat: propDef.format,
     chType: type,
     nullable: getNullable(propDef),
+    lowCardinality: getLowCardinality(propDef),
   } : undefined
 }
 

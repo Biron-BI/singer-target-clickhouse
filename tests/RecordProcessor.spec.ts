@@ -16,6 +16,7 @@ const id: PkMap = {
   type: "integer",
   nullable: false,
   pkType: PKType.CURRENT,
+  lowCardinality: false,
 }
 
 // Represents an id column, for a PK for instance
@@ -26,6 +27,7 @@ const rootId: PkMap = {
   type: "integer",
   nullable: false,
   pkType: PKType.ROOT,
+  lowCardinality: false,
 }
 
 // Represents a name column, as a simple column
@@ -35,6 +37,7 @@ const name: ColumnMap = {
   sqlIdentifier: "`name`",
   chType: "String",
   type: "string",
+  lowCardinality: false,
 }
 
 const simpleMeta: ISourceMeta = {
@@ -52,6 +55,7 @@ const levelColumn = (lvl: number): PkMap => ({
   type: "integer",
   nullable: false,
   pkType: PKType.LEVEL,
+  lowCardinality: false,
 })
 
 const metaWithPKAndChildren: ISourceMeta = {
@@ -94,6 +98,7 @@ const metaWithNestedValueArray: ISourceMeta = {
           "chType": "Int32",
           "nullable": false,
           "pkType": PKType.LEVEL,
+          lowCardinality: false,
         },
       ]),
       "simpleColumnMappings": List([]),
@@ -108,6 +113,7 @@ const metaWithNestedValueArray: ISourceMeta = {
               "chType": "Int32",
               "nullable": false,
               "pkType": PKType.LEVEL,
+              lowCardinality: false,
             },
             {
               "prop": "_level_1_index",
@@ -115,6 +121,7 @@ const metaWithNestedValueArray: ISourceMeta = {
               "chType": "Int32",
               "nullable": false,
               "pkType": PKType.LEVEL,
+              lowCardinality: false,
             },
           ]),
           "simpleColumnMappings": List([
@@ -123,6 +130,7 @@ const metaWithNestedValueArray: ISourceMeta = {
               "type": "string",
               "chType": "String",
               "nullable": false,
+              lowCardinality: false,
             },
           ]),
           "children": List([]),

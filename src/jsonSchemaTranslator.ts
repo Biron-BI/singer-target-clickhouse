@@ -58,7 +58,14 @@ export function translateCH(database: string, meta: ISourceMeta, parentMeta?: IS
   const createDefs: List<string> = meta.pkMappings
     .map(fkMapping => `${fkMapping.sqlIdentifier} ${fkMapping.chType}`)
     .concat(meta.simpleColumnMappings.map(mapping => {
-      const type = mapping.nullable ? `Nullable(${mapping.chType})` : mapping.chType
+      const modifiers: string[] = [
+        mapping.nullable ? `Nullable` : null,
+        mapping.lowCardinality ? `LowCardinality` : null,
+      ].filter(Boolean) as string[]
+      const type = modifiers.reduce(
+        (acc, modifier) => `${modifier}(${acc})`,
+        mapping.chType,
+      )
       return `${mapping.sqlIdentifier} ${type}`
     }))
     .push(resolveVersionColumn(isNodeRoot, meta.pkMappings.size > 0))

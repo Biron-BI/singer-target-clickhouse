@@ -49,6 +49,15 @@ describe("processStream - Schemas", () => {
     assert.equal(execResult.output.includes("tickets__custom_fields"), true)
   }).timeout(30000)
 
+  it('should create schemas which specifies cardinality', async () => {
+    await processStream(fs.createReadStream("./tests/data/stream_cardinality.jsonl"), connInfo)
+    let execResult = await runChQueryInContainer(container, connInfo, `show tables from ${connInfo.database}`)
+    assert.equal(execResult.output.split("\n").length, 2)
+    assert.equal(execResult.output.includes("users"), true)
+    execResult = await runChQueryInContainer(container, connInfo, `show create table users`)
+    assert.equal(execResult.output.includes("`name` LowCardinality(Nullable(String))"), true)
+  }).timeout(30000)
+
   it('should create schemas which specifiesPK', async () => {
     await processStream(fs.createReadStream("./tests/data/stream_schema_with_all_pk.jsonl"), connInfo)
     let execResult = await runChQueryInContainer(container, connInfo, `describe table ${connInfo.database}.tickets__follower_ids`)
