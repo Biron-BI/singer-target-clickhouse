@@ -280,24 +280,36 @@ export function getSimpleColumnSqlType(ctx: JsonSchemaInspectorContext, propDef:
       return "Date"
     } else if (format === "date-time") {
       return "DateTime"
+    } else if (format === "date-time64") {
+      return "DateTime64"
+    } else if (format === "uuid") {
+      return "UUID"
     } else {
       return "String"
     }
   } else if (type === "integer") {
     if (!format) {
       return "Int64"
+    } else if (format === "int128") {
+      return "Int128"
     } else if (format === "int64") {
       return "Int64"
     } else if (format === "int32") {
       return "Int32"
     } else if (format === "int16") {
       return "Int16"
+    } else if (format === "int8") {
+      return "Int8"
     } else {
       throwError(ctx, `${key}: unsupported integer format [${format}]`)
     }
   } else if (type === "number") {
     if (!format) {
       return `Decimal(${propDef.precision || 16}, ${propDef.decimals || 2})`
+    } else if (format === "float64") {
+      return "Float64"
+    } else if (format === "float32") {
+      return "Float32"
     } else {
       throwError(ctx, `${key}: unsupported number format [${format}]`)
     }
