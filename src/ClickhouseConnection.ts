@@ -5,6 +5,8 @@ import {List} from "immutable"
 import {Writable} from "stream"
 import {IConfig} from "./Config"
 import {escapeValue} from "./utils"
+import {Either, makeLeft, makeRight} from "./Either"
+
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const ClickHouse = require("@apla/clickhouse")
@@ -57,6 +59,63 @@ export default class ClickhouseConnection {
       .join(" ")
   }
 
+  public async addColumn(table: string, newCol: Column): Promise<Either<{
+    new: Column,
+    err: Error
+  }, boolean>> {
+    try {
+      await this.runQuery(`ALTER TABLE \`${table}\`
+          ADD COLUMN \`${newCol.name}\` ${newCol.type}`, 2)
+      return makeRight(true)
+    } catch (e) {
+      return makeLeft({
+        new: newCol,
+        err: e,
+      })
+    }
+  }
+
+  public async removeColumn(table: string, existing: Column): Promise<Either<{
+    existing: Column,
+    err: Error
+  }, boolean>> {
+    try {
+      await this.runQuery(`ALTER TABLE \`${table}\`
+          DROP COLUMN \`${existing.name}\``)
+      return makeRight(true)
+    } catch (e) {
+      return makeLeft({
+        existing,
+        err: e,
+      })
+    }
+  }
+
+  public async updateColumn(table: string, existing: Column, newCol: Column): Promise<Either<{
+    existing: Column,
+    new: Column,
+    err: Error
+  }, boolean>> {
+    try {
+      await this.runQuery(`ALTER TABLE \`${table}\`
+          MODIFY COLUMN \`${newCol.name}\` ${newCol.type}`, 0)
+      return makeRight(true)
+    } catch (e) {
+      // If it fails midway Clickhouse may keep a corrupted intermediary state where table is changed but mutations cannot be applied; so we revert
+      try {
+        await this.runQuery(`ALTER TABLE \`${table}\`
+            MODIFY COLUMN \`${existing.name}\` ${existing.type}`)
+      } catch (revertError) {
+        log_error(`could not revert update`)
+      }
+      return makeLeft({
+        existing,
+        new: newCol,
+        err: e,
+      })
+    }
+  }
+
   public async listColumns(table: string): Promise<List<Column>> {
     const res = await this.runQuery(`SELECT name, type, is_in_sorting_key
                                      FROM system.columns
@@ -92,12 +151,12 @@ export default class ClickhouseConnection {
   }
 
   // https://github.com/apla/node-clickhouse#promise-interface
-  public async runQuery(query: string): Promise<ICHQueryResult> {
+  public async runQuery(query: string, retries = 2): Promise<ICHQueryResult> {
     const conn = await this.getConnectionPooled()
 
     return new Promise((resolve, reject) => {
       const op = retry.operation({
-        retries: 2,
+        retries,
         factor: 4,
       })
       op.attempt(async function () {
