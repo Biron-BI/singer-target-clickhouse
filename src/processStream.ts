@@ -71,7 +71,8 @@ async function processLine(line: string, config: Config, streamProcessors: Map<s
       console.log(JSON.stringify(msg.value))
       return clearedStreamProcessors
     default:
-      throw new Error("not implemented")
+      log_warning(`Message type not handled at line ${lineCount} starting with [${line.substring(0, 50)}]`)
+      return streamProcessors
   }
 }
 

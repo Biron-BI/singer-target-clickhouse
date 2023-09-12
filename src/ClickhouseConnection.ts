@@ -1,6 +1,6 @@
 import {ono} from "ono"
 import * as retry from "retry"
-import {log_debug, log_error, log_warning} from "singer-node"
+import {log_debug, log_error, log_info, log_warning} from "singer-node"
 import {List} from "immutable"
 import {Writable} from "stream"
 import {IConfig} from "./Config"
@@ -64,7 +64,8 @@ export default class ClickhouseConnection {
     err: Error
   }, boolean>> {
     try {
-      await this.runQuery(`ALTER TABLE \`${table}\`
+      log_info(`[${table}] Adding column ${table}.${newCol.name} ${newCol.type}`)
+      await this.runQuery(`ALTER TABLE ${table}
           ADD COLUMN \`${newCol.name}\` ${newCol.type}`, 2)
       return makeRight(true)
     } catch (e) {
@@ -79,8 +80,9 @@ export default class ClickhouseConnection {
     existing: Column,
     err: Error
   }, boolean>> {
+    log_info(`[${table}] Removing column ${table}.${existing.name} `)
     try {
-      await this.runQuery(`ALTER TABLE \`${table}\`
+      await this.runQuery(`ALTER TABLE ${table}
           DROP COLUMN \`${existing.name}\``)
       return makeRight(true)
     } catch (e) {
@@ -97,13 +99,14 @@ export default class ClickhouseConnection {
     err: Error
   }, boolean>> {
     try {
-      await this.runQuery(`ALTER TABLE \`${table}\`
+      log_info(`[${table}] Updating column ${table}.${existing.name} from ${existing.type} to ${newCol.type}`)
+      await this.runQuery(`ALTER TABLE ${table}
           MODIFY COLUMN \`${newCol.name}\` ${newCol.type}`, 0)
       return makeRight(true)
     } catch (e) {
       // If it fails midway Clickhouse may keep a corrupted intermediary state where table is changed but mutations cannot be applied; so we revert
       try {
-        await this.runQuery(`ALTER TABLE \`${table}\`
+        await this.runQuery(`ALTER TABLE ${table}
             MODIFY COLUMN \`${existing.name}\` ${existing.type}`)
       } catch (revertError) {
         log_error(`could not revert update`)

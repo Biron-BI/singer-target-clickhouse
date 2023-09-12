@@ -1,7 +1,7 @@
 // Emulation of ArrowKT's Either:
 
 
-// Taken from https://antman-does-software.com/stop-catching-errors-in-typescript-use-the-either-type-to-make-your-code-predictable
+// Adapted from https://antman-does-software.com/stop-catching-errors-in-typescript-use-the-either-type-to-make-your-code-predictable
 
 type Left<T> = {
   left: T;
@@ -15,11 +15,6 @@ type Right<U> = {
 
 export type Either<T, U> = NonNullable<Left<T> | Right<U>>;
 
-
-const validLeft: Either<string, string> = {left: 'foo'}; // valid
-
-const validRight: Either<string, string> = {right: 'foo'}; // valid
-
 export type UnwrapEither = <T, U>(e: Either<T, U>) => NonNullable<T | U>;
 
 export const unwrapEither: UnwrapEither = <T, U>({
@@ -29,8 +24,8 @@ export const unwrapEither: UnwrapEither = <T, U>({
   if (right !== undefined && left !== undefined) {
     throw new Error(
       `Received both left and right values at runtime when opening an Either\nLeft: ${JSON.stringify(
-        left
-      )}\nRight: ${JSON.stringify(right)}`
+        left,
+      )}\nRight: ${JSON.stringify(right)}`,
     );
     /*
      We're throwing in this function because this can only occur at runtime if something
@@ -44,9 +39,7 @@ export const unwrapEither: UnwrapEither = <T, U>({
   if (right !== undefined) {
     return right as NonNullable<U>;
   }
-  throw new Error(
-    `Received no left or right values at runtime when opening Either`
-  );
+  throw new Error(`Received no left or right values at runtime when opening Either`);
 };
 
 export const isLeft = <T, U>(e: Either<T, U>): e is Left<T> => {
@@ -57,6 +50,15 @@ export const isRight = <T, U>(e: Either<T, U>): e is Right<U> => {
   return e.right !== undefined;
 };
 
-export const makeLeft = <T>(value: T): Left<T> => ({ left: value });
+export const makeLeft = <T>(value: T): Left<T> => ({left: value});
 
-export const makeRight = <U>(value: U): Right<U> => ({ right: value });
+export const makeRight = <U>(value: U): Right<U> => ({right: value});
+
+export const mapLeft = <OLD_LEFT, RIGHT, NEW_LEFT>(e: Either<OLD_LEFT, RIGHT>, modifier: (left: OLD_LEFT) => NEW_LEFT): Either<NEW_LEFT, RIGHT> => {
+  if (isRight(e)) {
+    return e
+  }
+  return makeLeft(modifier(e.left))
+}
+
+export const listLeft = <LEFT, RIGHT>(e: Either<LEFT, RIGHT>[]): LEFT[] => e.filter(isLeft).map((it) => it.left)
