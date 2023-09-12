@@ -99,6 +99,36 @@ const pkMapToColumn = (col: ColumnMap): Column => ({
 // Remove magic quotes around values
 const unescape = (v: string) => v.replace(/`/g, "")
 
+// Naïve impl. Could speed up process by sorting and iterating only once
+export function getColumnsIntersections(existingCols: Column[], requiredCols: Column[]): {
+  missing: Column[];
+  obsolete: Column[];
+  modified: { existing: Column; new: Column }[]
+} {
+  const missing = requiredCols.filter((required) =>
+    existingCols.find((existing) => existing.name === required.name) === undefined,
+  )
+  const modified = existingCols.reduce((acc: { existing: Column, new: Column }[], existing) => {
+    const matching = requiredCols.find((required) => required.name === existing.name && required.type !== existing.type)
+    if (matching) {
+      return [...acc, {
+        existing,
+        new: matching,
+      }]
+    } else {
+      return acc
+    }
+  }, [])
+  const obsolete = existingCols.filter((existing) =>
+    (requiredCols.find((required) => required.name === existing.name)) === undefined,
+  )
+  return {
+    missing,
+    modified,
+    obsolete,
+  }
+}
+
 export async function ensureSchemaIsEquivalent(meta: ISourceMeta, ch: ClickhouseConnection) {
   await Promise.all(meta.children.map((child) => ensureSchemaIsEquivalent(child, ch)))
 
