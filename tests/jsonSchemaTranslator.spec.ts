@@ -1,7 +1,8 @@
 import {strict as assert} from 'assert'
 import {ColumnMap, ISourceMeta, PKType} from "../src/jsonSchemaInspector"
 import {List} from "immutable"
-import {listTableNames, translateCH} from "../src/jsonSchemaTranslator"
+import {getColumnsIntersections, listTableNames, translateCH} from "../src/jsonSchemaTranslator"
+import {Column} from "../src/ClickhouseConnection"
 
 const simpleMeta: ISourceMeta = {
   pkMappings: List(),
@@ -125,5 +126,41 @@ describe("translateCH", () => {
 describe("listTableNames", () => {
   it('should list all tables names in a single array', function () {
     assert.deepEqual(listTableNames(metaWithPKAndChildren).toArray(), ["`order`", "`order_child`"])
+  })
+})
+
+describe("getColumnsIntersections", () => {
+  it('should list intersections', function () {
+    const notModified = {
+      name: "not_modified",
+      type: "1",
+      is_in_sorting_key: false,
+    }
+    const toDelete = {
+      name: "to_delete",
+      type: "1",
+      is_in_sorting_key: false,
+    }
+    const toModifyFromExisting = {
+      name: "to_modify",
+      type: "1",
+      is_in_sorting_key: false,
+    }
+    const toAdd = {
+      name: "to_add",
+      type: "1",
+      is_in_sorting_key: false,
+    }
+    const toModifyFromRequired = {
+      name: "to_modify",
+      type: "2",
+      is_in_sorting_key: false,
+    }
+    const existing: Column[] = [notModified, toDelete, toModifyFromExisting]
+    const required: Column[] = [notModified, toAdd, toModifyFromRequired]
+    const res = getColumnsIntersections(existing, required)
+    assert.deepEqual(res.missing, [toAdd])
+    assert.deepEqual(res.modified, [{existing: toModifyFromExisting, new: toModifyFromRequired}])
+    assert.deepEqual(res.obsolete, [toDelete])
   })
 })

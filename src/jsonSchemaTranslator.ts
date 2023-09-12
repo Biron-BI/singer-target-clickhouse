@@ -3,8 +3,9 @@ import {ColumnMap, ISourceMeta, PkMap, PKType} from "./jsonSchemaInspector"
 import SchemaTranslator from "./SchemaTranslator"
 import ClickhouseConnection, {Column} from "./ClickhouseConnection"
 import * as assert from "assert"
-import {fillIf, sortObjectByPropValue} from "./utils"
-import {log_debug} from "singer-node"
+import {fillIf} from "./utils"
+import {log_debug, log_error} from "singer-node"
+import {listLeft, mapLeft} from "./Either"
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const get = require("lodash.get")
@@ -99,6 +100,36 @@ const pkMapToColumn = (col: ColumnMap): Column => ({
 // Remove magic quotes around values
 const unescape = (v: string) => v.replace(/`/g, "")
 
+// Naïve impl. Could speed up process by sorting and iterating only once
+export function getColumnsIntersections(existingCols: Column[], requiredCols: Column[]): {
+  missing: Column[];
+  obsolete: Column[];
+  modified: { existing: Column; new: Column }[]
+} {
+  const missing = requiredCols.filter((required) =>
+    existingCols.find((existing) => existing.name === required.name) === undefined,
+  )
+  const modified = existingCols.reduce((acc: { existing: Column, new: Column }[], existing) => {
+    const matching = requiredCols.find((required) => required.name === existing.name && required.type !== existing.type)
+    if (matching) {
+      return [...acc, {
+        existing,
+        new: matching,
+      }]
+    } else {
+      return acc
+    }
+  }, [])
+  const obsolete = existingCols.filter((existing) =>
+    (requiredCols.find((required) => required.name === existing.name)) === undefined,
+  )
+  return {
+    missing,
+    modified,
+    obsolete,
+  }
+}
+
 export async function ensureSchemaIsEquivalent(meta: ISourceMeta, ch: ClickhouseConnection) {
   await Promise.all(meta.children.map((child) => ensureSchemaIsEquivalent(child, ch)))
 
@@ -123,13 +154,26 @@ export async function ensureSchemaIsEquivalent(meta: ISourceMeta, ch: Clickhouse
     }, !isRoot || (isRoot && meta.pkMappings.find((pk) => pk.pkType === PKType.CURRENT) !== undefined)))
 
 
-  const sortedExisting = sortObjectByPropValue(existingColumns, "name").toArray()
-  const sortedExpected = sortObjectByPropValue(expectedColumns, "name").toArray()
-  try {
-    assert.deepStrictEqual(sortedExisting, sortedExpected, `[${meta.prop}]: schema change detected in table [${meta.sqlTableName}]`)
-  } catch (err) {
-    log_debug(JSON.stringify(meta, null, 2))
-    log_debug(`Schema change: current columns = ${JSON.stringify(sortedExisting, null, 2)}, new would be = ${JSON.stringify(sortedExpected, null, 2)}`)
-    throw err
+  const intersections = getColumnsIntersections(existingColumns.toArray(), expectedColumns.toArray())
+
+  const added = (await Promise.all(intersections.missing.map((elem) => ch.addColumn(meta.sqlTableName, elem))))
+    .map((res) => mapLeft(res, (ctx) =>
+      `Could not create column ${ctx.new.name} ${ctx.new.type}`,
+    ))
+
+  const updated = (await Promise.all(intersections.modified.map((elem) => ch.updateColumn(meta.sqlTableName, elem.existing, elem.new))))
+    .map((res) => mapLeft(res, (ctx) =>
+      `Could not update column ${ctx.new.name} from ${ctx.existing.type} to ${ctx.new.type}`,
+    ))
+
+  const removed = (await Promise.all(intersections.obsolete.map((elem) => ch.removeColumn(meta.sqlTableName, elem))))
+    .map((res) => mapLeft(res, (ctx) =>
+      `Could not drop column ${ctx.existing.name} ${ctx.existing.type}`,
+    ))
+
+  const errors = [...listLeft(added), ...listLeft(updated), ...listLeft(removed)]
+  errors.forEach((it) => log_error(it))
+  if (errors.length > 0) {
+    throw new Error("Could not update table")
   }
 }
