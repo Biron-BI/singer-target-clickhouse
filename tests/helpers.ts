@@ -6,7 +6,7 @@ import {Readable} from "stream"
 import {List} from "immutable"
 
 export async function bootClickhouseContainer(connInfo: IConfig): Promise<StartedTestContainer> {
-  const container = await new GenericContainer("yandex/clickhouse-server:21.9.2.17")
+  const container = await new GenericContainer("clickhouse/clickhouse-server:23.3.13.6")
     .withEnv("CLICKHOUSE_DB", connInfo.database)
     .withEnv("CLICKHOUSE_USER", connInfo.username)
     .withEnv("CLICKHOUSE_PASSWORD", connInfo.password)
@@ -28,7 +28,7 @@ export async function runChQueryInContainer(container: StartedTestContainer, con
   const ret = await container.exec(["clickhouse-client", "-u", connInfo.username, "--password=" + connInfo.password, "-d", connInfo.database, `--query=${query}`])
 
   if (checkOk) {
-    assert.equal(ret.exitCode, 0)
+    assert.equal(ret.exitCode, 0, ret.output)
   }
   return ret
 }
