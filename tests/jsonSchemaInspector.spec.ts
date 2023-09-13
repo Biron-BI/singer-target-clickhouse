@@ -1,5 +1,5 @@
 import {strict as assert} from 'assert'
-import {buildMeta, getSimpleColumnSqlType, IExtendedJSONSchema7, JsonSchemaInspectorContext} from "../src/jsonSchemaInspector"
+import {buildMeta, getSimpleColumnSqlType, IExtendedJSONSchema7, ISourceMeta, JsonSchemaInspectorContext} from "../src/jsonSchemaInspector"
 import {List, Map} from "immutable"
 import {SchemaKeyProperties} from "singer-node"
 
@@ -93,7 +93,7 @@ const deepNestedArrayObjectSchema: IExtendedJSONSchema7 = {
       "items": {
         "properties": {
           bill_id: {
-            type: "number"
+            type: "number",
           },
           "john_fields": {
             "type": "array",
@@ -104,29 +104,29 @@ const deepNestedArrayObjectSchema: IExtendedJSONSchema7 = {
                   items: {
                     properties: {
                       "jack_value": {
-                        type: "number"
-                      }
+                        type: "number",
+                      },
                     },
-                    type: "object"
-                  }
+                    type: "object",
+                  },
                 },
                 john_id: {
-                  type: "number"
+                  type: "number",
                 },
                 "name": {
-                  type: "string"
-                }
+                  type: "string",
+                },
               },
-              type: "object"
+              type: "object",
             },
           },
         },
-        type: "object"
+        type: "object",
       },
       "type": "array",
     },
     "id": {
-      "type": "integer"
+      "type": "integer",
     },
   },
   "type": "object",
@@ -135,37 +135,37 @@ const deepNestedArrayObjectSchema: IExtendedJSONSchema7 = {
 const nestedValueArraySchema: IExtendedJSONSchema7 = {
   "type": [
     "null",
-    "object"
+    "object",
   ],
   "properties": {
     "events": {
       "type": [
         "null",
-        "array"
+        "array",
       ],
       "items": {
         "type": [
           "null",
-          "object"
+          "object",
         ],
         "properties": {
           "previous_value": {
             "type": [
               "null",
               "array",
-              "string"
+              "string",
             ],
             "items": {
               "type": [
                 "null",
-                "string"
-              ]
-            }
-          }
-        }
-      }
-    }
-  }
+                "string",
+              ],
+            },
+          },
+        },
+      },
+    },
+  },
 }
 
 describe("getSimpleColumnSqlType", () => {
@@ -223,8 +223,8 @@ describe("JSON Schema Inspector", () => {
         props: List(["id"]),
         children: Map<string, SchemaKeyProperties>().set("custom_fields", {
           props: List<string>(),
-          children: Map()
-        })
+          children: Map(),
+        }),
       }))
     assert.equal(res.children.get(0)?.sqlTableName, "`audits__custom_fields`")
     assert.equal(res.children.get(0)?.simpleColumnMappings.size, 1)
@@ -242,13 +242,13 @@ describe("JSON Schema Inspector", () => {
         props: List(["bill_id"]),
         children: Map<string, SchemaKeyProperties>().set("john_fields", {
           props: List(["john_id"]),
-          children: Map()
-        })
-      })
+          children: Map(),
+        }),
+      }),
     }
 
-    const res = buildMeta(new JsonSchemaInspectorContext("audits", deepNestedArrayObjectSchema, List(["id"]), undefined, undefined, undefined, undefined, undefined, all_key_properties
-      ))
+    const res = buildMeta(new JsonSchemaInspectorContext("audits", deepNestedArrayObjectSchema, List(["id"]), undefined, undefined, undefined, undefined, undefined, all_key_properties,
+    ))
     assert.equal(res.children.get(0)?.sqlTableName, "`audits__bill_fields`")
     assert.equal(res.children.get(0)?.pkMappings.get(0)?.sqlIdentifier, "`_root_id`")
     assert.equal(res.children.get(0)?.pkMappings.get(1)?.sqlIdentifier, "`_parent_id`")
@@ -286,55 +286,59 @@ describe("JSON Schema Inspector", () => {
     const expectedResult = {
       "prop": "audits",
       "sqlTableName": "`audits`",
-      "pkMappings": [],
-      "simpleColumnMappings": [],
-      "children": [
+      "pkMappings": List(),
+      "simpleColumnMappings": List(),
+      "children": List([
         {
           "prop": "events",
           "sqlTableName": "`audits__events`",
-          "pkMappings": [
+          "pkMappings": List([
             {
               "prop": "_level_0_index",
               "sqlIdentifier": "`_level_0_index`",
               "chType": "Int32",
               "nullable": false,
-              "pkType": "LEVEL"
-            }
-          ],
-          "simpleColumnMappings": [],
-          "children": [
+              "lowCardinality": false,
+              "pkType": "LEVEL",
+            },
+          ]),
+          "simpleColumnMappings": List(),
+          "children": List([
             {
               "prop": "previous_value",
               "sqlTableName": "`audits__events__previous_value`",
-              "pkMappings": [
+              "pkMappings": List([
                 {
                   "prop": "_level_0_index",
                   "sqlIdentifier": "`_level_0_index`",
                   "chType": "Int32",
                   "nullable": false,
-                  "pkType": "LEVEL"
+                  "lowCardinality": false,
+                  "pkType": "LEVEL",
                 },
                 {
                   "prop": "_level_1_index",
                   "sqlIdentifier": "`_level_1_index`",
                   "chType": "Int32",
                   "nullable": false,
-                  "pkType": "LEVEL"
-                }
-              ],
-              "simpleColumnMappings": [
+                  "lowCardinality": false,
+                  "pkType": "LEVEL",
+                },
+              ]),
+              "simpleColumnMappings": List([
                 {
                   "sqlIdentifier": "`value`",
                   "type": "string",
                   "chType": "String",
-                  "nullable": false
-                }
-              ],
-              "children": []
-            }
-          ]
-        }
-      ]
+                  "nullable": false,
+                  "lowCardinality": false,
+                },
+              ]),
+              "children": List(),
+            },
+          ]),
+        },
+      ]),
     }
     assert.equal(JSON.stringify(res), JSON.stringify(expectedResult))
   })
