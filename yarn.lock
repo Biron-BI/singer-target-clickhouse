@@ -1517,10 +1517,10 @@ shebang-regex@^3.0.0:
   resolved "https://registry.yarnpkg.com/shebang-regex/-/shebang-regex-3.0.0.tgz#ae16f1644d873ecad843b0307b143362d4c42172"
   integrity sha512-7++dFhtcx3353uBaq8DDR4NuxBetBzC7ZQOhmTQInHEd6bSrXdiEyzCvG07Z44UYdLShWUyXt5M/yhz8ekcb1A==
 
-singer-node@^0.1.1:
-  version "0.1.1"
-  resolved "https://registry.yarnpkg.com/singer-node/-/singer-node-0.1.1.tgz#564572127ba30add8904082770b51d9ef32488dc"
-  integrity sha512-yvnD8fJE8XfEO1EYu2yor6iThNh0uNNZiJ7KZa5rzicRn85zVq7YfVgvcRdoNpkvwDw97Syd2jc5O3b5tMDr0Q==
+singer-node@^1.2.0:
+  version "1.2.0"
+  resolved "https://registry.yarnpkg.com/singer-node/-/singer-node-1.2.0.tgz#4106b507edae73452bdf6a9f1b1897b4b5405098"
+  integrity sha512-dD+bz1BvYm1xlJhd5L5VvhD4/mV9moXH85/60p8E0PXDmEOGcO7qZaTkWjVY/FRGhW5AX88ryzs4uhUI2o8J0A==
   dependencies:
     commander "^8.3.0"
     immutable "^4.0.0"

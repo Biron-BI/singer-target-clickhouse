@@ -1,6 +1,6 @@
 import * as readline from 'readline'
-import {Map} from "immutable"
-import {log_debug, log_fatal, log_info, log_warning, MessageType, parse_message, SchemaMessage} from "singer-node"
+import {List, Map} from "immutable"
+import {ActiveStreamsMessage, log_debug, log_fatal, log_info, log_warning, MessageType, parse_message, SchemaMessage} from "singer-node"
 import {Readable} from "stream"
 import ClickhouseConnection from "./ClickhouseConnection"
 import {buildMeta, escapeIdentifier, JsonSchemaInspectorContext} from "./jsonSchemaInspector"
@@ -44,10 +44,33 @@ async function processSchemaMessage(msg: SchemaMessage, config: Config): Promise
   return streamProcessor
 }
 
+function tableShouldBeDropped(table: string, activeStreams: List<string>, subtableSeparator: string): boolean {
+  const doesMatchAnActiveStream = activeStreams.some((activeTable) => table === activeTable || table.startsWith(activeTable + subtableSeparator))
+  const isAlreadyDropped = table.startsWith(ClickhouseConnection.droppedTablePrefix)
+  const isArchived = table.startsWith(ClickhouseConnection.archivedTablePrefix)
+
+  return !doesMatchAnActiveStream && !isAlreadyDropped  && !isArchived
+}
+
+async function processActiveSchemasMessage(msg: ActiveStreamsMessage, config: Config): Promise<void> {
+  const ch = new ClickhouseConnection(config)
+
+  const tables = await ch.listTables()
+
+  await Promise.all(
+    tables.map(async (table) => {
+      if (tableShouldBeDropped(table, msg.streams, config.subtable_separator)) {
+        return ch.renameObsoleteColumn(table)
+      }
+    })
+  )
+}
+
+
 async function processLine(line: string, config: Config, streamProcessors: Map<string, StreamProcessor>, lineCount: number): Promise<Map<string, StreamProcessor>> {
   const msg = parse_message(line)
 
-  switch (msg.type) {
+  switch (msg?.type) {
     case MessageType.schema:
       if (streamProcessors.has(msg.stream)) {
         log_warning(`A schema has already been received for stream [${msg.stream}]. Ignoring message`)
@@ -70,6 +93,10 @@ async function processLine(line: string, config: Config, streamProcessors: Map<s
       // Should be the one and only console log in this package: the tap expects output in stdout to save state
       console.log(JSON.stringify(msg.value))
       return clearedStreamProcessors
+    case MessageType.activeStreams:
+      // Expected to be read last
+      await processActiveSchemasMessage(msg, config)
+      return streamProcessors
     default:
       log_warning(`Message type not handled at line ${lineCount} starting with [${line.substring(0, 50)}]`)
       return streamProcessors

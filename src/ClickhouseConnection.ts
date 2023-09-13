@@ -41,6 +41,9 @@ export default class ClickhouseConnection {
     return this
   }
 
+  static droppedTablePrefix = "_dropped_"
+  static archivedTablePrefix = "_archived_"
+
   public getDatabase() {
     return this.connInfo.database
   }
@@ -74,6 +77,11 @@ export default class ClickhouseConnection {
         err: e,
       })
     }
+  }
+
+  public async renameObsoleteColumn(table: string) {
+    log_info(`[${table}] Renaming table ${table}`)
+    return this.runQuery(`RENAME TABLE \`${table}\` TO \`${ClickhouseConnection.droppedTablePrefix}${table}\``)
   }
 
   public async removeColumn(table: string, existing: Column): Promise<Either<{

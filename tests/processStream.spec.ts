@@ -20,6 +20,7 @@ const initialConnInfo = new Config({
 describe("processStream - Schemas", () => {
   let container: StartedTestContainer
   let connInfo: Config
+  // TODO don't start container every time
   beforeEach(async function () {
     this.timeout(30000)
     try {
@@ -35,6 +36,7 @@ describe("processStream - Schemas", () => {
   })
 
   afterEach(async function () {
+    // todo db clear instead
     await container.stop()
   })
 
@@ -97,6 +99,55 @@ describe("processStream - Schemas", () => {
     assert.equal(columns.includes("requester_id Nullable(Int64)"), false)
 
   }).timeout(30000)
+
+  it("should rename tables as dropped when they are no longer active, and exclude dropped and archived", async() => {
+    await processStream(fs.createReadStream("./tests/data/stream_1.jsonl"), connInfo)
+
+    await processStream(fs.createReadStream("./tests/data/stream_1_inactive.jsonl"), connInfo)
+    let execResult = await runChQueryInContainer(container, connInfo, `show tables from ${connInfo.database}`)
+    let tables = execResult.output.split("\n").filter(Boolean)
+    assert.equal(tables.length, 21)
+    tables.forEach((table) => {
+      if (!table.startsWith("ticket_audits")) {
+        assert.equal(table.startsWith("_dropped_"), true, `table ${table} should start with dropped`)
+      } else {
+        assert.equal(table.startsWith("_dropped_"), false, `table ${table} should not start with dropped`)
+      }
+    })
+
+    await processStream(fs.createReadStream("./tests/data/stream_1_inactive.jsonl"), connInfo)
+    execResult = await runChQueryInContainer(container, connInfo, `show tables from ${connInfo.database}`)
+    tables = execResult.output.split("\n").filter(Boolean)
+    assert.equal(tables.length, 21)
+    tables.forEach((table) => {
+      if (!table.startsWith("ticket_audits")) {
+        assert.equal(table.startsWith("_dropped_"), true, `table ${table} should start with dropped`)
+      } else {
+        assert.equal(table.startsWith("_dropped_"), false, `table ${table} should not start with dropped`)
+      }
+      assert.equal(table.startsWith("_dropped__dropped_"), false, `table ${table} should not be renamed twice`)
+    })
+
+    await runChQueryInContainer(container, connInfo, `RENAME TABLE ${connInfo.database}._dropped_ticket_metrics TO ${connInfo.database}._archived_ticket_metrics`)
+    await processStream(fs.createReadStream("./tests/data/stream_1_inactive.jsonl"), connInfo)
+    execResult = await runChQueryInContainer(container, connInfo, `show tables from ${connInfo.database}`)
+    tables = execResult.output.split("\n").filter(Boolean)
+    assert.equal(tables.length, 21)
+    tables.forEach((table) => {
+      if (!table.startsWith("ticket_audits")) {
+        if (table.includes("ticket_metrics")) {
+          assert.equal(table.startsWith("_archived_"), true, `table ${table} should start with archived`)
+          assert.equal(table.includes("_dropped_"), false, `table ${table} should not include dropped`)
+        } else {
+          assert.equal(table.startsWith("_dropped_"), true, `table ${table} should start with dropped`)
+        }
+      } else {
+        assert.equal(table.startsWith("_archived_"), false, `table ${table} should not start with archived`)
+        assert.equal(table.startsWith("_dropped_"), false, `table ${table} should not start with dropped`)
+      }
+    })
+
+  })
 
   it('should throw if schema already exists and new has different columns with incompatible type', async () => {
     await processStream(fs.createReadStream("./tests/data/stream_vanilla.jsonl"), connInfo)
@@ -247,4 +298,3 @@ describe("processStream - Records", () => {
   }).timeout(30000)
 
 }).timeout(30000)
-
