@@ -1,4 +1,4 @@
-import {pipeline, Readable, Transform} from "stream"
+import {pipeline, Readable} from "stream"
 import {List, Map} from "immutable"
 import {ISourceMeta, PKType} from "./jsonSchemaInspector"
 import {extractValue} from "./jsonSchemaTranslator"
@@ -40,7 +40,7 @@ export default class RecordProcessor {
     private readonly meta: ISourceMeta,
     private readonly clickhouse: ClickhouseConnection,
     private readonly children: Map<string, RecordProcessor> = Map(),
-    private readonly readStream?: Readable,
+    private readonly ingestionStream?: Readable,
     private readonly ingestionPromise?: Promise<void>,
   ) {
     this.meta = meta
@@ -48,8 +48,9 @@ export default class RecordProcessor {
   }
 
   public isInitialized(): boolean {
-    return this.readStream !== undefined
+    return this.ingestionStream !== undefined
   }
+
   /*
       Prepare sql query by splitting fields and values
       Creates children
@@ -83,12 +84,12 @@ export default class RecordProcessor {
       levelValues: isRoot ? List() : parentMeta?.levelValues.push(indexInParent) ?? List(),
     }
 
-    this.readStream?.push(`[${this.buildSQLInsertValues(data,
+    this.ingestionStream?.push(`[${this.buildSQLInsertValues(data,
       pkValues.rootValues
         .concat(this.isWithParentPK ? pkValues.parentValues : List())
         .concat(pkValues.values)
         .concat(pkValues.levelValues),
-      resolvedRootVer).map(jsonToJSONCompactEachRow).join(",")}]`)
+      resolvedRootVer).join(",")}]`)
 
     return new RecordProcessor(
       this.meta,
@@ -103,27 +104,18 @@ export default class RecordProcessor {
 
         return childDataAsArray.reduce(([key, acc], elem, idx) => [key, acc.pushRecord(elem, maxVer, pkValues, resolvedRootVer, level + 1, idx, messageCount)], [child.sqlTableName, processor])
       })),
-      this.readStream,
+      this.ingestionStream,
       this.ingestionPromise,
     )
   }
 
   public async endIngestion() {
-    return new Promise<void>((resolve, reject) => {
-      log_debug(`closing stream to insert data in ${this.meta.prop}, ${this.meta.sqlTableName}`)
-      this.readStream?.push(null)
-      Promise.all(this.children.map((child) => child.endIngestion()))
-        .then(() => {
-          if (this.ingestionPromise) {
-            this.ingestionPromise
-              .then(resolve)
-              .catch(reject)
-          } else {
-            resolve()
-          }
-        })
-        .catch(reject)
-    })
+    log_debug(`closing stream to insert data in ${this.meta.prop}, ${this.meta.sqlTableName}`)
+    this.ingestionStream?.push(null)
+    await Promise.all([
+      this.ingestionPromise,
+      Promise.all(this.children.map((child) => child.endIngestion())),
+    ])
   }
 
   public buildSQLInsertField(): List<string> {
@@ -148,34 +140,20 @@ export default class RecordProcessor {
       },
     })
 
-    const transform: Transform = new Transform({
-        objectMode: true,
-        transform(chunk, encoding, callback) {
-          log_debug(`${insertQuery}: ${chunk}`)
-          this.push(chunk)
-          callback()
-        },
-      },
-    )
+    const insertStream = this.clickhouse.createWriteStream(insertQuery)
 
     const promise = new Promise<void>((resolve, reject) => {
-      // We leave resolve and reject responsibility to insertion stream
-      const insertStream = this.clickhouse.createWriteStream(insertQuery, resolve, reject)
-      pipeline(readStream, transform, insertStream, (err) => {
+      pipeline(readStream, insertStream, (err) => {
         if (err) {
           log_error(`[${this.meta.prop}]: pipeline error: [${err.message}]`)
           insertStream.destroy(err)
+          reject(err)
         } else {
           log_info(`[${this.meta.prop}]: pipeline ended`)
+          resolve()
         }
       })
-    }).catch((err) => {
-      throw new Error(err) // We throw error here, as an error may be thrown before endIngestion() is called
     })
-    //   .catch((err) => {
-    //   readStream?.emit("error", err)
-    //   throw new Error(err)
-    // })
 
     return new RecordProcessor(this.meta, this.clickhouse, this.children, readStream, promise)
   }
@@ -185,7 +163,19 @@ export default class RecordProcessor {
     data: Record<string, any>,
     pkValues: List<any> = List(),
     version?: number,
-  ) => pkValues
-    .concat(this.meta.simpleColumnMappings.map(cm => extractValue(data, cm)))
-    .concat(fillIf(version, version !== undefined))
+  ) => {
+    const noPk = pkValues.size
+    const noSimpleColumn = this.meta.simpleColumnMappings.size
+    const result: any[] = new Array(noPk + noSimpleColumn + (version !== undefined ? 1 : 0))
+    for (let i = 0; i < noPk; i++) {
+      result[i] = jsonToJSONCompactEachRow(pkValues.get(i))
+    }
+    for (let i = 0; i < noSimpleColumn; i++) {
+      // @ts-ignore
+      result[i + noPk] = jsonToJSONCompactEachRow(extractValue(data, this.meta.simpleColumnMappings.get(i)))
+    }
+    if (version !== undefined)
+      result[noPk + noSimpleColumn] = jsonToJSONCompactEachRow(version)
+    return result
+  }
 }

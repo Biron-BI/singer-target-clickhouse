@@ -2,6 +2,10 @@ import {ExtendedJSONSchema7, log_warning, SchemaKeyProperties} from "singer-node
 import {List, Map, Range, Record as ImmutableRecord} from "immutable"
 import {JSONSchema7Definition, JSONSchema7TypeName} from "json-schema"
 import {asArray} from "./utils"
+import SchemaTranslator, {ValueTranslator} from "./SchemaTranslator"
+
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const get = require("lodash.get")
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const sha1 = require('sha1')
@@ -47,9 +51,11 @@ export class JsonSchemaInspectorContext {
   }
 }
 
+export type ValueExtractor = (data: { [k: string]: any }) => any
+
 export interface ISimpleColumnType {
   chType?: string;
-  type?: JSONSchema7TypeName;
+  valueTranslator?: ValueTranslator;
   typeFormat?: string;
   nullable: boolean,
   lowCardinality: boolean,
@@ -57,6 +63,7 @@ export interface ISimpleColumnType {
 
 export interface IColumnMapping {
   prop?: string;
+  valueExtractor: ValueExtractor;
   sqlIdentifier: string;
 }
 
@@ -72,6 +79,7 @@ export enum PKType {
 
 export interface IPKMapping {
   prop: string;
+  valueExtractor: ValueExtractor;
   sqlIdentifier: string;
   pkType: PKType
 }
@@ -92,13 +100,28 @@ export const formatRootPKColumn = (prop: string) => `_root_${prop}`
 export const formatParentPKColumn = (prop: string) => `_parent_${prop}`
 
 const buildMetaPkProp = (prop: string, ctx: JsonSchemaInspectorContext, pkType: PKType, fieldFormatter?: (v: string) => string): PkMap => ({
-  prop,
-  sqlIdentifier: escapeIdentifier(fieldFormatter?.(prop) ?? prop, ctx.subtableSeparator),
-  ...getSimpleColumnType(ctx, prop),
-  nullable: false,
-  lowCardinality: false,
-  pkType,
-})
+    prop,
+    valueExtractor: buildValueExtractor(prop),
+    sqlIdentifier: escapeIdentifier(fieldFormatter?.(prop) ?? prop, ctx.subtableSeparator),
+    ...getSimpleColumnType(ctx, prop),
+    nullable: false,
+    lowCardinality: false,
+    pkType,
+  })
+
+const buildValueExtractor = (prop: string | undefined): ValueExtractor => {
+  if (prop) {
+    const propParts = prop.split(".")
+    if (propParts.length==1) {
+      const uniqPart = propParts[0]
+      return (data) => data[uniqPart]
+    } else {
+      return (data) => get(data, propParts)
+    }
+  } else {
+    return (data) => data
+  }
+}
 
 const buildMetaPkProps = (ctx: JsonSchemaInspectorContext): List<PkMap> => List<PkMap>()
   // Append '_root_X'
@@ -219,6 +242,7 @@ function buildMetaProps(ctx: JsonSchemaInspectorContext): MetaProps {
               ...acc,
               simpleColumnMappings: acc.simpleColumnMappings.push({
                 prop: key,
+                valueExtractor: buildValueExtractor(key),
                 sqlIdentifier: escapeIdentifier(key, ctx.subtableSeparator),
                 ...colType,
               }),
@@ -238,6 +262,7 @@ function buildMetaProps(ctx: JsonSchemaInspectorContext): MetaProps {
     }
     return {
       simpleColumnMappings: List<ColumnMap>([{
+        valueExtractor: buildValueExtractor(undefined),
         sqlIdentifier: escapeIdentifier("value", ctx.subtableSeparator),
         ...getSimpleColumnType(ctx, undefined),
         nullable: false,
@@ -268,12 +293,13 @@ function getSimpleColumnType(ctx: JsonSchemaInspectorContext, key?: string): ISi
     throwError(ctx, `Key '${key}' does not match any usable prop in schema props '${ctx.schema.properties}'`)
     return
   }
-  const type = getSimpleColumnSqlType(ctx, propDef, key)
+  const type = excludeNullFromArray(propDef.type).get(0)
+  const chType = getSimpleColumnSqlType(ctx, propDef, key)
 
-  return type ? {
-    type: excludeNullFromArray(propDef.type).get(0),
+  return chType ? {
+    valueTranslator: SchemaTranslator.buildTranslator(type),
     typeFormat: propDef.format,
-    chType: type,
+    chType,
     nullable: getNullable(propDef),
     lowCardinality: getLowCardinality(propDef),
   } : undefined
@@ -330,7 +356,6 @@ export function getSimpleColumnSqlType(ctx: JsonSchemaInspectorContext, propDef:
   } else {
     return undefined
   }
-  return undefined
 }
 
 // ensure that id is not longer than 64 chars and enclose it within backquotes

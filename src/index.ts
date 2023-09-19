@@ -16,5 +16,5 @@ processStream(process.stdin, config).then(() => {
   log_info("Stream processing done")
 }).catch((err) => {
   log_error(`${err}`)
-  process.exitCode = 1
+  process.exit(1)
 })

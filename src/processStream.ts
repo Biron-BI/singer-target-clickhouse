@@ -119,7 +119,7 @@ export async function processStream(stream: Readable, config: Config) {
   const streamProcessors = await awaitReduce(
     rl[Symbol.asyncIterator](),
     (sp: StreamProcessors, line: string) => {
-      log_debug(`processing line starting with ${line.substring(0, 40)} ...`)
+      // log_debug(`processing line starting with ${line.substring(0, 40)} ...`)
       return processLine(line, config, sp, lineCount++)
     },
     Map<string, StreamProcessor>(),

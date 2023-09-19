@@ -6,7 +6,6 @@ import {escapeIdentifier, formatRootPKColumn, ISourceMeta, PkMap} from "./jsonSc
 import {Config} from "./Config"
 import {escapeValue} from "./utils"
 import RecordProcessor from "./RecordProcessor"
-import SchemaTranslator from "./SchemaTranslator"
 
 // expects root meta as param
 const metaRepresentsReplacingMergeTree = (meta: ISourceMeta) => !meta.pkMappings.isEmpty()
@@ -95,14 +94,13 @@ export default class StreamProcessor {
     if (!cleaningColumnMeta) {
       throw new Error(`[${this.meta.prop}] could not resolve cleaning column meta (looking for ${this.meta.cleaningColumn})`)
     }
-    const resolvedValue = new SchemaTranslator(cleaningColumnMeta).extractValue(value)
+    if (!cleaningColumnMeta.valueTranslator) {
+      throw new Error(`[${this.meta.prop}] could not be used as cleaning column as it do not have a translator`)
+    }
+    const resolvedValue = cleaningColumnMeta.valueTranslator(value)
     log_info(`[${this.meta.prop}]: cleaning column: deleting based on ${resolvedValue}`)
 
-    const query = `ALTER
-                   TABLE
-                   ${this.meta.sqlTableName}
-                   DELETE
-                   WHERE \`${this.meta.cleaningColumn}\` = '${escapeValue(value)}'`
+    const query = `ALTER TABLE ${this.meta.sqlTableName} DELETE WHERE \`${this.meta.cleaningColumn}\` = '${escapeValue(value)}'`
     await this.clickhouse.runQuery(query)
   }
 

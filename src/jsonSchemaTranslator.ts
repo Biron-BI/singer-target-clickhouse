@@ -1,19 +1,14 @@
 import {List} from "immutable"
 import {ColumnMap, ISourceMeta, PkMap, PKType} from "./jsonSchemaInspector"
-import SchemaTranslator from "./SchemaTranslator"
 import ClickhouseConnection, {Column} from "./ClickhouseConnection"
 import * as assert from "assert"
 import {fillIf} from "./utils"
 import {log_debug, log_error} from "singer-node"
 import {listLeft, mapLeft} from "./Either"
 
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const get = require("lodash.get")
-
 export function extractValue(data: { [k: string]: any }, mapping: ColumnMap | PkMap): string {
-  const v = mapping.prop ? get(data, mapping.prop.split(".")) : data
-  const translator = new SchemaTranslator(mapping)
-  return translator.extractValue(v)
+  const v = mapping.valueExtractor(data)
+  return mapping.valueTranslator ? mapping.valueTranslator(v) : v
 }
 
 function resolveVersionColumn(isRoot: boolean, hasPkMappings: boolean, withType = true): string {

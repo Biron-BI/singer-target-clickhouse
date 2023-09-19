@@ -140,22 +140,20 @@ export default class ClickhouseConnection {
   }
 
   // Expects connection to have been previously initialized, so we can instantly return stream
-  public createWriteStream(query: string, resolve: () => void, reject: (err: any) => void): Writable {
+  public createWriteStream(query: string): Writable {
     log_debug(`building stream to query sql ${query}`)
     if (!this.connection) {
       throw new Error("Clickhouse connection was not initialized")
     }
 
     try {
-      return this.connection.query(query, {omitFormat: true}, (err: Error) => {
-        if (err) {
+      return this.connection.query(query, {omitFormat: true})
+        .on('error', () => {
           log_error(`rejecting query ${query}`)
-          reject(err.message)
-        } else {
+        })
+        .on('finish', () => {
           log_debug(`resolving query ${query}`)
-          resolve()
-        }
-      })
+        })
     } catch (err) {
       throw ono("ch stream failed", err)
     }
