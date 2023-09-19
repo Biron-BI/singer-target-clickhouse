@@ -7,7 +7,8 @@ import {log_debug, log_error} from "singer-node"
 import {listLeft, mapLeft} from "./Either"
 
 export function extractValue(data: { [k: string]: any }, mapping: ColumnMap | PkMap): string {
-  const v = mapping.valueExtractor(data)
+  let v = mapping.valueExtractor(data)
+  if (v===undefined) v = null
   return mapping.valueTranslator ? mapping.valueTranslator(v) : v
 }
 
