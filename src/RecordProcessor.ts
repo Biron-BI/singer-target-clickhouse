@@ -1,7 +1,7 @@
-import {pipeline, Readable} from "stream"
+import {Writable} from "stream"
 import {ISourceMeta, PkMap, PKType} from "./jsonSchemaInspector"
 import {extractValue} from "./jsonSchemaTranslator"
-import {log_debug, log_error, log_info} from "singer-node"
+import {log_debug, log_info} from "singer-node"
 import ClickhouseConnection from "./ClickhouseConnection"
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -28,7 +28,7 @@ export default class RecordProcessor {
   private readonly isWithParentPK: boolean
   private readonly isRoot: boolean
   private readonly children: { [key: string]: RecordProcessor }
-  private ingestionStream?: Readable
+  private ingestionStream?: Writable
   private ingestionPromise?: Promise<void>
   private readonly currentPkMappings: PkMap[]
 
@@ -93,7 +93,7 @@ export default class RecordProcessor {
         .concat(pkValues)
         .concat(sourceMetaPK.levelValues!)
     }
-    this.ingestionStream?.push(JSON.stringify(this.buildSQLInsertValues(data, pkValues, resolvedRootVer)))
+    this.ingestionStream?.write(JSON.stringify(this.buildSQLInsertValues(data, pkValues, resolvedRootVer)))
 
     if (this.hasChildren) {
       for (const child of this.meta.children) {
@@ -110,7 +110,7 @@ export default class RecordProcessor {
 
   public async endIngestion() {
     log_debug(`closing stream to insert data in ${this.meta.prop}, ${this.meta.sqlTableName}`)
-    this.ingestionStream?.push(null)
+    this.ingestionStream?.end()
     await Promise.all([
       this.ingestionPromise,
       Promise.all(Object.values(this.children).map((child) => child.endIngestion())),
@@ -131,28 +131,14 @@ export default class RecordProcessor {
       log_info(`[${this.meta.prop}] handling lines starting at ${messageCount}`)
     }
 
-    const readStream = new Readable({
-      // eslint-disable-next-line @typescript-eslint/no-empty-function
-      objectMode: true, read() {
-      },
-    })
-
     const insertStream = this.clickhouse.createWriteStream(insertQuery)
 
     const promise = new Promise<void>((resolve, reject) => {
-      pipeline(readStream, insertStream, (err) => {
-        if (err) {
-          log_error(`[${this.meta.prop}]: pipeline error: [${err.message}]`)
-          insertStream.destroy(err)
-          reject(err)
-        } else {
-          log_info(`[${this.meta.prop}]: pipeline ended`)
-          resolve()
-        }
-      })
+      insertStream.on('error', reject)
+        .on('finish', resolve)
     })
 
-    this.ingestionStream = readStream
+    this.ingestionStream = insertStream
     this.ingestionPromise = promise
   }
 
