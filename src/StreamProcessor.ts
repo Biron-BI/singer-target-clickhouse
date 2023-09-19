@@ -56,7 +56,7 @@ export default class StreamProcessor {
       await this.deleteCleaningValue(cleaningValue)
       this.cleaningValues.add(cleaningValue)
     }
-    this.recordProcessor.pushRecord(record, this.maxVer, undefined, undefined,  undefined, messageCount)
+    this.recordProcessor.pushRecord(record, this.maxVer, undefined, undefined, undefined, messageCount)
     this.maxVer++
     this.currentBatchRows++
     this.currentBatchSize += messageSize
@@ -105,8 +105,10 @@ export default class StreamProcessor {
       log_info(`[${this.meta.prop}]: removing root duplicates`)
       await this.clickhouse.runQuery(`OPTIMIZE TABLE ${this.meta.sqlTableName} FINAL`)
 
-      log_info(`[${this.meta.prop}]: removing children orphans`)
-      await Promise.all(this.meta.children.map((child) => this.deleteChildDuplicates(child)))
+      if (this.recordProcessor.hasChildren) {
+        log_info(`[${this.meta.prop}]: removing children orphans`)
+        await Promise.all(this.meta.children.map((child) => this.deleteChildDuplicates(child)))
+      }
     }
     log_info(`[${this.meta.prop}]: ensuring PK integrity is maintained`)
     await this.assertPKIntegrity(this.meta)

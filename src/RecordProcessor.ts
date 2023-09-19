@@ -1,6 +1,5 @@
 import {pipeline, Readable} from "stream"
-import {Map} from "immutable"
-import {ISourceMeta, PKType} from "./jsonSchemaInspector"
+import {ISourceMeta, PkMap, PKType} from "./jsonSchemaInspector"
 import {extractValue} from "./jsonSchemaTranslator"
 import {log_debug, log_error, log_info} from "singer-node"
 import ClickhouseConnection from "./ClickhouseConnection"
@@ -12,10 +11,10 @@ type PKValue = string | number
 type PKValues = PKValue[]
 
 type SourceMetaPK = {
-  rootValues: PKValues,
-  parentValues: PKValues,
+  rootValues: PKValues | undefined,
+  parentValues: PKValues | undefined,
   values: PKValues,
-  levelValues: PKValues
+  levelValues: PKValues | undefined,
 };
 
 /**
@@ -25,20 +24,28 @@ type SourceMetaPK = {
  * One node for one table
  */
 export default class RecordProcessor {
+  readonly hasChildren: boolean
   private readonly isWithParentPK: boolean
   private readonly isRoot: boolean
+  private readonly children: { [key: string]: RecordProcessor }
+  private ingestionStream?: Readable
+  private ingestionPromise?: Promise<void>
+  private readonly currentPkMappings: PkMap[]
 
   constructor(
     private readonly meta: ISourceMeta,
     private readonly clickhouse: ClickhouseConnection,
     private readonly level = 0,
-    private children: Map<string, RecordProcessor> = Map(),
-    private ingestionStream?: Readable,
-    private ingestionPromise?: Promise<void>,
   ) {
     this.meta = meta
-    this.isWithParentPK = this.meta.pkMappings.find((pk) => pk.pkType === PKType.PARENT) !== undefined
     this.isRoot = level === 0
+    this.isWithParentPK = !this.isRoot && this.meta.pkMappings.find((pk) => pk.pkType === PKType.PARENT) !== undefined
+    this.hasChildren = meta.children.length > 0
+    this.children = meta.children.reduce((acc, child) => {
+      const processor = new RecordProcessor(child, this.clickhouse, this.level + 1)
+      return {...acc, [child.sqlTableName]: processor}
+    }, {})
+    this.currentPkMappings = this.meta.pkMappings.filter((pkMap) => pkMap.pkType === PKType.CURRENT)
   }
 
   public isInitialized(): boolean {
@@ -67,32 +74,38 @@ export default class RecordProcessor {
     // version start at max existing version + 1
     const resolvedRootVer = (this.isRoot && this.meta.pkMappings.length > 0) ? maxVer + 1 : rootVer
 
-    // @ts-ignore
-    const pkValues: SourceMetaPK = {
-      rootValues: parentMeta?.rootValues.length == 0 ? parentMeta.values : parentMeta?.rootValues ?? [], // On first recursion we retrieve root pk from parentMeta
-      parentValues: parentMeta?.values ?? [],
-      values: this.meta.pkMappings.filter((pkMap) => pkMap.pkType === PKType.CURRENT).map((pkMapping) => extractValue(data, pkMapping)),
-      levelValues: this.isRoot ? ([] as PKValues) : [...(parentMeta?.levelValues || []), indexInParent]
+    const currentPkValues = new Array(this.currentPkMappings.length)
+    for (let i = 0; i < this.currentPkMappings.length; i++) {
+      currentPkValues[i] = extractValue(data, this.currentPkMappings[i])
     }
 
-    this.ingestionStream?.push(JSON.stringify(this.buildSQLInsertValues(data,
-      pkValues.rootValues
-        .concat(this.isWithParentPK ? pkValues.parentValues : [])
-        .concat(pkValues.values)
-        .concat(pkValues.levelValues),
-      resolvedRootVer)))
+    const sourceMetaPK: SourceMetaPK = {
+      values: currentPkValues,
+      rootValues: this.isRoot ? undefined : (parentMeta?.rootValues ?? parentMeta?.values),
+      parentValues: this.isRoot ? undefined : parentMeta?.values,
+      levelValues: this.isRoot ? undefined : [...(parentMeta?.levelValues || []), indexInParent],
+    }
 
-    // TODO
-    // this.children =       Map(this.meta.children.map((child) => {
-    //   const processor = this.children.get(child.sqlTableName) ?? new RecordProcessor(child, this.clickhouse, this.level + 1, )
-    //
-    //   // In this record we expect a list, as that is the reason a children has been created. But some JSON Schema declaration may declare both an array and a list, so we check and create an array with only one item if it is not an array
-    //   const childData: Record<string, any> = get(data, child.prop.split("."))
-    //
-    //   const childDataAsArray: List<Record<string, any>> = Array.isArray(childData) ? List(childData) : List(childData ? [childData] : [])
-    //
-    //   return childDataAsArray.reduce(([key, acc], elem, idx) => [key, acc.pushRecord(elem, maxVer, pkValues, resolvedRootVer, idx, messageCount)], [child.sqlTableName, processor])
-    // }))
+    let pkValues = currentPkValues
+    if (!this.isRoot) {
+      pkValues = sourceMetaPK.rootValues!
+        .concat(this.isWithParentPK ? sourceMetaPK.parentValues! : [])
+        .concat(pkValues)
+        .concat(sourceMetaPK.levelValues!)
+    }
+    this.ingestionStream?.push(JSON.stringify(this.buildSQLInsertValues(data, pkValues, resolvedRootVer)))
+
+    if (this.hasChildren) {
+      for (const child of this.meta.children) {
+        const childProcessor: RecordProcessor = this.children[child.sqlTableName]
+        // In this record we expect a list, as that is the reason a children has been created. But some JSON Schema declaration may declare both an array and a list, so we check and create an array with only one item if it is not an array
+        const childDataRaw: Record<string, any> = get(data, child.prop.split("."))
+        const childDataAsArray = Array.isArray(childDataRaw) ? childDataRaw : (childDataRaw ? [childDataRaw] : [])
+        for (let idx = 0; idx < childDataAsArray.length; idx++) {
+          childProcessor.pushRecord(childDataAsArray[idx], maxVer, sourceMetaPK, resolvedRootVer, idx, messageCount)
+        }
+      }
+    }
   }
 
   public async endIngestion() {
@@ -100,7 +113,7 @@ export default class RecordProcessor {
     this.ingestionStream?.push(null)
     await Promise.all([
       this.ingestionPromise,
-      Promise.all(this.children.map((child) => child.endIngestion())),
+      Promise.all(Object.values(this.children).map((child) => child.endIngestion())),
     ])
   }
 
@@ -156,7 +169,6 @@ export default class RecordProcessor {
       result[i] = pkValues[i]
     }
     for (let i = 0; i < noSimpleColumn; i++) {
-      // @ts-ignore
       result[i + noPk] = extractValue(data, this.meta.simpleColumnMappings[i])
     }
     if (version !== undefined)

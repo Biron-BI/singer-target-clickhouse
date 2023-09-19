@@ -1,14 +1,12 @@
 import {List} from "immutable"
 import {ColumnMap, ISourceMeta, PkMap, PKType} from "./jsonSchemaInspector"
 import ClickhouseConnection, {Column} from "./ClickhouseConnection"
-import * as assert from "assert"
-import {fillIf} from "./utils"
-import {log_debug, log_error} from "singer-node"
+import {log_error} from "singer-node"
 import {listLeft, mapLeft} from "./Either"
 
 export function extractValue(data: { [k: string]: any }, mapping: ColumnMap | PkMap): string {
   let v = mapping.valueExtractor(data)
-  if (v===undefined) v = null
+  if (v === undefined) v = null
   return mapping.valueTranslator ? mapping.valueTranslator(v) : v
 }
 
@@ -129,7 +127,7 @@ export function getColumnsIntersections(existingCols: Column[], requiredCols: Co
 export async function ensureSchemaIsEquivalent(meta: ISourceMeta, ch: ClickhouseConnection) {
   await Promise.all(meta.children.map((child) => ensureSchemaIsEquivalent(child, ch)))
 
-  const isRoot = meta.pkMappings.filter((pkMap) => pkMap.pkType === PKType.ROOT).length==0
+  const isRoot = meta.pkMappings.filter((pkMap) => pkMap.pkType === PKType.ROOT).length == 0
   const existingColumns = await ch.listColumns(unescape(meta.sqlTableName))
   const expectedColumns = meta.pkMappings
     .filter((pkMap) => {
@@ -147,7 +145,7 @@ export async function ensureSchemaIsEquivalent(meta: ISourceMeta, ch: Clickhouse
       name: isRoot ? "_ver" : "_root_ver",
       type: "UInt64",
       is_in_sorting_key: false,
-    }] : [] )
+    }] : [])
 
 
   const intersections = getColumnsIntersections(existingColumns.toArray(), expectedColumns)
