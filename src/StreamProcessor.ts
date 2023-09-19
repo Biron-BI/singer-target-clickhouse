@@ -8,7 +8,7 @@ import {escapeValue} from "./utils"
 import RecordProcessor from "./RecordProcessor"
 
 // expects root meta as param
-const metaRepresentsReplacingMergeTree = (meta: ISourceMeta) => !meta.pkMappings.isEmpty()
+const metaRepresentsReplacingMergeTree = (meta: ISourceMeta) => meta.pkMappings.length>0
 
 // To handle overall ingestion
 export default class StreamProcessor {
@@ -172,7 +172,7 @@ export default class StreamProcessor {
   private async assertPKIntegrity(meta: ISourceMeta) {
     await Promise.all(meta.children.map((child) => this.assertPKIntegrity(child)))
 
-    if (meta.pkMappings.size === 0) {
+    if (meta.pkMappings.length === 0) {
       return
     }
     const pks: string = meta.pkMappings.map((elem: PkMap) => elem.sqlIdentifier).join(",")
@@ -192,5 +192,5 @@ export default class StreamProcessor {
 export function buildTruncateTableQueries(meta: ISourceMeta): List<string> {
   return List<string>()
     .push(`TRUNCATE TABLE ${meta.sqlTableName}`)
-    .concat(meta.children.flatMap(buildTruncateTableQueries))
+    .concat(List(meta.children).flatMap(buildTruncateTableQueries))
 }

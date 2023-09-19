@@ -88,9 +88,9 @@ export type PkMap = IPKMapping & ISimpleColumnType;
 
 export interface ISourceMeta {
   prop: string
-  children: List<ISourceMeta>;
-  pkMappings: List<PkMap>;
-  simpleColumnMappings: List<ColumnMap>;
+  children: ISourceMeta[];
+  pkMappings: PkMap[];
+  simpleColumnMappings: ColumnMap[];
   sqlTableName: string;
   cleaningColumn?: string;
 }
@@ -100,19 +100,19 @@ export const formatRootPKColumn = (prop: string) => `_root_${prop}`
 export const formatParentPKColumn = (prop: string) => `_parent_${prop}`
 
 const buildMetaPkProp = (prop: string, ctx: JsonSchemaInspectorContext, pkType: PKType, fieldFormatter?: (v: string) => string): PkMap => ({
-    prop,
-    valueExtractor: buildValueExtractor(prop),
-    sqlIdentifier: escapeIdentifier(fieldFormatter?.(prop) ?? prop, ctx.subtableSeparator),
-    ...getSimpleColumnType(ctx, prop),
-    nullable: false,
-    lowCardinality: false,
-    pkType,
-  })
+  prop,
+  valueExtractor: buildValueExtractor(prop),
+  sqlIdentifier: escapeIdentifier(fieldFormatter?.(prop) ?? prop, ctx.subtableSeparator),
+  ...getSimpleColumnType(ctx, prop),
+  nullable: false,
+  lowCardinality: false,
+  pkType,
+})
 
 const buildValueExtractor = (prop: string | undefined): ValueExtractor => {
   if (prop) {
     const propParts = prop.split(".")
-    if (propParts.length==1) {
+    if (propParts.length == 1) {
       const uniqPart = propParts[0]
       return (data) => data[uniqPart]
     } else {
@@ -123,16 +123,16 @@ const buildValueExtractor = (prop: string | undefined): ValueExtractor => {
   }
 }
 
-const buildMetaPkProps = (ctx: JsonSchemaInspectorContext): List<PkMap> => List<PkMap>()
+const buildMetaPkProps = (ctx: JsonSchemaInspectorContext): PkMap[] => ([] as PkMap[])
   // Append '_root_X'
-  .concat(ctx.isRoot() ? List<PkMap>() : ctx.getRootContext().keyProperties.map((prop => buildMetaPkProp(prop, ctx.getRootContext(), PKType.ROOT, formatRootPKColumn))))
+  .concat(ctx.isRoot() ? [] : ctx.getRootContext().keyProperties.toArray().map((prop => buildMetaPkProp(prop, ctx.getRootContext(), PKType.ROOT, formatRootPKColumn))))
   // Append '_parent_X' if parent has 'all_key_properties' filled with props
   // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-  .concat((!ctx.parentCtx?.allKeyProperties?.props.isEmpty() && ctx.parentCtx?.keyProperties.map((prop => buildMetaPkProp(prop, ctx.parentCtx!, PKType.PARENT, formatParentPKColumn)))) || List<PkMap>())
+  .concat((!ctx.parentCtx?.allKeyProperties?.props.isEmpty() && ctx.parentCtx?.keyProperties.toArray().map((prop => buildMetaPkProp(prop, ctx.parentCtx!, PKType.PARENT, formatParentPKColumn)))) || [])
   // Append 'X' if defined
-  .concat(ctx.keyProperties.map((prop => buildMetaPkProp(prop, ctx, PKType.CURRENT))))
+  .concat(ctx.keyProperties.toArray().map((prop => buildMetaPkProp(prop, ctx, PKType.CURRENT))))
   // Append 'level_N_index' columns
-  .concat(Range(0, ctx.level).map((value) => {
+  .concat(Range(0, ctx.level).toArray().map((value) => {
     const prop = formatLevelIndexColumn(value)
     return {
       prop,
@@ -142,7 +142,7 @@ const buildMetaPkProps = (ctx: JsonSchemaInspectorContext): List<PkMap> => List<
       lowCardinality: false,
       pkType: PKType.LEVEL,
     } as PkMap
-  }).toList())
+  }))
 
 // transform a schema to a data structure with metadata for Clickhouse (types, primary keys, nullable, ...)
 export const buildMeta = (ctx: JsonSchemaInspectorContext): ISourceMeta => ({
@@ -207,7 +207,7 @@ const createSubTable = (propDef: IExtendedJSONSchema7, key: string, ctx: JsonSch
   ctx.allKeyProperties.children.get(key),
 ))
 
-type MetaProps = { children: List<ISourceMeta>, simpleColumnMappings: List<ColumnMap> }
+type MetaProps = { children: ISourceMeta[], simpleColumnMappings: ColumnMap[] }
 
 function buildMetaProps(ctx: JsonSchemaInspectorContext): MetaProps {
   if (ctx.isTypeObject()) {
@@ -231,7 +231,7 @@ function buildMetaProps(ctx: JsonSchemaInspectorContext): MetaProps {
         } else if (propDefTypes.includes("array")) {
           return {
             ...acc,
-            children: acc.children.push(createSubTable(propDef, key, ctx)),
+            children: [...acc.children, createSubTable(propDef, key, ctx)],
           }
         } else {
           const colType = getSimpleColumnType(ctx, key)
@@ -240,35 +240,35 @@ function buildMetaProps(ctx: JsonSchemaInspectorContext): MetaProps {
           if (colType) {
             return {
               ...acc,
-              simpleColumnMappings: acc.simpleColumnMappings.push({
+              simpleColumnMappings: [...acc.simpleColumnMappings, {
                 prop: key,
                 valueExtractor: buildValueExtractor(key),
                 sqlIdentifier: escapeIdentifier(key, ctx.subtableSeparator),
                 ...colType,
-              }),
+              }],
             }
           } else {
             log_warning(`'${ctx.alias}': '${key}': could not be registered (type '${propDef.type}' unrecognized)`)
             return acc
           }
         }
-      }, {simpleColumnMappings: List<ColumnMap>(), children: List<ISourceMeta>()})
+      }, {simpleColumnMappings: [] as ColumnMap[], children: [] as ISourceMeta[]})
   } else {
     if (!ctx.schema.type) {
       return {
-        simpleColumnMappings: List(),
-        children: List(),
+        simpleColumnMappings: [],
+        children: [],
       }
     }
     return {
-      simpleColumnMappings: List<ColumnMap>([{
+      simpleColumnMappings: [{
         valueExtractor: buildValueExtractor(undefined),
         sqlIdentifier: escapeIdentifier("value", ctx.subtableSeparator),
         ...getSimpleColumnType(ctx, undefined),
         nullable: false,
         lowCardinality: false,
-      }]),
-      children: List<ISourceMeta>(),
+      }],
+      children: [],
     }
   }
 }

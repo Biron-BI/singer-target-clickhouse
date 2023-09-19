@@ -10,7 +10,7 @@ import ClickhouseConnection from "./ClickhouseConnection"
 const get = require("lodash.get")
 
 type PKValue = string | number
-type PKValues = List<PKValue>
+type PKValues = PKValue[]
 
 type SourceMetaPK = {
   rootValues: PKValues,
@@ -75,18 +75,18 @@ export default class RecordProcessor {
 
     // root version number is computed only for a root who has primaryKeys
     // version start at max existing version + 1
-    const resolvedRootVer = (isRoot && !this.meta.pkMappings.isEmpty()) ? maxVer + 1 : rootVer
+    const resolvedRootVer = (isRoot && this.meta.pkMappings.length>0) ? maxVer + 1 : rootVer
 
     const pkValues: SourceMetaPK = {
-      rootValues: parentMeta?.rootValues.isEmpty() ? parentMeta.values : parentMeta?.rootValues ?? List(), // On first recursion we retrieve root pk from parentMeta
-      parentValues: parentMeta?.values ?? List(),
+      rootValues: parentMeta?.rootValues.length==0 ? parentMeta.values : parentMeta?.rootValues ?? [], // On first recursion we retrieve root pk from parentMeta
+      parentValues: parentMeta?.values ?? [],
       values: this.meta.pkMappings.filter((pkMap) => pkMap.pkType === PKType.CURRENT).map((pkMapping) => extractValue(data, pkMapping)),
-      levelValues: isRoot ? List() : parentMeta?.levelValues.push(indexInParent) ?? List(),
+      levelValues: isRoot ? [] : [...(parentMeta?.levelValues || []), indexInParent ]?? [],
     }
 
     this.ingestionStream?.push(`[${this.buildSQLInsertValues(data,
       pkValues.rootValues
-        .concat(this.isWithParentPK ? pkValues.parentValues : List())
+        .concat(this.isWithParentPK ? pkValues.parentValues : [])
         .concat(pkValues.values)
         .concat(pkValues.levelValues),
       resolvedRootVer).join(",")}]`)
@@ -118,14 +118,12 @@ export default class RecordProcessor {
     ])
   }
 
-  public buildSQLInsertField(): List<string> {
+  public buildSQLInsertField(): string[] {
     const isRoot = this.meta.pkMappings.find((pkMap) => pkMap.pkType === PKType.ROOT) === undefined
     return this.meta.pkMappings
       .map((pkMap) => pkMap.sqlIdentifier)
-      .concat(this.meta.simpleColumnMappings
-        .map((cMap) => cMap.sqlIdentifier))
-      .concat(fillIf("`_ver`", isRoot && !this.meta.pkMappings.isEmpty()))
-      .concat(fillIf("`_root_ver`", !isRoot))
+      .concat(this.meta.simpleColumnMappings.map((cMap) => cMap.sqlIdentifier))
+      .concat(isRoot && this.meta.pkMappings.length>0 ? ["`_ver`"] : ["`_root_ver`"])
   }
 
   private startIngestion(messageCount: number, isRoot: boolean): RecordProcessor {
@@ -161,18 +159,18 @@ export default class RecordProcessor {
   // Extract value for all simple columns in a record
   private buildSQLInsertValues = (
     data: Record<string, any>,
-    pkValues: List<any> = List(),
+    pkValues: any[] = [],
     version?: number,
   ) => {
-    const noPk = pkValues.size
-    const noSimpleColumn = this.meta.simpleColumnMappings.size
+    const noPk = pkValues.length
+    const noSimpleColumn = this.meta.simpleColumnMappings.length
     const result: any[] = new Array(noPk + noSimpleColumn + (version !== undefined ? 1 : 0))
     for (let i = 0; i < noPk; i++) {
-      result[i] = jsonToJSONCompactEachRow(pkValues.get(i))
+      result[i] = jsonToJSONCompactEachRow(pkValues[i])
     }
     for (let i = 0; i < noSimpleColumn; i++) {
       // @ts-ignore
-      result[i + noPk] = jsonToJSONCompactEachRow(extractValue(data, this.meta.simpleColumnMappings.get(i)))
+      result[i + noPk] = jsonToJSONCompactEachRow(extractValue(data, this.meta.simpleColumnMappings[i]))
     }
     if (version !== undefined)
       result[noPk + noSimpleColumn] = jsonToJSONCompactEachRow(version)
