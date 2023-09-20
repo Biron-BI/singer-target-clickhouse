@@ -4,7 +4,7 @@ import ClickhouseConnection, {Column} from "./ClickhouseConnection"
 import {log_error} from "singer-node"
 import {listLeft, mapLeft} from "./Either"
 
-export function extractValue(data: { [k: string]: any }, mapping: ColumnMap | PkMap): string {
+export function extractValue(data: Record<string, any>, mapping: ColumnMap | PkMap): string {
   let v = mapping.valueExtractor(data)
   if (v === undefined) v = null
   return mapping.valueTranslator ? mapping.valueTranslator(v) : v

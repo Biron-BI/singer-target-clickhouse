@@ -30,6 +30,7 @@ export default class RecordProcessor {
   private readonly children: { [key: string]: RecordProcessor }
   private ingestionStream?: Writable
   private ingestionPromise?: Promise<void>
+  private bufferedDatasToStream: string[] = []
   private readonly currentPkMappings: PkMap[]
 
   constructor(
@@ -93,7 +94,12 @@ export default class RecordProcessor {
         .concat(pkValues)
         .concat(sourceMetaPK.levelValues!)
     }
-    this.ingestionStream?.write(JSON.stringify(this.buildSQLInsertValues(data, pkValues, resolvedRootVer)))
+
+    const dataToStream = JSON.stringify(this.buildSQLInsertValues(data, pkValues, resolvedRootVer))
+    this.bufferedDatasToStream.push(dataToStream)
+    if (this.bufferedDatasToStream.length == 100) {
+      this.sendDatasToStream()
+    }
 
     if (this.hasChildren) {
       for (const child of this.meta.children) {
@@ -110,6 +116,7 @@ export default class RecordProcessor {
 
   public async endIngestion() {
     log_debug(`closing stream to insert data in ${this.meta.prop}, ${this.meta.sqlTableName}`)
+    this.sendDatasToStream()
     this.ingestionStream?.end()
     await Promise.all([
       this.ingestionPromise,
@@ -123,6 +130,14 @@ export default class RecordProcessor {
       .map((pkMap) => pkMap.sqlIdentifier)
       .concat(this.meta.simpleColumnMappings.map((cMap) => cMap.sqlIdentifier))
       .concat(isRoot && this.meta.pkMappings.length > 0 ? ["`_ver`"] : ["`_root_ver`"])
+  }
+
+  private sendDatasToStream() {
+    if (this.bufferedDatasToStream.length>0) {
+      this.bufferedDatasToStream.push("")
+      this.ingestionStream!.write(Buffer.from(this.bufferedDatasToStream.join('\n')))
+      this.bufferedDatasToStream = []
+    }
   }
 
   private startIngestion(messageCount: number): void {
