@@ -129,7 +129,7 @@ export default class RecordProcessor {
     return this.meta.pkMappings
       .map((pkMap) => pkMap.sqlIdentifier)
       .concat(this.meta.simpleColumnMappings.map((cMap) => cMap.sqlIdentifier))
-      .concat(isRoot && this.meta.pkMappings.length > 0 ? ["`_ver`"] : ["`_root_ver`"])
+      .concat(isRoot ? (this.meta.pkMappings.length > 0 ? ["`_ver`"] : []) : ["`_root_ver`"])
   }
 
   private sendDatasToStream() {
