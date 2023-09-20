@@ -1,6 +1,6 @@
 {
   "name": "target-clickhouse",
-  "version": "2.1.0-alpha1",
+  "version": "2.1.0-alpha2",
   "description": "A Singer target for Clickhouse",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
