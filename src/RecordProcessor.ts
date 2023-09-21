@@ -49,7 +49,7 @@ export default class RecordProcessor {
     this.currentPkMappings = this.meta.pkMappings.filter((pkMap) => pkMap.pkType === PKType.CURRENT)
   }
 
-  public isInitialized(): boolean {
+  private isInitialized(): boolean {
     return this.ingestionStream !== undefined
   }
 
@@ -98,7 +98,7 @@ export default class RecordProcessor {
     const dataToStream = JSON.stringify(this.buildSQLInsertValues(data, pkValues, resolvedRootVer))
     this.bufferedDatasToStream.push(dataToStream)
     if (this.bufferedDatasToStream.length == 100) {
-      this.sendDatasToStream()
+      this.sendBufferedDatasToStream()
     }
 
     if (this.hasChildren) {
@@ -115,13 +115,16 @@ export default class RecordProcessor {
   }
 
   public async endIngestion() {
-    log_debug(`closing stream to insert data in ${this.meta.prop}, ${this.meta.sqlTableName}`)
-    this.sendDatasToStream()
-    this.ingestionStream?.end()
-    await Promise.all([
-      this.ingestionPromise,
-      Promise.all(Object.values(this.children).map((child) => child.endIngestion())),
-    ])
+    if (this.isInitialized()) {
+      log_debug(`closing stream to insert data in ${this.meta.prop}, ${this.meta.sqlTableName}`)
+      this.sendBufferedDatasToStream()
+      this.ingestionStream?.end()
+      this.ingestionStream = undefined
+      await Promise.all([
+        this.ingestionPromise,
+        Promise.all(Object.values(this.children).map((child) => child.endIngestion())),
+      ])
+    }
   }
 
   public buildSQLInsertField(): string[] {
@@ -132,7 +135,7 @@ export default class RecordProcessor {
       .concat(isRoot ? (this.meta.pkMappings.length > 0 ? ["`_ver`"] : []) : ["`_root_ver`"])
   }
 
-  private sendDatasToStream() {
+  private sendBufferedDatasToStream() {
     if (this.bufferedDatasToStream.length>0) {
       this.bufferedDatasToStream.push("")
       this.ingestionStream!.write(Buffer.from(this.bufferedDatasToStream.join('\n')))

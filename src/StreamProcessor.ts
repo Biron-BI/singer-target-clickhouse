@@ -1,5 +1,5 @@
 import {ono} from "ono"
-import {log_fatal, log_info, log_warning} from "singer-node"
+import {log_info, log_warning} from "singer-node"
 import {List, Set} from "immutable"
 import ClickhouseConnection from "./ClickhouseConnection"
 import {escapeIdentifier, formatRootPKColumn, ISourceMeta, PkMap} from "./jsonSchemaInspector"
@@ -15,68 +15,83 @@ export default class StreamProcessor {
   private constructor(
     private readonly clickhouse: ClickhouseConnection,
     private readonly meta: ISourceMeta,
+    private readonly startedClean: boolean,
     private readonly config: Config,
     private maxVer: number,
-    private readonly recordProcessor = new RecordProcessor(meta, clickhouse),
-    private currentBatchRows = 0,
-    private currentBatchSize = 0,
+    private recordProcessor = new RecordProcessor(meta, clickhouse),
+    private noPendingRows = 0,
+    // private currentBatchSize = 0,
     private readonly cleaningValues: Set<string> = Set(), // All values used to clear data based on 'cleaningColumn',
   ) {
   }
 
-  static async createStreamProcessor(meta: ISourceMeta, config: Config, applyDefaultMaxVersion: boolean) {
+  static async createStreamProcessor(meta: ISourceMeta, config: Config, cleanFirst: boolean) {
     const ch = await new ClickhouseConnection(config).checkConnection()
-    const maxVersion = (applyDefaultMaxVersion || !metaRepresentsReplacingMergeTree(meta)) ? 0 : Number((await ch.runQuery(`SELECT max(_ver)
-                                                                                                                            FROM ${meta.sqlTableName}`)).data[0][0])
+    const maxVersion = (cleanFirst || !metaRepresentsReplacingMergeTree(meta))
+      ? 0
+      : Number((await ch.runQuery(`SELECT max(_ver)
+                                   FROM ${meta.sqlTableName}`)).data[0][0])
 
     log_info(`[${meta.prop}]: initial max version is [${maxVersion}]`)
 
-    return new StreamProcessor(ch, meta, config, maxVersion)
+    const streamProcessor = new StreamProcessor(ch, meta, cleanFirst, config, maxVersion)
+    if (cleanFirst) {
+      await streamProcessor.clearTables()
+    }
+    return streamProcessor
   }
 
-  public clearIngestion() {
-    return new StreamProcessor(this.clickhouse, this.meta, this.config, this.maxVer + 1)
+  async clearTables(): Promise<void> {
+    const queries = buildTruncateTableQueries(this.meta)
+    await Promise.all(queries.map((query) => this.clickhouse.runQuery(query)))
   }
 
-  public async doneProcessing(): Promise<number> {
+  public async processRecord(record: Record<string, any>, messageSize: number, messageCount: number): Promise<void> {
+    if (!this.startedClean) {
+      const cleaningValue = this.meta.cleaningColumn && record[this.meta.cleaningColumn]
+      if (cleaningValue && !this.cleaningValues.includes(cleaningValue)) {
+        await this.deleteCleaningValue(cleaningValue)
+        this.cleaningValues.add(cleaningValue)
+      }
+    }
+    this.recordProcessor.pushRecord(record, this.maxVer, undefined, undefined, undefined, messageCount)
+    this.maxVer++
+    this.noPendingRows++
+    // this.currentBatchSize += messageSize
+    //
+    // await this.processBatchIfNeeded()
+  }
+
+  public async commitPendingChanges(): Promise<void> {
+    if (this.noPendingRows>0) {
+      log_info(`[${this.meta.prop}]: ending batch ingestion for ${this.noPendingRows} rows`)
+      await this.recordProcessor.endIngestion()
+      this.noPendingRows = 0
+      this.maxVer++
+    }
+  }
+
+  public async finalizeProcessing(): Promise<void> {
     try {
-      await this.saveNewRecords()
+      await this.commitPendingChanges()
     } catch (err) {
       throw ono(err, "could not save new records")
     }
     log_info(`[${this.meta.prop}]: finalizing processing`)
-    await this.finalizeBatchProcessing()
 
-    return this.currentBatchRows
-  }
+    if (!this.startedClean) {
+      if (this.isReplacingMergeTree()) {
+        log_info(`[${this.meta.prop}]: removing root duplicates`)
+        await this.clickhouse.runQuery(`OPTIMIZE TABLE ${this.meta.sqlTableName} FINAL`)
 
-  public async processRecord(record: Record<string, any>, messageSize: number, messageCount: number): Promise<StreamProcessor> {
-    const cleaningValue = this.meta.cleaningColumn && record[this.meta.cleaningColumn]
-    if (cleaningValue && !this.cleaningValues.includes(cleaningValue)) {
-      await this.deleteCleaningValue(cleaningValue)
-      this.cleaningValues.add(cleaningValue)
-    }
-    this.recordProcessor.pushRecord(record, this.maxVer, undefined, undefined, undefined, messageCount)
-    this.maxVer++
-    this.currentBatchRows++
-    this.currentBatchSize += messageSize
+        if (this.recordProcessor.hasChildren) {
+          log_info(`[${this.meta.prop}]: removing children orphans`)
+          await Promise.all(this.meta.children.map((child) => this.deleteChildDuplicates(child)))
+        }
+      }
 
-    return this.processBatchIfNeeded()
-  }
-
-  async clearTables(): Promise<this> {
-    const queries = buildTruncateTableQueries(this.meta)
-    await Promise.all(queries.map(async (query) => this.clickhouse.runQuery(query)))
-    return this
-  }
-
-  public async saveNewRecords(): Promise<this> {
-    if (this.recordProcessor.isInitialized()) {
-      log_info(`[${this.meta.prop}]: ending batch ingestion`)
-      await this.recordProcessor.endIngestion()
-      return this.printInsertRecordsStats()
-    } else {
-      return this
+      log_info(`[${this.meta.prop}]: ensuring PK integrity is maintained`)
+      await this.assertPKIntegrity(this.meta)
     }
   }
 
@@ -100,37 +115,20 @@ export default class StreamProcessor {
     await this.clickhouse.runQuery(query)
   }
 
-  protected async finalizeBatchProcessing(): Promise<void> {
-    if (this.isReplacingMergeTree()) {
-      log_info(`[${this.meta.prop}]: removing root duplicates`)
-      await this.clickhouse.runQuery(`OPTIMIZE TABLE ${this.meta.sqlTableName} FINAL`)
-
-      if (this.recordProcessor.hasChildren) {
-        log_info(`[${this.meta.prop}]: removing children orphans`)
-        await Promise.all(this.meta.children.map((child) => this.deleteChildDuplicates(child)))
-      }
-    }
-    log_info(`[${this.meta.prop}]: ensuring PK integrity is maintained`)
-    await this.assertPKIntegrity(this.meta)
-  }
-
-  private async processBatchIfNeeded() {
-    if (this.currentBatchRows >= this.config.max_batch_rows ||
-      this.currentBatchSize >= this.config.max_batch_size) {
-      log_info(`Inserting batch`)
-      log_info(`rows quota: ${this.currentBatchRows} / ${this.config.max_batch_rows}`)
-      log_info(`size quota: ${this.currentBatchSize} / ${this.config.max_batch_size}`)
-      try {
-        return (await this.saveNewRecords())
-          .clearIngestion()
-      } catch (err) {
-        log_fatal("could not save records")
-        throw err
-      }
-    }
-
-    return this
-  }
+  // private async processBatchIfNeeded() {
+  //   if (this.noPendingRows >= this.config.max_batch_rows ||
+  //     this.currentBatchSize >= this.config.max_batch_size) {
+  //     log_info(`Inserting batch`)
+  //     log_info(`rows quota: ${this.noPendingRows} / ${this.config.max_batch_rows}`)
+  //     log_info(`size quota: ${this.currentBatchSize} / ${this.config.max_batch_size}`)
+  //     try {
+  //       return await this.clearIngestion()
+  //     } catch (err) {
+  //       log_fatal("could not save records")
+  //       throw err
+  //     }
+  //   }
+  // }
 
   private async deleteChildDuplicates(currentNode: ISourceMeta) {
     // this.meta always refer to root node
@@ -158,13 +156,6 @@ export default class StreamProcessor {
   // returns true if conditions were met to create a replacing merge tree
   private isReplacingMergeTree(): boolean {
     return metaRepresentsReplacingMergeTree(this.meta)
-  }
-
-  private printInsertRecordsStats(): this {
-    if (this.currentBatchRows) {
-      log_info(`[${this.meta.prop}]: inserted ${this.currentBatchRows} records (${this.currentBatchSize} bytes)`)
-    }
-    return this
   }
 
   private async assertPKIntegrity(meta: ISourceMeta) {

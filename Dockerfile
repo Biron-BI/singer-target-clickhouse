@@ -8,4 +8,4 @@ RUN npm install -g target-clickhouse@${TAG}
 
 LABEL org.opencontainers.image.source=https://github.com/biron-bi/singer-target-clickhouse
 
-ENTRYPOINT ["target-clickhouse"]
+ENTRYPOINT ["node", "/usr/local/lib/node_modules/target-clickhouse/dist/index.js"]
