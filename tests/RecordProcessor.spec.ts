@@ -1,4 +1,3 @@
-import {List} from "immutable"
 import {strict as assert} from "assert"
 import RecordProcessor from "../src/RecordProcessor"
 import {ColumnMap, ISourceMeta, PkMap, PKType} from "../src/jsonSchemaInspector"
@@ -13,7 +12,7 @@ const id: PkMap = {
   prop: "id",
   sqlIdentifier: "`id`",
   chType: "UInt32",
-  type: "integer",
+  valueExtractor: (data) => parseInt(data.id),
   nullable: false,
   pkType: PKType.CURRENT,
   lowCardinality: false,
@@ -24,7 +23,7 @@ const rootId: PkMap = {
   prop: "_root_id",
   sqlIdentifier: "`_root_id`",
   chType: "UInt32",
-  type: "integer",
+  valueExtractor: (data) => parseInt(data._root_id),
   nullable: false,
   pkType: PKType.ROOT,
   lowCardinality: false,
@@ -36,14 +35,14 @@ const name: ColumnMap = {
   prop: "name",
   sqlIdentifier: "`name`",
   chType: "String",
-  type: "string",
+  valueExtractor: (data) => data.name,
   lowCardinality: false,
 }
 
 const simpleMeta: ISourceMeta = {
-  pkMappings: List(),
-  simpleColumnMappings: List([id, name]),
-  children: List(),
+  pkMappings: [],
+  simpleColumnMappings: [id, name],
+  children: [],
   sqlTableName: "`order`",
   prop: "order",
 }
@@ -52,7 +51,9 @@ const levelColumn = (lvl: number): PkMap => ({
   prop: `_level_${lvl}_index`,
   sqlIdentifier: `\`_level_${lvl}_index\``,
   chType: "UInt32",
-  type: "integer",
+  valueExtractor: () => {
+    throw "should never be called"
+  },
   nullable: false,
   pkType: PKType.LEVEL,
   lowCardinality: false,
@@ -60,57 +61,61 @@ const levelColumn = (lvl: number): PkMap => ({
 
 const metaWithPKAndChildren: ISourceMeta = {
   prop: "order",
-  pkMappings: List([id]),
-  simpleColumnMappings: List([name]),
-  children: List([{
-    simpleColumnMappings: List([name]),
-    pkMappings: List([
+  pkMappings: [id],
+  simpleColumnMappings: [name],
+  children: [{
+    simpleColumnMappings: [name],
+    pkMappings: [
       rootId, levelColumn(0),
-    ]),
+    ],
     sqlTableName: "`order__tags`",
-    tableName: "order__tags",
     prop: "tags",
-    children: List([{
+    children: [{
       prop: "values",
       sqlTableName: "`order__tags__values`",
-      tableName: "order__tags__values",
-      pkMappings: List([rootId, levelColumn(0), levelColumn(1)]),
-      simpleColumnMappings: List([name]),
-      children: List(),
-    }]),
-  }]),
+      pkMappings: [rootId, levelColumn(0), levelColumn(1)],
+      simpleColumnMappings: [name],
+      children: [],
+    }],
+  }],
   sqlTableName: "`order`",
 }
 
 const metaWithNestedValueArray: ISourceMeta = {
   "prop": "audits",
   "sqlTableName": "`audits`",
-  "pkMappings": List([]),
-  "simpleColumnMappings": List([]),
-  "children": List([
+  "pkMappings": [],
+  "simpleColumnMappings": [],
+  "children": [
     {
       "prop": "events",
       "sqlTableName": "`audits__events`",
-      "pkMappings": List([
+      "pkMappings": [
         {
           "prop": "_level_0_index",
           "sqlIdentifier": "`_level_0_index`",
           "chType": "Int32",
+          valueExtractor: () => {
+            throw "should never be called"
+          },
           "nullable": false,
           "pkType": PKType.LEVEL,
           lowCardinality: false,
         },
-      ]),
-      "simpleColumnMappings": List([]),
-      "children": List([
+      ],
+      "simpleColumnMappings": [],
+      "children": [
         {
           "prop": "previous_value",
           "sqlTableName": "`audits__events__previous_value`",
-          "pkMappings": List([
+          "pkMappings": [
             {
               "prop": "_level_0_index",
               "sqlIdentifier": "`_level_0_index`",
               "chType": "Int32",
+              valueExtractor: () => {
+                throw "should never be called"
+              },
               "nullable": false,
               "pkType": PKType.LEVEL,
               lowCardinality: false,
@@ -119,25 +124,28 @@ const metaWithNestedValueArray: ISourceMeta = {
               "prop": "_level_1_index",
               "sqlIdentifier": "`_level_1_index`",
               "chType": "Int32",
+              valueExtractor: () => {
+                throw "should never be called"
+              },
               "nullable": false,
               "pkType": PKType.LEVEL,
               lowCardinality: false,
             },
-          ]),
-          "simpleColumnMappings": List([
+          ],
+          "simpleColumnMappings": [
             {
               "sqlIdentifier": "`value`",
-              "type": "string",
+              valueExtractor: (data) => data.value,
               "chType": "String",
               "nullable": false,
               lowCardinality: false,
             },
-          ]),
-          "children": List([]),
+          ],
+          "children": [],
         },
-      ]),
+      ],
     },
-  ]),
+  ],
 }
 
 
@@ -174,11 +182,8 @@ describe("RecordProcessor", () => {
   describe("pushRecord", () => {
     it("should handle simple schema and data", async () => {
       const res = new RecordProcessor(simpleMeta, new ClickhouseConnection(connInfo))
-        .pushRecord(
-          {id: 1, name: "a"}, 0,
-        ).pushRecord(
-          {id: 2, name: "b"}, 0,
-        )
+      res.pushRecord({id: 1, name: "a"}, 0)
+      res.pushRecord({id: 2, name: "b"}, 0)
       // @ts-ignore
       res.readStream!.push(null)
 
@@ -186,32 +191,32 @@ describe("RecordProcessor", () => {
       const values = await streamToStrList(res.readStream!)
 
       assert.equal(values.get(0), '[1,"a"][2,"b"]')
-      assert.equal(res.buildSQLInsertField().get(0), "`id`")
-      assert.equal(res.buildSQLInsertField().get(1), "`name`")
+      assert.equal(res.buildSQLInsertField()[0], "`id`")
+      assert.equal(res.buildSQLInsertField()[1], "`name`")
     }).timeout(30000)
 
     it("should feed deep nested children", async () => {
       const res = new RecordProcessor(metaWithPKAndChildren, new ClickhouseConnection(connInfo))
-        .pushRecord(
-          {
-            id: 1234,
-            name: "a", tags: [{
-              name: "tag_a", values: [{
-                name: "value_a",
-              }, {
-                name: "value_b",
-              }, {
-                name: "value_c",
-              }],
+      res.pushRecord(
+        {
+          id: 1234,
+          name: "a", tags: [{
+            name: "tag_a", values: [{
+              name: "value_a",
             }, {
-              name: "tag_b", values: [{
-                name: "value_d",
-              }, {
-                name: "value_e",
-              }],
+              name: "value_b",
+            }, {
+              name: "value_c",
             }],
-          }, 50,
-        )
+          }, {
+            name: "tag_b", values: [{
+              name: "value_d",
+            }, {
+              name: "value_e",
+            }],
+          }],
+        }, 50,
+      )
       // We use ts ignore to access private members without updating class as we don't want to expose readStream
 
       // @ts-ignore
@@ -239,9 +244,9 @@ describe("RecordProcessor", () => {
 
     it("should handle nested value array", async () => {
       const res = new RecordProcessor(metaWithNestedValueArray, new ClickhouseConnection(connInfo))
-        .pushRecord(
-          {events: [{previous_value: "Test"}]}, 0,
-        )
+      res.pushRecord(
+        {events: [{previous_value: "Test"}]}, 0,
+      )
 
       // @ts-ignore
       const deepStream = res.children.get("`audits__events`")?.children.get("`audits__events__previous_value`")?.readStream!
