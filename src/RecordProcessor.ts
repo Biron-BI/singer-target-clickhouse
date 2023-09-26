@@ -50,10 +50,6 @@ export default class RecordProcessor {
     this.currentPkMappings = this.meta.pkMappings.filter((pkMap) => pkMap.pkType === PKType.CURRENT)
   }
 
-  private isInitialized(): boolean {
-    return this.ingestionStream !== undefined
-  }
-
   /*
       Prepare sql query by splitting fields and values
       Creates children
@@ -134,6 +130,10 @@ export default class RecordProcessor {
       .map((pkMap) => pkMap.sqlIdentifier)
       .concat(this.meta.simpleColumnMappings.map((cMap) => cMap.sqlIdentifier))
       .concat(isRoot ? (this.meta.pkMappings.length > 0 ? ["`_ver`"] : []) : ["`_root_ver`"])
+  }
+
+  private isInitialized(): boolean {
+    return this.ingestionStream !== undefined
   }
 
   private sendBufferedDatasToStream() {

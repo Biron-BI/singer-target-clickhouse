@@ -80,66 +80,66 @@ const metaWithPKAndChildren: ISourceMeta = {
 }
 
 const metaWithNestedValueArray: ISourceMeta = {
-  "prop": "audits",
-  "sqlTableName": "`audits`",
-  "pkMappings": [],
-  "simpleColumnMappings": [],
-  "children": [
+  prop: "audits",
+  sqlTableName: "`audits`",
+  pkMappings: [],
+  simpleColumnMappings: [],
+  children: [
     {
-      "prop": "events",
-      "sqlTableName": "`audits__events`",
-      "pkMappings": [
+      prop: "events",
+      sqlTableName: "`audits__events`",
+      pkMappings: [
         {
-          "prop": "_level_0_index",
-          "sqlIdentifier": "`_level_0_index`",
-          "chType": "Int32",
+          prop: "_level_0_index",
+          sqlIdentifier: "`_level_0_index`",
+          chType: "Int32",
           valueExtractor: () => {
             throw "should never be called"
           },
-          "nullable": false,
-          "pkType": PKType.LEVEL,
+          nullable: false,
+          pkType: PKType.LEVEL,
           lowCardinality: false,
         },
       ],
-      "simpleColumnMappings": [],
-      "children": [
+      simpleColumnMappings: [],
+      children: [
         {
-          "prop": "previous_value",
-          "sqlTableName": "`audits__events__previous_value`",
-          "pkMappings": [
+          prop: "previous_value",
+          sqlTableName: "`audits__events__previous_value`",
+          pkMappings: [
             {
-              "prop": "_level_0_index",
-              "sqlIdentifier": "`_level_0_index`",
-              "chType": "Int32",
+              prop: "_level_0_index",
+              sqlIdentifier: "`_level_0_index`",
+              chType: "Int32",
               valueExtractor: () => {
                 throw "should never be called"
               },
-              "nullable": false,
-              "pkType": PKType.LEVEL,
+              nullable: false,
+              pkType: PKType.LEVEL,
               lowCardinality: false,
             },
             {
-              "prop": "_level_1_index",
-              "sqlIdentifier": "`_level_1_index`",
-              "chType": "Int32",
+              prop: "_level_1_index",
+              sqlIdentifier: "`_level_1_index`",
+              chType: "Int32",
               valueExtractor: () => {
                 throw "should never be called"
               },
-              "nullable": false,
-              "pkType": PKType.LEVEL,
+              nullable: false,
+              pkType: PKType.LEVEL,
               lowCardinality: false,
             },
           ],
-          "simpleColumnMappings": [
+          simpleColumnMappings: [
             {
-              "sqlIdentifier": "`value`",
+              sqlIdentifier: "`value`",
               valueExtractor: (data) => data.value,
-              "chType": "String",
-              "nullable": false,
+              chType: "String",
+              nullable: false,
               lowCardinality: false,
             },
           ],
-          "children": [],
+          children: [],
         },
       ],
     },
@@ -171,14 +171,14 @@ class StringWritable extends Writable {
 }
 
 class TestConnection implements TargetConnection {
-  stream: StringWritable
+  streams: StringWritable[] = []
 
-  constructor() {
-  }
+  constructor() {}
 
   public createWriteStream(query: string): Writable {
-    this.stream = new StringWritable();
-    return this.stream
+    const writable = new StringWritable()
+    this.streams.push(writable)
+    return writable;
   }
 }
 
@@ -191,7 +191,7 @@ describe("RecordProcessor", () => {
       res.pushRecord({id: 1, name: "a"}, 0)
       res.pushRecord({id: 2, name: "b"}, 0)
 
-      assert.equal(connection.stream.data, '[1,"a"]\n[2,"b"]\n')
+      assert.equal(connection.streams[0].data, '[1,"a"]\n[2,"b"]\n')
       assert.equal(res.buildSQLInsertField()[0], "`id`")
       assert.equal(res.buildSQLInsertField()[1], "`name`")
     }).timeout(30000)
@@ -203,11 +203,11 @@ describe("RecordProcessor", () => {
       res.pushRecord({id: 2, name: "b"}, 0)
       res.pushRecord({id: 3, name: "c"}, 0)
 
-      assert.equal(connection.stream.data, '[1,"a"]\n[2,"b"]\n')
+      assert.equal(connection.streams[0].data, '[1,"a"]\n[2,"b"]\n')
 
       await res.endIngestion()
 
-      assert.equal(connection.stream.data, '[1,"a"]\n[2,"b"]\n[3,"c"]\n')
+      assert.equal(connection.streams[0].data, '[1,"a"]\n[2,"b"]\n[3,"c"]\n')
     }).timeout(30000)
 
     it("should feed deep nested children", async () => {
@@ -234,7 +234,9 @@ describe("RecordProcessor", () => {
         }, 50,
       )
 
-      assert.deepEqual(connection.stream.data, "[1234,0,0,\"value_a\",51]\n[1234,0,1,\"value_b\",51]\n[1234,0,2,\"value_c\",51]\n[1234,1,0,\"value_d\",51]\n[1234,1,1,\"value_e\",51]\n")
+      assert.deepEqual(connection.streams[0].data, "[1234,\"a\",51]\n")
+      assert.deepEqual(connection.streams[1].data, "[1234,0,\"tag_a\",51]\n[1234,1,\"tag_b\",51]\n")
+      assert.deepEqual(connection.streams[2].data, "[1234,0,0,\"value_a\",51]\n[1234,0,1,\"value_b\",51]\n[1234,0,2,\"value_c\",51]\n[1234,1,0,\"value_d\",51]\n[1234,1,1,\"value_e\",51]\n")
 
       // @ts-ignore
       assert.deepEqual(res.children["`order__tags`"]?.children["`order__tags__values`"].buildSQLInsertField(), [
@@ -253,8 +255,12 @@ describe("RecordProcessor", () => {
       res.pushRecord(
         {events: [{previous_value: "Test"}]}, 0,
       )
+      await res.endIngestion()
 
-      assert.equal(connection.stream.data, '[0,0,"Test"]\n')
+      assert.equal(connection.streams[0].data, '[]\n')
+      assert.equal(connection.streams[1].data, '[0]\n')
+      assert.equal(connection.streams[2].data, '[0,0,"Test"]\n')
+
     }).timeout(30000)
 
   }).timeout(30000)

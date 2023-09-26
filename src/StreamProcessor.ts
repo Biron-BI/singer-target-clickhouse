@@ -63,7 +63,7 @@ export default class StreamProcessor {
   }
 
   public async commitPendingChanges(): Promise<void> {
-    if (this.noPendingRows>0) {
+    if (this.noPendingRows > 0) {
       log_info(`[${this.meta.prop}]: ending batch ingestion for ${this.noPendingRows} rows`)
       await this.recordProcessor.endIngestion()
       this.noPendingRows = 0

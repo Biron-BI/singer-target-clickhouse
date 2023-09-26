@@ -32,18 +32,17 @@ export interface Column {
 
 export default class ClickhouseConnection implements TargetConnection {
 
+  static droppedTablePrefix = "_dropped_"
+  static archivedTablePrefix = "_archived_"
+  private connection: any
+
   constructor(private connInfo: IConfig) {
   }
-
-  private connection: any
 
   async checkConnection(): Promise<this> {
     await this.getConnectionPooled()
     return this
   }
-
-  static droppedTablePrefix = "_dropped_"
-  static archivedTablePrefix = "_archived_"
 
   public getDatabase() {
     return this.connInfo.database
