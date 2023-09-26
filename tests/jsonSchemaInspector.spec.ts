@@ -1,7 +1,15 @@
 import {strict as assert} from 'assert'
-import {buildMeta, getSimpleColumnSqlType, IExtendedJSONSchema7, ISourceMeta, JsonSchemaInspectorContext} from "../src/jsonSchemaInspector"
+import {
+  buildMeta,
+  getSimpleColumnSqlType,
+  IExtendedJSONSchema7,
+  ISourceMeta,
+  JsonSchemaInspectorContext,
+  PKType,
+} from "../src/jsonSchemaInspector"
 import {List, Map} from "immutable"
 import {SchemaKeyProperties} from "singer-node"
+import {uselessValueExtractor} from "./helpers"
 
 const simpleSchema: IExtendedJSONSchema7 = {
   "properties": {
@@ -279,11 +287,14 @@ describe("JSON Schema Inspector", () => {
     assert.equal(res.children.length, 1)
     assert.equal(res.children[0]?.sqlTableName, "`audits__nested__tags`")
     assert.equal(res.children[0]?.simpleColumnMappings.length, 1)
+    assert.equal(res.pkMappings[0].valueExtractor({id: 3}), 3)
+    assert.equal(res.simpleColumnMappings[0].valueExtractor({nested: {color: "blue"}}), "blue")
+    assert.equal(res.children[0].simpleColumnMappings[0].valueExtractor({value: 10}), 10)
   })
 
   it("should handle nested value array schema", () => {
     const res = buildMeta(new JsonSchemaInspectorContext("audits", nestedValueArraySchema, List([])))
-    const expectedResult = {
+    const expectedResult: ISourceMeta = {
       "prop": "audits",
       "sqlTableName": "`audits`",
       "pkMappings": [],
@@ -299,7 +310,8 @@ describe("JSON Schema Inspector", () => {
               "chType": "Int32",
               "nullable": false,
               "lowCardinality": false,
-              "pkType": "LEVEL",
+              "pkType": PKType.LEVEL,
+              valueExtractor: uselessValueExtractor
             },
           ],
           "simpleColumnMappings": [],
@@ -314,7 +326,9 @@ describe("JSON Schema Inspector", () => {
                   "chType": "Int32",
                   "nullable": false,
                   "lowCardinality": false,
-                  "pkType": "LEVEL",
+                  "pkType": PKType.LEVEL,
+                  valueExtractor: uselessValueExtractor
+
                 },
                 {
                   "prop": "_level_1_index",
@@ -322,7 +336,8 @@ describe("JSON Schema Inspector", () => {
                   "chType": "Int32",
                   "nullable": false,
                   "lowCardinality": false,
-                  "pkType": "LEVEL",
+                  "pkType": PKType.LEVEL,
+                  valueExtractor: uselessValueExtractor
                 },
               ],
               "simpleColumnMappings": [
@@ -331,6 +346,7 @@ describe("JSON Schema Inspector", () => {
                   "chType": "String",
                   "nullable": false,
                   "lowCardinality": false,
+                  valueExtractor: uselessValueExtractor
                 },
               ],
               "children": [],
@@ -340,5 +356,6 @@ describe("JSON Schema Inspector", () => {
       ],
     }
     assert.equal(JSON.stringify(res), JSON.stringify(expectedResult))
+    assert.equal(res.children[0].children[0].simpleColumnMappings[0].valueExtractor("tartempion"), "tartempion")
   })
 })

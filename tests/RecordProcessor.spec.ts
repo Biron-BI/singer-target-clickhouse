@@ -4,6 +4,7 @@ import {ColumnMap, ISourceMeta, PkMap, PKType} from "../src/jsonSchemaInspector"
 import TargetConnection from "../src/TargetConnection"
 import {Writable} from "stream"
 import {StringDecoder} from "string_decoder"
+import {uselessValueExtractor} from "./helpers"
 
 // Represents an id column, for a PK for instance
 const id: PkMap = {
@@ -93,9 +94,7 @@ const metaWithNestedValueArray: ISourceMeta = {
           prop: "_level_0_index",
           sqlIdentifier: "`_level_0_index`",
           chType: "Int32",
-          valueExtractor: () => {
-            throw "should never be called"
-          },
+          valueExtractor: uselessValueExtractor,
           nullable: false,
           pkType: PKType.LEVEL,
           lowCardinality: false,
@@ -111,9 +110,7 @@ const metaWithNestedValueArray: ISourceMeta = {
               prop: "_level_0_index",
               sqlIdentifier: "`_level_0_index`",
               chType: "Int32",
-              valueExtractor: () => {
-                throw "should never be called"
-              },
+              valueExtractor: uselessValueExtractor,
               nullable: false,
               pkType: PKType.LEVEL,
               lowCardinality: false,
@@ -122,9 +119,7 @@ const metaWithNestedValueArray: ISourceMeta = {
               prop: "_level_1_index",
               sqlIdentifier: "`_level_1_index`",
               chType: "Int32",
-              valueExtractor: () => {
-                throw "should never be called"
-              },
+              valueExtractor: uselessValueExtractor,
               nullable: false,
               pkType: PKType.LEVEL,
               lowCardinality: false,
@@ -133,7 +128,7 @@ const metaWithNestedValueArray: ISourceMeta = {
           simpleColumnMappings: [
             {
               sqlIdentifier: "`value`",
-              valueExtractor: (data) => data.value,
+              valueExtractor: (data) => data,
               chType: "String",
               nullable: false,
               lowCardinality: false,
