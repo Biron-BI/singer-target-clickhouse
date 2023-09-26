@@ -6,6 +6,7 @@ import {Writable} from "stream"
 import {IConfig} from "./Config"
 import {escapeValue} from "./utils"
 import {Either, makeLeft, makeRight} from "./Either"
+import TargetConnection from "./TargetConnection"
 
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -29,7 +30,7 @@ export interface Column {
   is_in_sorting_key: boolean
 }
 
-export default class ClickhouseConnection {
+export default class ClickhouseConnection implements TargetConnection {
 
   constructor(private connInfo: IConfig) {
   }

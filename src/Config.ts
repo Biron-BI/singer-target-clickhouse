@@ -10,6 +10,7 @@ export interface IConfig {
   database: string
   max_batch_rows?: number
   max_batch_size?: number // in bytes
+  batch_size?: number
   logging_level?: string
   subtable_separator?: string
 }
@@ -24,6 +25,7 @@ export class Config implements IConfig {
   readonly max_batch_size: number = 104857600 // 100 Mo
   readonly log_level: LogLevel = LogLevel.INFO
   readonly subtable_separator: string = "__"
+  readonly batch_size: number = 100
 
   constructor({
                 database,
