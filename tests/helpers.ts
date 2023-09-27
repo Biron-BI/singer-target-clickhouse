@@ -48,3 +48,7 @@ export async function streamToStrList(stream: Readable) {
   }
   return List(ret)
 }
+
+export const uselessValueExtractor = () => {
+  throw "should never be called"
+}

@@ -2,7 +2,7 @@ import {Writable} from "stream"
 import {ISourceMeta, PkMap, PKType} from "./jsonSchemaInspector"
 import {extractValue} from "./jsonSchemaTranslator"
 import {log_debug, log_info} from "singer-node"
-import ClickhouseConnection from "./ClickhouseConnection"
+import TargetConnection from "./TargetConnection"
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const get = require("lodash.get")
@@ -35,7 +35,8 @@ export default class RecordProcessor {
 
   constructor(
     private readonly meta: ISourceMeta,
-    private readonly clickhouse: ClickhouseConnection,
+    private readonly clickhouse: TargetConnection,
+    private readonly batchSize: number,
     private readonly level = 0,
   ) {
     this.meta = meta
@@ -43,14 +44,10 @@ export default class RecordProcessor {
     this.isWithParentPK = !this.isRoot && this.meta.pkMappings.find((pk) => pk.pkType === PKType.PARENT) !== undefined
     this.hasChildren = meta.children.length > 0
     this.children = meta.children.reduce((acc, child) => {
-      const processor = new RecordProcessor(child, this.clickhouse, this.level + 1)
+      const processor = new RecordProcessor(child, this.clickhouse, this.batchSize, this.level + 1)
       return {...acc, [child.sqlTableName]: processor}
     }, {})
     this.currentPkMappings = this.meta.pkMappings.filter((pkMap) => pkMap.pkType === PKType.CURRENT)
-  }
-
-  private isInitialized(): boolean {
-    return this.ingestionStream !== undefined
   }
 
   /*
@@ -97,7 +94,7 @@ export default class RecordProcessor {
 
     const dataToStream = JSON.stringify(this.buildSQLInsertValues(data, pkValues, resolvedRootVer))
     this.bufferedDatasToStream.push(dataToStream)
-    if (this.bufferedDatasToStream.length == 100) {
+    if (this.bufferedDatasToStream.length == this.batchSize) {
       this.sendBufferedDatasToStream()
     }
 
@@ -135,10 +132,17 @@ export default class RecordProcessor {
       .concat(isRoot ? (this.meta.pkMappings.length > 0 ? ["`_ver`"] : []) : ["`_root_ver`"])
   }
 
+  private isInitialized(): boolean {
+    return this.ingestionStream !== undefined
+  }
+
   private sendBufferedDatasToStream() {
-    if (this.bufferedDatasToStream.length>0) {
+    if (this.bufferedDatasToStream.length > 0) {
       this.bufferedDatasToStream.push("")
-      this.ingestionStream!.write(Buffer.from(this.bufferedDatasToStream.join('\n')))
+      if (!this.ingestionStream) {
+        throw new Error("Ingestion stream undefined but there is still bufferedData")
+      }
+      this.ingestionStream.write(Buffer.from(this.bufferedDatasToStream.join('\n')))
       this.bufferedDatasToStream = []
     }
   }

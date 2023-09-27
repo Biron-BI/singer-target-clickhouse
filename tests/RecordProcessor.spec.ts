@@ -1,11 +1,10 @@
 import {strict as assert} from "assert"
 import RecordProcessor from "../src/RecordProcessor"
 import {ColumnMap, ISourceMeta, PkMap, PKType} from "../src/jsonSchemaInspector"
-import {bootClickhouseContainer, streamToStrList} from "./helpers"
-import ClickhouseConnection from "../src/ClickhouseConnection"
-import {StartedTestContainer} from "testcontainers"
-import {Config} from "../src/Config"
-import {LogLevel, set_level} from "singer-node"
+import TargetConnection from "../src/TargetConnection"
+import {Writable} from "stream"
+import {StringDecoder} from "string_decoder"
+import {uselessValueExtractor} from "./helpers"
 
 // Represents an id column, for a PK for instance
 const id: PkMap = {
@@ -82,121 +81,133 @@ const metaWithPKAndChildren: ISourceMeta = {
 }
 
 const metaWithNestedValueArray: ISourceMeta = {
-  "prop": "audits",
-  "sqlTableName": "`audits`",
-  "pkMappings": [],
-  "simpleColumnMappings": [],
-  "children": [
+  prop: "audits",
+  sqlTableName: "`audits`",
+  pkMappings: [],
+  simpleColumnMappings: [],
+  children: [
     {
-      "prop": "events",
-      "sqlTableName": "`audits__events`",
-      "pkMappings": [
+      prop: "events",
+      sqlTableName: "`audits__events`",
+      pkMappings: [
         {
-          "prop": "_level_0_index",
-          "sqlIdentifier": "`_level_0_index`",
-          "chType": "Int32",
-          valueExtractor: () => {
-            throw "should never be called"
-          },
-          "nullable": false,
-          "pkType": PKType.LEVEL,
+          prop: "_level_0_index",
+          sqlIdentifier: "`_level_0_index`",
+          chType: "Int32",
+          valueExtractor: uselessValueExtractor,
+          nullable: false,
+          pkType: PKType.LEVEL,
           lowCardinality: false,
         },
       ],
-      "simpleColumnMappings": [],
-      "children": [
+      simpleColumnMappings: [],
+      children: [
         {
-          "prop": "previous_value",
-          "sqlTableName": "`audits__events__previous_value`",
-          "pkMappings": [
+          prop: "previous_value",
+          sqlTableName: "`audits__events__previous_value`",
+          pkMappings: [
             {
-              "prop": "_level_0_index",
-              "sqlIdentifier": "`_level_0_index`",
-              "chType": "Int32",
-              valueExtractor: () => {
-                throw "should never be called"
-              },
-              "nullable": false,
-              "pkType": PKType.LEVEL,
+              prop: "_level_0_index",
+              sqlIdentifier: "`_level_0_index`",
+              chType: "Int32",
+              valueExtractor: uselessValueExtractor,
+              nullable: false,
+              pkType: PKType.LEVEL,
               lowCardinality: false,
             },
             {
-              "prop": "_level_1_index",
-              "sqlIdentifier": "`_level_1_index`",
-              "chType": "Int32",
-              valueExtractor: () => {
-                throw "should never be called"
-              },
-              "nullable": false,
-              "pkType": PKType.LEVEL,
+              prop: "_level_1_index",
+              sqlIdentifier: "`_level_1_index`",
+              chType: "Int32",
+              valueExtractor: uselessValueExtractor,
+              nullable: false,
+              pkType: PKType.LEVEL,
               lowCardinality: false,
             },
           ],
-          "simpleColumnMappings": [
+          simpleColumnMappings: [
             {
-              "sqlIdentifier": "`value`",
-              valueExtractor: (data) => data.value,
-              "chType": "String",
-              "nullable": false,
+              sqlIdentifier: "`value`",
+              valueExtractor: (data) => data,
+              chType: "String",
+              nullable: false,
               lowCardinality: false,
             },
           ],
-          "children": [],
+          children: [],
         },
       ],
     },
   ],
 }
 
+class StringWritable extends Writable {
+  public data: string
+  _decoder: StringDecoder
 
-const initialConnInfo = new Config({
-  host: "localhost",
-  username: "root",
-  password: "azertyuiop",
-  port: 8123,
-  database: "datbayse",
-  // max_batch_rows: 10,
-})
+  constructor() {
+    super();
+    this._decoder = new StringDecoder();
+    this.data = '';
+  }
+
+  _write(chunk: any, encoding: any, callback: any) {
+    if (encoding === 'buffer') {
+      chunk = this._decoder.write(chunk);
+    }
+    this.data += chunk;
+    callback();
+  }
+
+  _final(callback: any) {
+    this.data += this._decoder.end();
+    callback();
+  }
+}
+
+class TestConnection implements TargetConnection {
+  streams: StringWritable[] = []
+
+  constructor() {}
+
+  public createWriteStream(query: string): Writable {
+    const writable = new StringWritable()
+    this.streams.push(writable)
+    return writable;
+  }
+}
 
 describe("RecordProcessor", () => {
-  let container: StartedTestContainer
-  let connInfo: Config
-  before(async function () {
-    this.timeout(30000)
-    try {
-      container = await bootClickhouseContainer(initialConnInfo)
-      connInfo = new Config({
-        ...initialConnInfo,
-        port: container.getMappedPort(initialConnInfo.port),
-      })
-    } catch (err) {
-      console.log("err", err)
-    }
-    set_level(LogLevel.INFO)
-  })
+  describe("pushRecord", async () => {
 
-  after(async function () {
-    await container.stop()
-  })
-
-  describe("pushRecord", () => {
     it("should handle simple schema and data", async () => {
-      const res = new RecordProcessor(simpleMeta, new ClickhouseConnection(connInfo))
+      const connection = new TestConnection()
+      const res = new RecordProcessor(simpleMeta, connection, 1)
       res.pushRecord({id: 1, name: "a"}, 0)
       res.pushRecord({id: 2, name: "b"}, 0)
-      // @ts-ignore
-      res.readStream!.push(null)
 
-      // @ts-ignore
-      const values = await streamToStrList(res.readStream!)
-
-      assert.equal(values.get(0), '[1,"a"][2,"b"]')
+      assert.equal(connection.streams[0].data, '[1,"a"]\n[2,"b"]\n')
       assert.equal(res.buildSQLInsertField()[0], "`id`")
       assert.equal(res.buildSQLInsertField()[1], "`name`")
     }).timeout(30000)
 
+    it("should handle batch size and end ingestion", async () => {
+      const connection = new TestConnection()
+      const res = new RecordProcessor(simpleMeta, connection, 2)
+      res.pushRecord({id: 1, name: "a"}, 0)
+      res.pushRecord({id: 2, name: "b"}, 0)
+      res.pushRecord({id: 3, name: "c"}, 0)
+
+      assert.equal(connection.streams[0].data, '[1,"a"]\n[2,"b"]\n')
+
+      await res.endIngestion()
+
+      assert.equal(connection.streams[0].data, '[1,"a"]\n[2,"b"]\n[3,"c"]\n')
+    }).timeout(30000)
+
     it("should feed deep nested children", async () => {
-      const res = new RecordProcessor(metaWithPKAndChildren, new ClickhouseConnection(connInfo))
+      const connection = new TestConnection()
+      const res = new RecordProcessor(metaWithPKAndChildren, connection, 1)
       res.pushRecord(
         {
           id: 1234,
@@ -217,22 +228,13 @@ describe("RecordProcessor", () => {
           }],
         }, 50,
       )
-      // We use ts ignore to access private members without updating class as we don't want to expose readStream
+
+      assert.deepEqual(connection.streams[0].data, "[1234,\"a\",51]\n")
+      assert.deepEqual(connection.streams[1].data, "[1234,0,\"tag_a\",51]\n[1234,1,\"tag_b\",51]\n")
+      assert.deepEqual(connection.streams[2].data, "[1234,0,0,\"value_a\",51]\n[1234,0,1,\"value_b\",51]\n[1234,0,2,\"value_c\",51]\n[1234,1,0,\"value_d\",51]\n[1234,1,1,\"value_e\",51]\n")
 
       // @ts-ignore
-      const deepStream = res.children.get("`order__tags`")?.children.get("`order__tags__values`")?.readStream!
-
-      deepStream.push(null)
-
-      const values = await streamToStrList(deepStream)
-
-      // @ts-ignore
-      assert.equal(res.children.size, 1)
-
-      assert.deepEqual(values.toArray(), ["[1234,0,0,\"value_a\",51][1234,0,1,\"value_b\",51][1234,0,2,\"value_c\",51][1234,1,0,\"value_d\",51][1234,1,1,\"value_e\",51]"])
-
-      // @ts-ignore
-      assert.deepEqual(res.children.get("`order__tags`")?.children.get("`order__tags__values`").buildSQLInsertField().toArray(), [
+      assert.deepEqual(res.children["`order__tags`"]?.children["`order__tags__values`"].buildSQLInsertField(), [
         "`_root_id`",
         "`_level_0_index`",
         "`_level_1_index`",
@@ -243,19 +245,17 @@ describe("RecordProcessor", () => {
       .timeout(30000)
 
     it("should handle nested value array", async () => {
-      const res = new RecordProcessor(metaWithNestedValueArray, new ClickhouseConnection(connInfo))
+      const connection = new TestConnection()
+      const res = new RecordProcessor(metaWithNestedValueArray, connection, 1)
       res.pushRecord(
         {events: [{previous_value: "Test"}]}, 0,
       )
+      await res.endIngestion()
 
-      // @ts-ignore
-      const deepStream = res.children.get("`audits__events`")?.children.get("`audits__events__previous_value`")?.readStream!
+      assert.equal(connection.streams[0].data, '[]\n')
+      assert.equal(connection.streams[1].data, '[0]\n')
+      assert.equal(connection.streams[2].data, '[0,0,"Test"]\n')
 
-      deepStream.push(null)
-
-      const values = await streamToStrList(deepStream)
-
-      assert.equal(values.get(0), '[0,0,"Test"]')
     }).timeout(30000)
 
   }).timeout(30000)

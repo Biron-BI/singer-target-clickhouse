@@ -7,7 +7,7 @@ import * as fs from "fs"
 const args = parse_args(List(["database", "host", "port", "username", "password"]), List([{
   flags: "-u | --update-streams <tables...>",
   description: "Schema whose root and children tables will be dropped / recreated on SCHEMA messages",
-},{
+}, {
   flags: "--input <file>",
   description: "An alternate file to read from, instead of STDIN",
 }]))

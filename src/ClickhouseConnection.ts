@@ -6,6 +6,7 @@ import {Writable} from "stream"
 import {IConfig} from "./Config"
 import {escapeValue} from "./utils"
 import {Either, makeLeft, makeRight} from "./Either"
+import TargetConnection from "./TargetConnection"
 
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -29,20 +30,19 @@ export interface Column {
   is_in_sorting_key: boolean
 }
 
-export default class ClickhouseConnection {
+export default class ClickhouseConnection implements TargetConnection {
+
+  static droppedTablePrefix = "_dropped_"
+  static archivedTablePrefix = "_archived_"
+  private connection: any
 
   constructor(private connInfo: IConfig) {
   }
-
-  private connection: any
 
   async checkConnection(): Promise<this> {
     await this.getConnectionPooled()
     return this
   }
-
-  static droppedTablePrefix = "_dropped_"
-  static archivedTablePrefix = "_archived_"
 
   public getDatabase() {
     return this.connInfo.database

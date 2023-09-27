@@ -16,9 +16,9 @@ export default class StreamProcessor {
     private readonly clickhouse: ClickhouseConnection,
     private readonly meta: ISourceMeta,
     private readonly startedClean: boolean,
-    private readonly config: Config,
+    config: Config,
     private maxVer: number,
-    private recordProcessor = new RecordProcessor(meta, clickhouse),
+    private recordProcessor = new RecordProcessor(meta, clickhouse, config.batch_size),
     private noPendingRows = 0,
     // private currentBatchSize = 0,
     private readonly cleaningValues: Set<string> = Set(), // All values used to clear data based on 'cleaningColumn',
@@ -63,7 +63,7 @@ export default class StreamProcessor {
   }
 
   public async commitPendingChanges(): Promise<void> {
-    if (this.noPendingRows>0) {
+    if (this.noPendingRows > 0) {
       log_info(`[${this.meta.prop}]: ending batch ingestion for ${this.noPendingRows} rows`)
       await this.recordProcessor.endIngestion()
       this.noPendingRows = 0

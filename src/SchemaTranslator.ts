@@ -56,5 +56,5 @@ export default {
         return translator(v)
       }
     }
-  }
+  },
 }

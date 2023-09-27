@@ -51,7 +51,8 @@ export class JsonSchemaInspectorContext {
   }
 }
 
-export type ValueExtractor = (data: { [k: string]: any }) => any
+// Can by any in case of arrays without PK
+export type ValueExtractor = (data: Record<string, any> | any) => any
 
 export interface ISimpleColumnType {
   chType?: string;
