@@ -1,8 +1,6 @@
 import {GenericContainer, StartedTestContainer} from "testcontainers"
 import {strict as assert} from 'assert'
 import {IConfig} from "../src/Config"
-import * as readline from "readline"
-import {Readable} from "stream"
 
 export async function bootClickhouseContainer(connInfo: IConfig): Promise<StartedTestContainer> {
   const container = await new GenericContainer("clickhouse/clickhouse-server:23.3.13.6")

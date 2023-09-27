@@ -3,9 +3,19 @@ import ClickhouseConnection, {Column} from "./ClickhouseConnection"
 import {log_error} from "singer-node"
 import {listLeft, mapLeft} from "./Either"
 
-export function extractValue(data: Record<string, any>, mapping: ColumnMap | PkMap): string {
+/**
+ * @param data
+ * @param mapping
+ * @param translateValue a configuration option to avoid unnecessary parsing of values, already parsed by the initial JSON.parse()
+ */
+export function extractValue(data: Record<string, any>, mapping: ColumnMap | PkMap, translateValue: boolean): string {
   let v = mapping.valueExtractor(data)
-  if (v === undefined) v = null
+  if (v === undefined) {
+    v = null
+  }
+  if (!translateValue) {
+    return v
+  }
   return mapping.valueTranslator ? mapping.valueTranslator(v) : v
 }
 

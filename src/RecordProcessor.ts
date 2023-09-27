@@ -17,6 +17,11 @@ type SourceMetaPK = {
   levelValues: PKValues | undefined,
 };
 
+interface RecordProcessorConfig {
+  batchSize: number,
+  translateValues: boolean
+}
+
 /**
  * Ingests and store data values
  * Tree structure to process stream of data according to precomputed meta data
@@ -36,7 +41,7 @@ export default class RecordProcessor {
   constructor(
     private readonly meta: ISourceMeta,
     private readonly clickhouse: TargetConnection,
-    private readonly batchSize: number,
+    private readonly config: RecordProcessorConfig,
     private readonly level = 0,
   ) {
     this.meta = meta
@@ -44,7 +49,7 @@ export default class RecordProcessor {
     this.isWithParentPK = !this.isRoot && this.meta.pkMappings.find((pk) => pk.pkType === PKType.PARENT) !== undefined
     this.hasChildren = meta.children.length > 0
     this.children = meta.children.reduce((acc, child) => {
-      const processor = new RecordProcessor(child, this.clickhouse, this.batchSize, this.level + 1)
+      const processor = new RecordProcessor(child, this.clickhouse, this.config, this.level + 1)
       return {...acc, [child.sqlTableName]: processor}
     }, {})
     this.currentPkMappings = this.meta.pkMappings.filter((pkMap) => pkMap.pkType === PKType.CURRENT)
@@ -74,7 +79,7 @@ export default class RecordProcessor {
 
     const currentPkValues = new Array(this.currentPkMappings.length)
     for (let i = 0; i < this.currentPkMappings.length; i++) {
-      currentPkValues[i] = extractValue(data, this.currentPkMappings[i])
+      currentPkValues[i] = extractValue(data, this.currentPkMappings[i], this.config.translateValues)
     }
 
     const sourceMetaPK: SourceMetaPK = {
@@ -94,7 +99,7 @@ export default class RecordProcessor {
 
     const dataToStream = JSON.stringify(this.buildSQLInsertValues(data, pkValues, resolvedRootVer))
     this.bufferedDatasToStream.push(dataToStream)
-    if (this.bufferedDatasToStream.length == this.batchSize) {
+    if (this.bufferedDatasToStream.length == this.config.batchSize) {
       this.sendBufferedDatasToStream()
     }
 
@@ -177,7 +182,7 @@ export default class RecordProcessor {
       result[i] = pkValues[i]
     }
     for (let i = 0; i < noSimpleColumn; i++) {
-      result[i + noPk] = extractValue(data, this.meta.simpleColumnMappings[i])
+      result[i + noPk] = extractValue(data, this.meta.simpleColumnMappings[i], this.config.translateValues)
     }
     if (version !== undefined)
       result[noPk + noSimpleColumn] = version

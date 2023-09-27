@@ -17,7 +17,10 @@ export default class StreamProcessor {
     private readonly startedClean: boolean,
     config: Config,
     private maxVer: number,
-    private recordProcessor = new RecordProcessor(meta, clickhouse, config.batch_size),
+    private recordProcessor = new RecordProcessor(meta, clickhouse, {
+      batchSize: config.batch_size,
+      translateValues: config.translate_values
+    }),
     private noPendingRows = 0,
     // private currentBatchSize = 0,
     private readonly cleaningValues: string[] = [], // All values used to clear data based on 'cleaningColumn',
@@ -107,7 +110,11 @@ export default class StreamProcessor {
     const resolvedValue = cleaningColumnMeta.valueTranslator(value)
     log_info(`[${this.meta.prop}]: cleaning column: deleting based on ${resolvedValue}`)
 
-    const query = `ALTER TABLE ${this.meta.sqlTableName} DELETE WHERE \`${this.meta.cleaningColumn}\` = '${escapeValue(value)}'`
+    const query = `ALTER
+                   TABLE
+                   ${this.meta.sqlTableName}
+                   DELETE
+                   WHERE \`${this.meta.cleaningColumn}\` = '${escapeValue(value)}'`
     await this.clickhouse.runQuery(query)
   }
 
@@ -115,20 +122,20 @@ export default class StreamProcessor {
     // this.meta always refer to root node
 
     const query = `ALTER
-        TABLE
-        ${currentNode.sqlTableName}
-    DELETE
-    WHERE (${
-            this.meta.pkMappings
-                    .map((pk) => escapeIdentifier(formatRootPKColumn(pk.prop)))
-                    .concat(["_root_ver"])
-                    .join(",")
-    }) NOT IN (SELECT ${
-            this.meta.pkMappings
-                    .map((elem) => elem.sqlIdentifier)
-                    .concat(["_ver"])
-                    .join(",")
-    } FROM ${this.meta.sqlTableName})`
+                   TABLE
+                   ${currentNode.sqlTableName}
+                   DELETE
+                   WHERE (${
+                           this.meta.pkMappings
+                                   .map((pk) => escapeIdentifier(formatRootPKColumn(pk.prop)))
+                                   .concat(["_root_ver"])
+                                   .join(",")
+                   }) NOT IN (SELECT ${
+                           this.meta.pkMappings
+                                   .map((elem) => elem.sqlIdentifier)
+                                   .concat(["_ver"])
+                                   .join(",")
+                   } FROM ${this.meta.sqlTableName})`
     await this.clickhouse.runQuery(query)
 
     await Promise.all(currentNode.children.map(this.deleteChildDuplicates.bind(this)))
@@ -150,7 +157,8 @@ export default class StreamProcessor {
     const query = `SELECT ${pks}
                    FROM (SELECT ${pks} FROM ${meta.sqlTableName} ORDER BY ${pks})
                    WHERE (${pks}) = neighbor(
-                           (${pks}), -1, (${meta.pkMappings.map(() => "null").join(",")})) LIMIT 1`
+                           (${pks}), -1, (${meta.pkMappings.map(() => "null").join(",")}))
+                   LIMIT 1`
     const result = await this.clickhouse.runQuery(query)
     if (result.rows > 0) {
       throw ono("Duplicate key on table %s, data: %j, aborting process", meta.sqlTableName, result.data)
@@ -160,5 +168,5 @@ export default class StreamProcessor {
 
 const buildTruncateTableQueries = (meta: ISourceMeta): string[] => [
   `TRUNCATE TABLE ${meta.sqlTableName}`,
-  ...meta.children.flatMap(buildTruncateTableQueries)
+  ...meta.children.flatMap(buildTruncateTableQueries),
 ]

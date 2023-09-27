@@ -219,6 +219,32 @@ describe("processStream", () => {
 
     }).timeout(60000)
 
+    it('should produce same result from real data whether translate value is effective or not', async () => {
+      await processStream(fs.createReadStream("./tests/data/covidtracker.jsonl"), {
+        ...connInfo,
+        translate_values: false,
+      })
+      const testQuery = `select sum(total_rows), sum(total_bytes)
+                                                                         from system.tables
+                                                                         where database = '${connInfo.database}'`
+      let execResult = await runChQueryInContainer(container, connInfo, testQuery)
+      const initialResult = execResult.output
+
+      const otherDb = "otherDB"
+      await runChQueryInContainer(container, connInfo, `CREATE DATABASE ${otherDb}`)
+      await processStream(fs.createReadStream("./tests/data/covidtracker.jsonl"), {
+        ...connInfo,
+        database: otherDb,
+        translate_values: true,
+      })
+      execResult = await runChQueryInContainer(container, {
+        ...connInfo,
+        database: otherDb,
+      }, testQuery)
+      assert.equal(execResult.output, initialResult)
+
+    }).timeout(60000)
+
     it('should handle cleanFirst', async () => {
       await processStream(fs.createReadStream("./tests/data/stream_vanilla.jsonl"), connInfo)
       let execResult = await runChQueryInContainer(container, connInfo, `select count()

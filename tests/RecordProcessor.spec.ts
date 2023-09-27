@@ -5,6 +5,7 @@ import TargetConnection from "../src/TargetConnection"
 import {Writable} from "stream"
 import {StringDecoder} from "string_decoder"
 import {uselessValueExtractor} from "./helpers"
+import {Value} from "../src/SchemaTranslator"
 
 // Represents an id column, for a PK for instance
 const id: PkMap = {
@@ -35,6 +36,23 @@ const name: ColumnMap = {
   sqlIdentifier: "`name`",
   chType: "String",
   valueExtractor: (data) => data.name,
+  lowCardinality: false,
+}
+
+// Represents a name column, as a simple column
+const valid: ColumnMap = {
+  nullable: false,
+  prop: "valid",
+  sqlIdentifier: "`valid`",
+  chType: "UInt8",
+  valueExtractor: (data) => data.valid,
+  valueTranslator: (v: Value) => {
+    if (v === "true" || v === true || v === 1) {
+      return 1
+    } else {
+      return 0
+    }
+  },
   lowCardinality: false,
 }
 
@@ -168,7 +186,8 @@ class StringWritable extends Writable {
 class TestConnection implements TargetConnection {
   streams: StringWritable[] = []
 
-  constructor() {}
+  constructor() {
+  }
 
   public createWriteStream(query: string): Writable {
     const writable = new StringWritable()
@@ -182,7 +201,10 @@ describe("RecordProcessor", () => {
 
     it("should handle simple schema and data", async () => {
       const connection = new TestConnection()
-      const res = new RecordProcessor(simpleMeta, connection, 1)
+      const res = new RecordProcessor(simpleMeta, connection, {
+        batchSize: 1,
+        translateValues: false,
+      })
       res.pushRecord({id: 1, name: "a"}, 0)
       res.pushRecord({id: 2, name: "b"}, 0)
 
@@ -193,7 +215,10 @@ describe("RecordProcessor", () => {
 
     it("should handle batch size and end ingestion", async () => {
       const connection = new TestConnection()
-      const res = new RecordProcessor(simpleMeta, connection, 2)
+      const res = new RecordProcessor(simpleMeta, connection, {
+        batchSize: 2,
+        translateValues: false,
+      })
       res.pushRecord({id: 1, name: "a"}, 0)
       res.pushRecord({id: 2, name: "b"}, 0)
       res.pushRecord({id: 3, name: "c"}, 0)
@@ -205,9 +230,41 @@ describe("RecordProcessor", () => {
       assert.equal(connection.streams[0].data, '[1,"a"]\n[2,"b"]\n[3,"c"]\n')
     }).timeout(30000)
 
+    it("should handle value translation", async () => {
+      const connection = new TestConnection()
+      const res = new RecordProcessor({
+        ...simpleMeta,
+        simpleColumnMappings: [id, valid],
+      }, connection, {
+        batchSize: 1,
+        translateValues: true,
+      })
+      res.pushRecord({id: 1, valid: "true"}, 0)
+
+      assert.equal(connection.streams[0].data, '[1,1]\n')
+    }).timeout(30000)
+
+    it("should not translate", async () => {
+      const connection = new TestConnection()
+      const res = new RecordProcessor({
+        ...simpleMeta,
+        simpleColumnMappings: [id, valid],
+      }, connection, {
+        batchSize: 1,
+        translateValues: false,
+      })
+      res.pushRecord({id: 1, valid: "true"}, 0)
+
+      assert.equal(connection.streams[0].data, '[1,"true"]\n')
+    }).timeout(30000)
+
+
     it("should feed deep nested children", async () => {
       const connection = new TestConnection()
-      const res = new RecordProcessor(metaWithPKAndChildren, connection, 1)
+      const res = new RecordProcessor(metaWithPKAndChildren, connection, {
+        batchSize: 1,
+        translateValues: false,
+      })
       res.pushRecord(
         {
           id: 1234,
@@ -246,7 +303,10 @@ describe("RecordProcessor", () => {
 
     it("should handle nested value array", async () => {
       const connection = new TestConnection()
-      const res = new RecordProcessor(metaWithNestedValueArray, connection, 1)
+      const res = new RecordProcessor(metaWithNestedValueArray, connection, {
+        batchSize: 1,
+        translateValues: false,
+      })
       res.pushRecord(
         {events: [{previous_value: "Test"}]}, 0,
       )
