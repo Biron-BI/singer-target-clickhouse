@@ -37,18 +37,6 @@ export async function sleep(ms: number) {
   return new Promise(resolve => setTimeout(resolve, ms))
 }
 
-export async function streamToStrList(stream: Readable) {
-  const ret: string[] = []
-  const rl = readline.createInterface({
-    input: stream,
-  })
-
-  for await (const line of rl) {
-    ret.push(line)
-  }
-  return List(ret)
-}
-
 export const uselessValueExtractor = () => {
   throw "should never be called"
 }
