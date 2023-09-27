@@ -5,7 +5,6 @@ import {StartedTestContainer} from "testcontainers"
 import {LogLevel, set_level} from "singer-node"
 import {bootClickhouseContainer, runChQueryInContainer} from "./helpers"
 import {Config} from '../src/Config'
-import {List} from "immutable"
 
 const initialConnInfo = new Config({
   host: "localhost",
@@ -176,7 +175,7 @@ describe("processStream", () => {
     it('should recreate if schemas already exists, new is different but specified to be recreated', async () => {
       await processStream(fs.createReadStream("./tests/data/stream_1.jsonl"), connInfo)
 
-      const config = new Config({...connInfo}, List(["tickets"]))
+      const config = new Config({...connInfo}, ["tickets"])
       await processStream(fs.createReadStream("./tests/data/stream_1_modified.jsonl"), config)
       const execResult = await runChQueryInContainer(container, connInfo, `show tables from ${connInfo.database}`)
 

@@ -7,9 +7,8 @@ import {
   JsonSchemaInspectorContext,
   PKType,
 } from "../src/jsonSchemaInspector"
-import {List, Map} from "immutable"
-import {SchemaKeyProperties} from "singer-node"
 import {uselessValueExtractor} from "./helpers"
+import {SchemaKeyProperties} from "singer-node"
 
 const simpleSchema: IExtendedJSONSchema7 = {
   "properties": {
@@ -178,7 +177,7 @@ const nestedValueArraySchema: IExtendedJSONSchema7 = {
 
 describe("getSimpleColumnSqlType", () => {
   it("should handle simple stream", () => {
-    const res = getSimpleColumnSqlType(new JsonSchemaInspectorContext("audits", simpleSchema, List()),
+    const res = getSimpleColumnSqlType(new JsonSchemaInspectorContext("audits", simpleSchema, []),
       {"type": ["null", "integer"]})
     assert.equal(res, "Int64")
   })
@@ -186,7 +185,7 @@ describe("getSimpleColumnSqlType", () => {
 
 describe("JSON Schema Inspector", () => {
   it("should handle simple schema", () => {
-    const res = buildMeta(new JsonSchemaInspectorContext("audits", simpleSchema, List(["id"])))
+    const res = buildMeta(new JsonSchemaInspectorContext("audits", simpleSchema, ["id"]))
     assert.equal(res.sqlTableName, "`audits`")
     assert.equal(res.pkMappings.length, 1)
     assert.equal(res.pkMappings[0]?.chType, "Int64")
@@ -195,7 +194,7 @@ describe("JSON Schema Inspector", () => {
   })
 
   it("should handle array scalar", () => {
-    const res = buildMeta(new JsonSchemaInspectorContext("audits", arrayScalarSchema, List(["id"])))
+    const res = buildMeta(new JsonSchemaInspectorContext("audits", arrayScalarSchema, ["id"]))
     assert.equal(res.children.length, 1)
     assert.equal(res.children[0]?.sqlTableName, "`audits__collaborator_ids`")
     assert.equal(res.children[0]?.pkMappings.length, 2)
@@ -207,7 +206,7 @@ describe("JSON Schema Inspector", () => {
   })
 
   it("should handle nested object", () => {
-    const res = buildMeta(new JsonSchemaInspectorContext("audits", nestedObjectSchema, List(["id"])))
+    const res = buildMeta(new JsonSchemaInspectorContext("audits", nestedObjectSchema, ["id"]))
     assert.equal(res.children.length, 0)
     assert.equal(res.simpleColumnMappings.length, 1)
     assert.equal(res.pkMappings.length, 1)
@@ -216,7 +215,7 @@ describe("JSON Schema Inspector", () => {
   })
 
   it("should handle array of nested object", () => {
-    const res = buildMeta(new JsonSchemaInspectorContext("audits", arrayObjectSchema, List(["id"])))
+    const res = buildMeta(new JsonSchemaInspectorContext("audits", arrayObjectSchema, ["id"]))
     assert.equal(res.children[0]?.sqlTableName, "`audits__custom_fields`")
     assert.equal(res.children[0]?.simpleColumnMappings.length, 1)
     assert.equal(res.children[0]?.simpleColumnMappings[0]?.sqlIdentifier, "`field`")
@@ -226,13 +225,15 @@ describe("JSON Schema Inspector", () => {
   })
 
   it("should handle array of nested object with specifying childrenPK", () => {
-    const res = buildMeta(new JsonSchemaInspectorContext("audits", arrayObjectSchema, List(["id"]), undefined, undefined, undefined, undefined, undefined,
+    const res = buildMeta(new JsonSchemaInspectorContext("audits", arrayObjectSchema, ["id"], undefined, undefined, undefined, undefined, undefined,
       {
-        props: List(["id"]),
-        children: Map<string, SchemaKeyProperties>().set("custom_fields", {
-          props: List<string>(),
-          children: Map(),
-        }),
+        props: ["id"],
+        children: {
+          "custom_fields": {
+            props: [],
+            children: {},
+          },
+        },
       }))
     assert.equal(res.children[0]?.sqlTableName, "`audits__custom_fields`")
     assert.equal(res.children[0]?.simpleColumnMappings.length, 1)
@@ -244,18 +245,22 @@ describe("JSON Schema Inspector", () => {
   })
 
   it("should handle deep nested array of nested object with specifying childrenPK", () => {
-    const all_key_properties = {
-      props: List(["id"]),
-      children: Map<string, SchemaKeyProperties>().set("bill_fields", {
-        props: List(["bill_id"]),
-        children: Map<string, SchemaKeyProperties>().set("john_fields", {
-          props: List(["john_id"]),
-          children: Map(),
-        }),
-      }),
+    const all_key_properties: SchemaKeyProperties = {
+      props: ["id"],
+      children: {
+        bill_fields: {
+          props: ["bill_id"],
+          children: {
+            john_fields: {
+              props: ["john_id"],
+              children: {},
+            },
+          },
+        },
+      },
     }
 
-    const res = buildMeta(new JsonSchemaInspectorContext("audits", deepNestedArrayObjectSchema, List(["id"]), undefined, undefined, undefined, undefined, undefined, all_key_properties,
+    const res = buildMeta(new JsonSchemaInspectorContext("audits", deepNestedArrayObjectSchema, ["id"], undefined, undefined, undefined, undefined, undefined, all_key_properties,
     ))
     assert.equal(res.children[0]?.sqlTableName, "`audits__bill_fields`")
     assert.equal(res.children[0]?.pkMappings[0]?.sqlIdentifier, "`_root_id`")
@@ -283,7 +288,7 @@ describe("JSON Schema Inspector", () => {
   })
 
   it("should handle nest object with arrays", () => {
-    const res = buildMeta(new JsonSchemaInspectorContext("audits", nestedObjectWithArraysSchema, List(["id"])))
+    const res = buildMeta(new JsonSchemaInspectorContext("audits", nestedObjectWithArraysSchema, ["id"]))
     assert.equal(res.children.length, 1)
     assert.equal(res.children[0]?.sqlTableName, "`audits__nested__tags`")
     assert.equal(res.children[0]?.simpleColumnMappings.length, 1)
@@ -293,7 +298,7 @@ describe("JSON Schema Inspector", () => {
   })
 
   it("should handle nested value array schema", () => {
-    const res = buildMeta(new JsonSchemaInspectorContext("audits", nestedValueArraySchema, List([])))
+    const res = buildMeta(new JsonSchemaInspectorContext("audits", nestedValueArraySchema, []))
     const expectedResult: ISourceMeta = {
       "prop": "audits",
       "sqlTableName": "`audits`",
@@ -311,7 +316,7 @@ describe("JSON Schema Inspector", () => {
               "nullable": false,
               "lowCardinality": false,
               "pkType": PKType.LEVEL,
-              valueExtractor: uselessValueExtractor
+              valueExtractor: uselessValueExtractor,
             },
           ],
           "simpleColumnMappings": [],
@@ -327,7 +332,7 @@ describe("JSON Schema Inspector", () => {
                   "nullable": false,
                   "lowCardinality": false,
                   "pkType": PKType.LEVEL,
-                  valueExtractor: uselessValueExtractor
+                  valueExtractor: uselessValueExtractor,
 
                 },
                 {
@@ -337,7 +342,7 @@ describe("JSON Schema Inspector", () => {
                   "nullable": false,
                   "lowCardinality": false,
                   "pkType": PKType.LEVEL,
-                  valueExtractor: uselessValueExtractor
+                  valueExtractor: uselessValueExtractor,
                 },
               ],
               "simpleColumnMappings": [
@@ -346,7 +351,7 @@ describe("JSON Schema Inspector", () => {
                   "chType": "String",
                   "nullable": false,
                   "lowCardinality": false,
-                  valueExtractor: uselessValueExtractor
+                  valueExtractor: uselessValueExtractor,
                 },
               ],
               "children": [],

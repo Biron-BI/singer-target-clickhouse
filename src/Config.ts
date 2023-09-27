@@ -1,5 +1,4 @@
 import {LogLevel} from "singer-node"
-import {List} from "immutable"
 
 // Represents content of config.json
 export interface IConfig {
@@ -37,7 +36,7 @@ export class Config implements IConfig {
                 username,
                 logging_level,
                 subtable_separator,
-              }: IConfig, public readonly streamToReplace: List<string> = List()) {
+              }: IConfig, public readonly streamToReplace: string[] = []) {
     this.database = database
     this.host = host
     this.max_batch_rows = max_batch_rows ?? this.max_batch_rows

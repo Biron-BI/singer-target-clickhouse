@@ -1,5 +1,4 @@
 import {ExtendedJSONSchema7, log_warning, SchemaKeyProperties} from "singer-node"
-import {List, Map, Range, Record as ImmutableRecord} from "immutable"
 import {JSONSchema7Definition, JSONSchema7TypeName} from "json-schema"
 import {asArray} from "./utils"
 import SchemaTranslator, {ValueTranslator} from "./SchemaTranslator"
@@ -22,14 +21,14 @@ export class JsonSchemaInspectorContext {
   constructor(
     public readonly alias: string,
     public readonly schema: IExtendedJSONSchema7,
-    public readonly keyProperties: List<string>, // For current level. Only root has if all_key_properties isn't defined
+    public readonly keyProperties: string[], // For current level. Only root has if all_key_properties isn't defined
     public readonly subtableSeparator = "__",
     public readonly parentCtx?: JsonSchemaInspectorContext,
     public readonly level: number = 0,
     public readonly tableName = JsonSchemaInspectorContext.defaultTableName(alias, subtableSeparator, parentCtx),
     public readonly cleaningColumn?: string,
     // Optional config to know all key properties at this level and lower. Used to compute _parent_... fields
-    public readonly allKeyProperties: SchemaKeyProperties = {props: List(), children: Map()},
+    public readonly allKeyProperties: SchemaKeyProperties = {props: [], children: {}},
   ) {
   }
 
@@ -51,7 +50,7 @@ export class JsonSchemaInspectorContext {
   }
 }
 
-// Can by any in case of arrays without PK
+// Can be any in case of arrays without PK
 export type ValueExtractor = (data: Record<string, any> | any) => any
 
 export interface ISimpleColumnType {
@@ -126,14 +125,14 @@ const buildValueExtractor = (prop: string | undefined): ValueExtractor => {
 
 const buildMetaPkProps = (ctx: JsonSchemaInspectorContext): PkMap[] => ([] as PkMap[])
   // Append '_root_X'
-  .concat(ctx.isRoot() ? [] : ctx.getRootContext().keyProperties.toArray().map((prop => buildMetaPkProp(prop, ctx.getRootContext(), PKType.ROOT, formatRootPKColumn))))
+  .concat(ctx.isRoot() ? [] : ctx.getRootContext().keyProperties.map((prop => buildMetaPkProp(prop, ctx.getRootContext(), PKType.ROOT, formatRootPKColumn))))
   // Append '_parent_X' if parent has 'all_key_properties' filled with props
   // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-  .concat((!ctx.parentCtx?.allKeyProperties?.props.isEmpty() && ctx.parentCtx?.keyProperties.toArray().map((prop => buildMetaPkProp(prop, ctx.parentCtx!, PKType.PARENT, formatParentPKColumn)))) || [])
+  .concat((!(ctx.parentCtx?.allKeyProperties?.props.length === 0) && ctx.parentCtx?.keyProperties.map((prop => buildMetaPkProp(prop, ctx.parentCtx!, PKType.PARENT, formatParentPKColumn)))) || [])
   // Append 'X' if defined
-  .concat(ctx.keyProperties.toArray().map((prop => buildMetaPkProp(prop, ctx, PKType.CURRENT))))
+  .concat(ctx.keyProperties.map((prop => buildMetaPkProp(prop, ctx, PKType.CURRENT))))
   // Append 'level_N_index' columns
-  .concat(Range(0, ctx.level).toArray().map((value) => {
+  .concat(Array.from(Array(ctx.level).keys()).map((value) => {
     const prop = formatLevelIndexColumn(value)
     return {
       prop,
@@ -159,36 +158,33 @@ function makeNullable(type?: JSONSchema7TypeName | JSONSchema7TypeName[]): JSONS
     return []
   }
   return asArray(type)
-    .toArray()
     .concat(!type.includes("null") ? ["null"] : [])
 }
 
 // flatten 1..1 relation properties into the current level
 function flattenNestedObject(propDef: IExtendedJSONSchema7, key: string, ctx: JsonSchemaInspectorContext) {
-  const NestedSchemaRecord = ImmutableRecord<{
-    type: JSONSchema7TypeName,
-    properties: Record<string, JSONSchema7Definition>
-  }>({type: "object", properties: {}})
-
   const nullable = getNullable(propDef)
-  const nestedSchema = Object.entries(propDef.properties ?? {}).reduce((acc, [nestedKey, nestedPropDef]) => {
+  const nestedSchema: IExtendedJSONSchema7 = Object.entries(propDef.properties ?? {}).reduce((acc, [nestedKey, nestedPropDef]) => {
     if (typeof nestedPropDef === "boolean") {
       throw new Error("unhandled boolean propdef")
     }
-    return acc.set("properties", {
-      ...acc.properties,
-      [`${key}.${nestedKey}`]: {
-        ...nestedPropDef,
-        type: nullable ? makeNullable(nestedPropDef.type) : nestedPropDef.type, // if parent is nullable, all children should also be
+    return {
+      ...acc,
+      properties: {
+        ...acc.properties,
+        [`${key}.${nestedKey}`]: {
+          ...nestedPropDef,
+          type: nullable ? makeNullable(nestedPropDef.type) : nestedPropDef.type, // if parent is nullable, all children should also be
+        },
       },
-    })
-  }, NestedSchemaRecord({type: "object", properties: {}}))
+    }
+  }, {type: "object", properties: {}})
 
 
   return buildMetaProps(new JsonSchemaInspectorContext(
     ctx.alias,
     nestedSchema,
-    List(),
+    [],
     ctx.subtableSeparator,
     ctx,
     ctx.level,
@@ -199,13 +195,13 @@ function flattenNestedObject(propDef: IExtendedJSONSchema7, key: string, ctx: Js
 const createSubTable = (propDef: IExtendedJSONSchema7, key: string, ctx: JsonSchemaInspectorContext): ISourceMeta => buildMeta(new JsonSchemaInspectorContext(
   key,
   (propDef.items || {type: "string"}) as IExtendedJSONSchema7,
-  ctx.allKeyProperties.children.get(key)?.props ?? List(),
+  ctx.allKeyProperties.children[key]?.props ?? [],
   ctx.subtableSeparator,
   ctx,
   ctx.level + 1,
   undefined,
   undefined,
-  ctx.allKeyProperties.children.get(key),
+  ctx.allKeyProperties.children[key],
 ))
 
 type MetaProps = { children: ISourceMeta[], simpleColumnMappings: ColumnMap[] }
@@ -294,7 +290,7 @@ function getSimpleColumnType(ctx: JsonSchemaInspectorContext, key?: string): ISi
     throwError(ctx, `Key '${key}' does not match any usable prop in schema props '${ctx.schema.properties}'`)
     return
   }
-  const type = excludeNullFromArray(propDef.type).get(0)
+  const type = excludeNullFromArray(propDef.type)[0]
   const chType = getSimpleColumnSqlType(ctx, propDef, key)
 
   return chType ? {
@@ -308,7 +304,7 @@ function getSimpleColumnType(ctx: JsonSchemaInspectorContext, key?: string): ISi
 
 // From a JSON Schema type, return Clickhouse type
 export function getSimpleColumnSqlType(ctx: JsonSchemaInspectorContext, propDef: IExtendedJSONSchema7, key?: string): string | undefined {
-  const type = excludeNullFromArray(propDef.type).get(0)
+  const type = excludeNullFromArray(propDef.type)[0]
   const format = propDef.format
   if (type === "string") {
     if (format === "date" || format === "x-excel-date") {

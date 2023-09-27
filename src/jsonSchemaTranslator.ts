@@ -1,4 +1,3 @@
-import {List} from "immutable"
 import {ColumnMap, ISourceMeta, PkMap, PKType} from "./jsonSchemaInspector"
 import ClickhouseConnection, {Column} from "./ClickhouseConnection"
 import {log_error} from "singer-node"
@@ -27,16 +26,16 @@ function resolveVersionColumn(isRoot: boolean, hasPkMappings: boolean, withType 
 const resolveEngine = (isRoot: boolean, hasPkMappings: boolean): string => isRoot && hasPkMappings ? `ReplacingMergeTree(_ver)` : "MergeTree"
 
 
-const buildOrderByContent = (sqlIdentifiers: List<string>): string => `${sqlIdentifiers.size > 1 ? '(' : ''}${sqlIdentifiers.size > 0 ? sqlIdentifiers.map((sqlIdentifier) => sqlIdentifier).join(", ") : "tuple()"}${sqlIdentifiers.size > 1 ? ')' : ''}`
+const buildOrderByContent = (sqlIdentifiers: string[]): string => `${sqlIdentifiers.length > 1 ? '(' : ''}${sqlIdentifiers.length > 0 ? sqlIdentifiers.map((sqlIdentifier) => sqlIdentifier).join(", ") : "tuple()"}${sqlIdentifiers.length > 1 ? ')' : ''}`
 
 const resolveOrderBy = (meta: ISourceMeta, isRoot: boolean): string => {
   if (isRoot) {
-    return buildOrderByContent(List(meta.pkMappings)
+    return buildOrderByContent(meta.pkMappings
       .filter((pkMap) => pkMap.pkType === PKType.CURRENT) // Safeguard, should already be the case
       .map((pkMap) => pkMap.sqlIdentifier),
     )
   } else {
-    return buildOrderByContent(List(meta.pkMappings)
+    return buildOrderByContent(meta.pkMappings
       .filter((pkMap) => pkMap.pkType === PKType.ROOT || pkMap.pkType === PKType.LEVEL)
       .map((pkMap) => pkMap.sqlIdentifier),
     )
@@ -45,12 +44,12 @@ const resolveOrderBy = (meta: ISourceMeta, isRoot: boolean): string => {
 
 // From the schema inspection we build the query to create table in Clickhouse.
 // Must respect the SHOW CREATE TABLE syntax as we also use it to ensure schema didn't change
-export function translateCH(database: string, meta: ISourceMeta, parentMeta?: ISourceMeta, rootMeta?: ISourceMeta): List<string> {
+export function translateCH(database: string, meta: ISourceMeta, parentMeta?: ISourceMeta, rootMeta?: ISourceMeta): string[] {
   if (meta.simpleColumnMappings.length == 0 && meta.pkMappings.length == 0) {
     throw new Error("Attempting to create table without columns")
   }
   const isNodeRoot = rootMeta === undefined
-  const createDefs: List<string> = List(meta.pkMappings)
+  const createDefs: string[] = meta.pkMappings
     .map(fkMapping => `${fkMapping.sqlIdentifier} ${fkMapping.chType}`)
     .concat(meta.simpleColumnMappings.map(mapping => {
       const modifiers: string[] = [
@@ -63,21 +62,25 @@ export function translateCH(database: string, meta: ISourceMeta, parentMeta?: IS
       )
       return `${mapping.sqlIdentifier} ${type}`
     }))
-    .push(resolveVersionColumn(isNodeRoot, meta.pkMappings.length > 0))
+    .concat(resolveVersionColumn(isNodeRoot, meta.pkMappings.length > 0))
 
-  return List<string>()
+  return [
     // @formatter:off
-    .push(`CREATE TABLE ${database}.${meta.sqlTableName} ( ${createDefs.filter(Boolean).join(", ")} ) ENGINE = ${resolveEngine(isNodeRoot, meta.pkMappings.length > 0)} ORDER BY ${resolveOrderBy(meta, isNodeRoot)}`)
-    .concat(List(meta.children).flatMap((child: ISourceMeta) => translateCH(database, child, meta, rootMeta || meta)))
+    `CREATE TABLE ${database}.${meta.sqlTableName} ( ${createDefs.filter(Boolean).join(", ")} ) ENGINE = ${resolveEngine(isNodeRoot, meta.pkMappings.length > 0)} ORDER BY ${resolveOrderBy(meta, isNodeRoot)}`,
+    ...meta.children.flatMap((child: ISourceMeta) => translateCH(database, child, meta, rootMeta || meta))
     // @formatter:on
+  ]
 }
 
-export const listTableNames = (meta: ISourceMeta): List<string> => List<string>([meta.sqlTableName])
-  .concat(List(meta.children).flatMap(listTableNames))
+export const listTableNames = (meta: ISourceMeta): string[] => [
+  meta.sqlTableName,
+  ...meta.children.flatMap(listTableNames),
+]
 
-export const dropStreamTablesQueries = (meta: ISourceMeta): List<string> => List<string>()
-  .push(`DROP TABLE if exists ${meta.sqlTableName}`)
-  .concat(List(meta.children).flatMap(dropStreamTablesQueries))
+export const dropStreamTablesQueries = (meta: ISourceMeta): string[] => [
+  `DROP TABLE if exists ${meta.sqlTableName}`,
+  ...meta.children.flatMap(dropStreamTablesQueries),
+]
 
 
 const mapToColumn = (col: ColumnMap): Column => ({
@@ -148,7 +151,7 @@ export async function ensureSchemaIsEquivalent(meta: ISourceMeta, ch: Clickhouse
     }] : [])
 
 
-  const intersections = getColumnsIntersections(existingColumns.toArray(), expectedColumns)
+  const intersections = getColumnsIntersections(existingColumns, expectedColumns)
 
   const added = (await Promise.all(intersections.missing.map((elem) => ch.addColumn(meta.sqlTableName, elem))))
     .map((res) => mapLeft(res, (ctx) =>

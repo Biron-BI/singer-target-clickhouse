@@ -1,7 +1,6 @@
 import {ono} from "ono"
 import * as retry from "retry"
 import {log_debug, log_error, log_info, log_warning} from "singer-node"
-import {List} from "immutable"
 import {Writable} from "stream"
 import {IConfig} from "./Config"
 import {escapeValue} from "./utils"
@@ -48,18 +47,8 @@ export default class ClickhouseConnection implements TargetConnection {
     return this.connInfo.database
   }
 
-  public async listTables(): Promise<List<string>> {
-    return List((await this.runQuery("SHOW TABLES")).data).map(([tableName]) => tableName)
-  }
-
-  // Produces formatted create table query ready to be compared
-  public async describeCreateTable(table: string): Promise<string> {
-    return List<string>((await this.runQuery(`SHOW CREATE TABLE ${table}`))
-      .data[0][0]
-      .split('\n'))
-      .map((line) => line.trim())
-      .filter((line) => !line.startsWith("SETTINGS")) // Remove settings line as we don't create table with it
-      .join(" ")
+  public async listTables(): Promise<string[]> {
+    return (await this.runQuery("SHOW TABLES")).data.map(([tableName]) => tableName)
   }
 
   public async addColumn(table: string, newCol: Column): Promise<Either<{
@@ -127,16 +116,16 @@ export default class ClickhouseConnection implements TargetConnection {
     }
   }
 
-  public async listColumns(table: string): Promise<List<Column>> {
+  public async listColumns(table: string): Promise<Column[]> {
     const res = await this.runQuery(`SELECT name, type, is_in_sorting_key
                                      FROM system.columns
                                      WHERE database = '${escapeValue(this.connInfo.database)}'
                                        AND table = '${escapeValue(table)}'`)
-    return List(res.data.map((row) => ({
+    return res.data.map((row) => ({
       name: row[0],
       type: row[1],
       is_in_sorting_key: Boolean(row[2]),
-    })))
+    }))
   }
 
   // Expects connection to have been previously initialized, so we can instantly return stream

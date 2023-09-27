@@ -1,5 +1,4 @@
 import * as readline from 'readline'
-import {List, Map} from "immutable"
 import {ActiveStreamsMessage, log_fatal, log_info, log_warning, MessageType, parse_message, SchemaMessage} from "singer-node"
 import {Readable} from "stream"
 import ClickhouseConnection from "./ClickhouseConnection"
@@ -39,7 +38,7 @@ async function processSchemaMessage(msg: SchemaMessage, config: Config): Promise
   return await StreamProcessor.createStreamProcessor(meta, config, msg.cleanFirst)
 }
 
-function tableShouldBeDropped(table: string, activeStreams: List<string>, subtableSeparator: string): boolean {
+function tableShouldBeDropped(table: string, activeStreams: string[], subtableSeparator: string): boolean {
   const doesMatchAnActiveStream = activeStreams.some((activeTable) => table === activeTable || table.startsWith(activeTable + subtableSeparator))
   const isAlreadyDropped = table.startsWith(ClickhouseConnection.droppedTablePrefix)
   const isArchived = table.startsWith(ClickhouseConnection.archivedTablePrefix)
@@ -62,16 +61,17 @@ async function processActiveSchemasMessage(msg: ActiveStreamsMessage, config: Co
 }
 
 
-async function processLine(line: string, config: Config, streamProcessors: Map<string, StreamProcessor>, lineCount: number): Promise<Map<string, StreamProcessor>> {
+async function processLine(line: string, config: Config, streamProcessors: Map<string, StreamProcessor>, lineCount: number): Promise<void> {
   const msg = parse_message(line)
 
   switch (msg?.type) {
     case MessageType.schema:
       if (streamProcessors.has(msg.stream)) {
         log_warning(`A schema has already been received for stream [${msg.stream}]. Ignoring message`)
-        return streamProcessors
+        return
       }
-      return streamProcessors.set(msg.stream, await processSchemaMessage(msg, config))
+      streamProcessors.set(msg.stream, await processSchemaMessage(msg, config))
+      break;
     case MessageType.record:
       if (!streamProcessors.has(msg.stream)) {
         throw new Error("Record message received before Schema is defined")
@@ -79,25 +79,28 @@ async function processLine(line: string, config: Config, streamProcessors: Map<s
       // undefined has been checked by .has()
       // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       await streamProcessors.get(msg.stream)!.processRecord(msg.record, line.length, lineCount)
-      return streamProcessors
+      break;
     case MessageType.state:
       // On a state message, we insert every batch we are currently building and echo state for tap.
       // If the tap emits state too often, we may need to bufferize state messages
-      await Promise.all(streamProcessors.map((processor) => processor.commitPendingChanges()).values())
+
+      await Promise.all(
+        Array.from(streamProcessors.values())
+          .map((processor) => processor.commitPendingChanges())
+      )
+
       // Should be the one and only console log in this package: the tap expects output in stdout to save state
       console.log(JSON.stringify(msg.value))
-      return streamProcessors
+      break;
     case MessageType.activeStreams:
       // Expected to be read last
       await processActiveSchemasMessage(msg, config)
-      return streamProcessors
+      break;
     default:
       log_warning(`Message type not handled at line ${lineCount} starting with [${line.substring(0, 50)}]`)
-      return streamProcessors
+      break;
   }
 }
-
-type StreamProcessors = Map<string, StreamProcessor>
 
 export async function processStream(stream: Readable, config: Config) {
   let lineCount = 0
@@ -109,31 +112,14 @@ export async function processStream(stream: Readable, config: Config) {
   const rl = readline.createInterface({
     input: stream,
   })
+  const streamProcessors = new Map<string, StreamProcessor>()
+  for await (const line of rl) {
+    await processLine(line, config, streamProcessors, lineCount++)
+  }
 
-  const streamProcessors = await awaitReduce(
-    rl[Symbol.asyncIterator](),
-    (sp: StreamProcessors, line: string) => {
-      // log_debug(`processing line starting with ${line.substring(0, 40)} ...`)
-      return processLine(line, config, sp, lineCount++)
-    },
-    Map<string, StreamProcessor>(),
-  )
-
-  for await (const processor of streamProcessors.toList().toArray()) {
+  for await (const processor of streamProcessors.values()) {
     await processor.finalizeProcessing()
   }
 
   rl.close()
-}
-
-async function awaitReduce<S, T>(
-  awaitIterable: AsyncIterableIterator<S>,
-  reducer: (acc: T, line: S) => Promise<T>,
-  initial: T,
-): Promise<T> {
-  let acc = initial
-  for await (const item of awaitIterable) {
-    acc = await reducer(acc, item)
-  }
-  return acc
 }

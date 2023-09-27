@@ -1,6 +1,5 @@
 import {ono} from "ono"
 import {log_info, log_warning} from "singer-node"
-import {List, Set} from "immutable"
 import ClickhouseConnection from "./ClickhouseConnection"
 import {escapeIdentifier, formatRootPKColumn, ISourceMeta, PkMap} from "./jsonSchemaInspector"
 import {Config} from "./Config"
@@ -21,7 +20,7 @@ export default class StreamProcessor {
     private recordProcessor = new RecordProcessor(meta, clickhouse, config.batch_size),
     private noPendingRows = 0,
     // private currentBatchSize = 0,
-    private readonly cleaningValues: Set<string> = Set(), // All values used to clear data based on 'cleaningColumn',
+    private readonly cleaningValues: string[] = [], // All values used to clear data based on 'cleaningColumn',
   ) {
   }
 
@@ -51,15 +50,12 @@ export default class StreamProcessor {
       const cleaningValue = this.meta.cleaningColumn && record[this.meta.cleaningColumn]
       if (cleaningValue && !this.cleaningValues.includes(cleaningValue)) {
         await this.deleteCleaningValue(cleaningValue)
-        this.cleaningValues.add(cleaningValue)
+        this.cleaningValues.push(cleaningValue)
       }
     }
     this.recordProcessor.pushRecord(record, this.maxVer, undefined, undefined, undefined, messageCount)
     this.maxVer++
     this.noPendingRows++
-    // this.currentBatchSize += messageSize
-    //
-    // await this.processBatchIfNeeded()
   }
 
   public async commitPendingChanges(): Promise<void> {
@@ -115,21 +111,6 @@ export default class StreamProcessor {
     await this.clickhouse.runQuery(query)
   }
 
-  // private async processBatchIfNeeded() {
-  //   if (this.noPendingRows >= this.config.max_batch_rows ||
-  //     this.currentBatchSize >= this.config.max_batch_size) {
-  //     log_info(`Inserting batch`)
-  //     log_info(`rows quota: ${this.noPendingRows} / ${this.config.max_batch_rows}`)
-  //     log_info(`size quota: ${this.currentBatchSize} / ${this.config.max_batch_size}`)
-  //     try {
-  //       return await this.clearIngestion()
-  //     } catch (err) {
-  //       log_fatal("could not save records")
-  //       throw err
-  //     }
-  //   }
-  // }
-
   private async deleteChildDuplicates(currentNode: ISourceMeta) {
     // this.meta always refer to root node
 
@@ -177,8 +158,7 @@ export default class StreamProcessor {
   }
 }
 
-export function buildTruncateTableQueries(meta: ISourceMeta): List<string> {
-  return List<string>()
-    .push(`TRUNCATE TABLE ${meta.sqlTableName}`)
-    .concat(List(meta.children).flatMap(buildTruncateTableQueries))
-}
+const buildTruncateTableQueries = (meta: ISourceMeta): string[] => [
+  `TRUNCATE TABLE ${meta.sqlTableName}`,
+  ...meta.children.flatMap(buildTruncateTableQueries)
+]
