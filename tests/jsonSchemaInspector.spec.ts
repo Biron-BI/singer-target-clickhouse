@@ -1,6 +1,13 @@
 import {strict as assert} from 'assert'
-import {buildMeta, getSimpleColumnSqlType, IExtendedJSONSchema7, ISourceMeta, JsonSchemaInspectorContext} from "../src/jsonSchemaInspector"
-import {List, Map} from "immutable"
+import {
+  buildMeta,
+  getSimpleColumnSqlType,
+  IExtendedJSONSchema7,
+  ISourceMeta,
+  JsonSchemaInspectorContext,
+  PKType,
+} from "../src/jsonSchemaInspector"
+import {uselessValueExtractor} from "./helpers"
 import {SchemaKeyProperties} from "singer-node"
 
 const simpleSchema: IExtendedJSONSchema7 = {
@@ -170,7 +177,7 @@ const nestedValueArraySchema: IExtendedJSONSchema7 = {
 
 describe("getSimpleColumnSqlType", () => {
   it("should handle simple stream", () => {
-    const res = getSimpleColumnSqlType(new JsonSchemaInspectorContext("audits", simpleSchema, List()),
+    const res = getSimpleColumnSqlType(new JsonSchemaInspectorContext("audits", simpleSchema, []),
       {"type": ["null", "integer"]})
     assert.equal(res, "Int64")
   })
@@ -178,143 +185,155 @@ describe("getSimpleColumnSqlType", () => {
 
 describe("JSON Schema Inspector", () => {
   it("should handle simple schema", () => {
-    const res = buildMeta(new JsonSchemaInspectorContext("audits", simpleSchema, List(["id"])))
+    const res = buildMeta(new JsonSchemaInspectorContext("audits", simpleSchema, ["id"]))
     assert.equal(res.sqlTableName, "`audits`")
-    assert.equal(res.pkMappings.size, 1)
-    assert.equal(res.pkMappings.get(0)?.chType, "Int64")
-    assert.equal(res.simpleColumnMappings.size, 3)
+    assert.equal(res.pkMappings.length, 1)
+    assert.equal(res.pkMappings[0]?.chType, "Int64")
+    assert.equal(res.simpleColumnMappings.length, 3)
     assert.equal(res.simpleColumnMappings.find((elem) => elem.prop === "created_at")?.nullable, false)
   })
 
   it("should handle array scalar", () => {
-    const res = buildMeta(new JsonSchemaInspectorContext("audits", arrayScalarSchema, List(["id"])))
-    assert.equal(res.children.size, 1)
-    assert.equal(res.children.get(0)?.sqlTableName, "`audits__collaborator_ids`")
-    assert.equal(res.children.get(0)?.pkMappings.size, 2)
-    assert.equal(res.children.get(0)?.pkMappings.get(1)?.prop, "_level_0_index")
-    assert.equal(res.children.get(0)?.pkMappings.get(1)?.chType, "Int32")
-    assert.equal(res.children.get(0)?.pkMappings.get(1)?.nullable, false)
-    assert.equal(res.children.get(0)?.pkMappings.get(0)?.prop, "id")
-    assert.equal(res.children.get(0)?.pkMappings.get(0)?.chType, "Int64")
+    const res = buildMeta(new JsonSchemaInspectorContext("audits", arrayScalarSchema, ["id"]))
+    assert.equal(res.children.length, 1)
+    assert.equal(res.children[0]?.sqlTableName, "`audits__collaborator_ids`")
+    assert.equal(res.children[0]?.pkMappings.length, 2)
+    assert.equal(res.children[0]?.pkMappings[1]?.prop, "_level_0_index")
+    assert.equal(res.children[0]?.pkMappings[1]?.chType, "Int32")
+    assert.equal(res.children[0]?.pkMappings[1]?.nullable, false)
+    assert.equal(res.children[0]?.pkMappings[0]?.prop, "id")
+    assert.equal(res.children[0]?.pkMappings[0]?.chType, "Int64")
   })
 
   it("should handle nested object", () => {
-    const res = buildMeta(new JsonSchemaInspectorContext("audits", nestedObjectSchema, List(["id"])))
-    assert.equal(res.children.size, 0)
-    assert.equal(res.simpleColumnMappings.size, 1)
-    assert.equal(res.pkMappings.size, 1)
-    assert.equal(res.simpleColumnMappings.get(0)?.sqlIdentifier, "`nested__color`")
-    assert.equal(res.simpleColumnMappings.get(0)?.chType, "String")
+    const res = buildMeta(new JsonSchemaInspectorContext("audits", nestedObjectSchema, ["id"]))
+    assert.equal(res.children.length, 0)
+    assert.equal(res.simpleColumnMappings.length, 1)
+    assert.equal(res.pkMappings.length, 1)
+    assert.equal(res.simpleColumnMappings[0]?.sqlIdentifier, "`nested__color`")
+    assert.equal(res.simpleColumnMappings[0]?.chType, "String")
   })
 
   it("should handle array of nested object", () => {
-    const res = buildMeta(new JsonSchemaInspectorContext("audits", arrayObjectSchema, List(["id"])))
-    assert.equal(res.children.get(0)?.sqlTableName, "`audits__custom_fields`")
-    assert.equal(res.children.get(0)?.simpleColumnMappings.size, 1)
-    assert.equal(res.children.get(0)?.simpleColumnMappings.get(0)?.sqlIdentifier, "`field`")
-    assert.equal(res.children.get(0)?.pkMappings.size, 2)
-    assert.equal(res.children.get(0)?.pkMappings.get(1)?.sqlIdentifier, "`_level_0_index`")
-    assert.equal(res.children.get(0)?.pkMappings.get(0)?.sqlIdentifier, "`_root_id`")
+    const res = buildMeta(new JsonSchemaInspectorContext("audits", arrayObjectSchema, ["id"]))
+    assert.equal(res.children[0]?.sqlTableName, "`audits__custom_fields`")
+    assert.equal(res.children[0]?.simpleColumnMappings.length, 1)
+    assert.equal(res.children[0]?.simpleColumnMappings[0]?.sqlIdentifier, "`field`")
+    assert.equal(res.children[0]?.pkMappings.length, 2)
+    assert.equal(res.children[0]?.pkMappings[1]?.sqlIdentifier, "`_level_0_index`")
+    assert.equal(res.children[0]?.pkMappings[0]?.sqlIdentifier, "`_root_id`")
   })
 
   it("should handle array of nested object with specifying childrenPK", () => {
-    const res = buildMeta(new JsonSchemaInspectorContext("audits", arrayObjectSchema, List(["id"]), undefined, undefined, undefined, undefined, undefined,
+    const res = buildMeta(new JsonSchemaInspectorContext("audits", arrayObjectSchema, ["id"], undefined, undefined, undefined, undefined, undefined,
       {
-        props: List(["id"]),
-        children: Map<string, SchemaKeyProperties>().set("custom_fields", {
-          props: List<string>(),
-          children: Map(),
-        }),
+        props: ["id"],
+        children: {
+          "custom_fields": {
+            props: [],
+            children: {},
+          },
+        },
       }))
-    assert.equal(res.children.get(0)?.sqlTableName, "`audits__custom_fields`")
-    assert.equal(res.children.get(0)?.simpleColumnMappings.size, 1)
-    assert.equal(res.children.get(0)?.simpleColumnMappings.get(0)?.sqlIdentifier, "`field`")
-    assert.equal(res.children.get(0)?.pkMappings.size, 3)
-    assert.equal(res.children.get(0)?.pkMappings.get(0)?.sqlIdentifier, "`_root_id`")
-    assert.equal(res.children.get(0)?.pkMappings.get(1)?.sqlIdentifier, "`_parent_id`")
-    assert.equal(res.children.get(0)?.pkMappings.get(2)?.sqlIdentifier, "`_level_0_index`")
+    assert.equal(res.children[0]?.sqlTableName, "`audits__custom_fields`")
+    assert.equal(res.children[0]?.simpleColumnMappings.length, 1)
+    assert.equal(res.children[0]?.simpleColumnMappings[0]?.sqlIdentifier, "`field`")
+    assert.equal(res.children[0]?.pkMappings.length, 3)
+    assert.equal(res.children[0]?.pkMappings[0]?.sqlIdentifier, "`_root_id`")
+    assert.equal(res.children[0]?.pkMappings[1]?.sqlIdentifier, "`_parent_id`")
+    assert.equal(res.children[0]?.pkMappings[2]?.sqlIdentifier, "`_level_0_index`")
   })
 
   it("should handle deep nested array of nested object with specifying childrenPK", () => {
-    const all_key_properties = {
-      props: List(["id"]),
-      children: Map<string, SchemaKeyProperties>().set("bill_fields", {
-        props: List(["bill_id"]),
-        children: Map<string, SchemaKeyProperties>().set("john_fields", {
-          props: List(["john_id"]),
-          children: Map(),
-        }),
-      }),
+    const all_key_properties: SchemaKeyProperties = {
+      props: ["id"],
+      children: {
+        bill_fields: {
+          props: ["bill_id"],
+          children: {
+            john_fields: {
+              props: ["john_id"],
+              children: {},
+            },
+          },
+        },
+      },
     }
 
-    const res = buildMeta(new JsonSchemaInspectorContext("audits", deepNestedArrayObjectSchema, List(["id"]), undefined, undefined, undefined, undefined, undefined, all_key_properties,
+    const res = buildMeta(new JsonSchemaInspectorContext("audits", deepNestedArrayObjectSchema, ["id"], undefined, undefined, undefined, undefined, undefined, all_key_properties,
     ))
-    assert.equal(res.children.get(0)?.sqlTableName, "`audits__bill_fields`")
-    assert.equal(res.children.get(0)?.pkMappings.get(0)?.sqlIdentifier, "`_root_id`")
-    assert.equal(res.children.get(0)?.pkMappings.get(1)?.sqlIdentifier, "`_parent_id`")
-    assert.equal(res.children.get(0)?.pkMappings.get(2)?.sqlIdentifier, "`bill_id`")
-    assert.equal(res.children.get(0)?.pkMappings.get(3)?.sqlIdentifier, "`_level_0_index`")
+    assert.equal(res.children[0]?.sqlTableName, "`audits__bill_fields`")
+    assert.equal(res.children[0]?.pkMappings[0]?.sqlIdentifier, "`_root_id`")
+    assert.equal(res.children[0]?.pkMappings[1]?.sqlIdentifier, "`_parent_id`")
+    assert.equal(res.children[0]?.pkMappings[2]?.sqlIdentifier, "`bill_id`")
+    assert.equal(res.children[0]?.pkMappings[3]?.sqlIdentifier, "`_level_0_index`")
 
-    assert.equal(res.children.get(0)?.children.get(0)?.sqlTableName, "`audits__bill_fields__john_fields`")
-    assert.equal(res.children.get(0)?.children.get(0)?.pkMappings.get(0)?.sqlIdentifier, "`_root_id`")
-    assert.equal(res.children.get(0)?.children.get(0)?.pkMappings.get(1)?.sqlIdentifier, "`_parent_bill_id`")
-    assert.equal(res.children.get(0)?.children.get(0)?.pkMappings.get(2)?.sqlIdentifier, "`john_id`")
-    assert.equal(res.children.get(0)?.children.get(0)?.pkMappings.get(3)?.sqlIdentifier, "`_level_0_index`")
-    assert.equal(res.children.get(0)?.children.get(0)?.pkMappings.get(4)?.sqlIdentifier, "`_level_1_index`")
+    assert.equal(res.children[0]?.children[0]?.sqlTableName, "`audits__bill_fields__john_fields`")
+    assert.equal(res.children[0]?.children[0]?.pkMappings[0]?.sqlIdentifier, "`_root_id`")
+    assert.equal(res.children[0]?.children[0]?.pkMappings[1]?.sqlIdentifier, "`_parent_bill_id`")
+    assert.equal(res.children[0]?.children[0]?.pkMappings[2]?.sqlIdentifier, "`john_id`")
+    assert.equal(res.children[0]?.children[0]?.pkMappings[3]?.sqlIdentifier, "`_level_0_index`")
+    assert.equal(res.children[0]?.children[0]?.pkMappings[4]?.sqlIdentifier, "`_level_1_index`")
 
     // PK should not be in simple columns
-    assert.equal(res.children.get(0)?.children.get(0)?.simpleColumnMappings.find((col) => col.prop === 'john_id'), undefined)
-    assert.notEqual(res.children.get(0)?.children.get(0)?.simpleColumnMappings.find((col) => col.prop === 'name'), undefined)
+    assert.equal(res.children[0]?.children[0]?.simpleColumnMappings.find((col) => col.prop === 'john_id'), undefined)
+    assert.notEqual(res.children[0]?.children[0]?.simpleColumnMappings.find((col) => col.prop === 'name'), undefined)
 
-    assert.equal(res.children.get(0)?.children.get(0)?.children.get(0)?.sqlTableName, "`audits__bill_fields__john_fields__jack_fields`")
-    assert.equal(res.children.get(0)?.children.get(0)?.children.get(0)?.pkMappings.get(0)?.sqlIdentifier, "`_root_id`")
-    assert.equal(res.children.get(0)?.children.get(0)?.children.get(0)?.pkMappings.get(1)?.sqlIdentifier, "`_parent_john_id`")
-    assert.equal(res.children.get(0)?.children.get(0)?.children.get(0)?.pkMappings.get(2)?.sqlIdentifier, "`_level_0_index`")
-    assert.equal(res.children.get(0)?.children.get(0)?.children.get(0)?.pkMappings.get(3)?.sqlIdentifier, "`_level_1_index`")
-    assert.equal(res.children.get(0)?.children.get(0)?.children.get(0)?.pkMappings.get(4)?.sqlIdentifier, "`_level_2_index`")
+    assert.equal(res.children[0]?.children[0]?.children[0]?.sqlTableName, "`audits__bill_fields__john_fields__jack_fields`")
+    assert.equal(res.children[0]?.children[0]?.children[0]?.pkMappings[0]?.sqlIdentifier, "`_root_id`")
+    assert.equal(res.children[0]?.children[0]?.children[0]?.pkMappings[1]?.sqlIdentifier, "`_parent_john_id`")
+    assert.equal(res.children[0]?.children[0]?.children[0]?.pkMappings[2]?.sqlIdentifier, "`_level_0_index`")
+    assert.equal(res.children[0]?.children[0]?.children[0]?.pkMappings[3]?.sqlIdentifier, "`_level_1_index`")
+    assert.equal(res.children[0]?.children[0]?.children[0]?.pkMappings[4]?.sqlIdentifier, "`_level_2_index`")
   })
 
   it("should handle nest object with arrays", () => {
-    const res = buildMeta(new JsonSchemaInspectorContext("audits", nestedObjectWithArraysSchema, List(["id"])))
-    assert.equal(res.children.size, 1)
-    assert.equal(res.children.get(0)?.sqlTableName, "`audits__nested__tags`")
-    assert.equal(res.children.get(0)?.simpleColumnMappings.size, 1)
+    const res = buildMeta(new JsonSchemaInspectorContext("audits", nestedObjectWithArraysSchema, ["id"]))
+    assert.equal(res.children.length, 1)
+    assert.equal(res.children[0]?.sqlTableName, "`audits__nested__tags`")
+    assert.equal(res.children[0]?.simpleColumnMappings.length, 1)
+    assert.equal(res.pkMappings[0].valueExtractor({id: 3}), 3)
+    assert.equal(res.simpleColumnMappings[0].valueExtractor({nested: {color: "blue"}}), "blue")
+    assert.equal(res.children[0].simpleColumnMappings[0].valueExtractor({value: 10}), 10)
   })
 
   it("should handle nested value array schema", () => {
-    const res = buildMeta(new JsonSchemaInspectorContext("audits", nestedValueArraySchema, List([])))
-    const expectedResult = {
+    const res = buildMeta(new JsonSchemaInspectorContext("audits", nestedValueArraySchema, []))
+    const expectedResult: ISourceMeta = {
       "prop": "audits",
       "sqlTableName": "`audits`",
-      "pkMappings": List(),
-      "simpleColumnMappings": List(),
-      "children": List([
+      "pkMappings": [],
+      "simpleColumnMappings": [],
+      "children": [
         {
           "prop": "events",
           "sqlTableName": "`audits__events`",
-          "pkMappings": List([
+          "pkMappings": [
             {
               "prop": "_level_0_index",
               "sqlIdentifier": "`_level_0_index`",
               "chType": "Int32",
               "nullable": false,
               "lowCardinality": false,
-              "pkType": "LEVEL",
+              "pkType": PKType.LEVEL,
+              valueExtractor: uselessValueExtractor,
             },
-          ]),
-          "simpleColumnMappings": List(),
-          "children": List([
+          ],
+          "simpleColumnMappings": [],
+          "children": [
             {
               "prop": "previous_value",
               "sqlTableName": "`audits__events__previous_value`",
-              "pkMappings": List([
+              "pkMappings": [
                 {
                   "prop": "_level_0_index",
                   "sqlIdentifier": "`_level_0_index`",
                   "chType": "Int32",
                   "nullable": false,
                   "lowCardinality": false,
-                  "pkType": "LEVEL",
+                  "pkType": PKType.LEVEL,
+                  valueExtractor: uselessValueExtractor,
+
                 },
                 {
                   "prop": "_level_1_index",
@@ -322,24 +341,26 @@ describe("JSON Schema Inspector", () => {
                   "chType": "Int32",
                   "nullable": false,
                   "lowCardinality": false,
-                  "pkType": "LEVEL",
+                  "pkType": PKType.LEVEL,
+                  valueExtractor: uselessValueExtractor,
                 },
-              ]),
-              "simpleColumnMappings": List([
+              ],
+              "simpleColumnMappings": [
                 {
                   "sqlIdentifier": "`value`",
-                  "type": "string",
                   "chType": "String",
                   "nullable": false,
                   "lowCardinality": false,
+                  valueExtractor: uselessValueExtractor,
                 },
-              ]),
-              "children": List(),
+              ],
+              "children": [],
             },
-          ]),
+          ],
         },
-      ]),
+      ],
     }
     assert.equal(JSON.stringify(res), JSON.stringify(expectedResult))
+    assert.equal(res.children[0].children[0].simpleColumnMappings[0].valueExtractor("tartempion"), "tartempion")
   })
 })

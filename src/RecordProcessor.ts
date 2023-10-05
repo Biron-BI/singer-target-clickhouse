@@ -1,30 +1,25 @@
-import {pipeline, Readable, Transform} from "stream"
-import {List, Map} from "immutable"
-import {ISourceMeta, PKType} from "./jsonSchemaInspector"
+import {Writable} from "stream"
+import {ISourceMeta, PkMap, PKType} from "./jsonSchemaInspector"
 import {extractValue} from "./jsonSchemaTranslator"
-import {log_debug, log_error, log_info} from "singer-node"
-import {fillIf} from "./utils"
-import ClickhouseConnection from "./ClickhouseConnection"
+import {log_debug, log_info} from "singer-node"
+import TargetConnection from "./TargetConnection"
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const get = require("lodash.get")
 
 type PKValue = string | number
-type PKValues = List<PKValue>
+type PKValues = PKValue[]
 
 type SourceMetaPK = {
-  rootValues: PKValues,
-  parentValues: PKValues,
+  rootValues: PKValues | undefined,
+  parentValues: PKValues | undefined,
   values: PKValues,
-  levelValues: PKValues
+  levelValues: PKValues | undefined,
 };
 
-// https://clickhouse.tech/docs/en/interfaces/formats/#jsoncompacteachrow
-export function jsonToJSONCompactEachRow(v: any) {
-  if (v === undefined || v === null) {
-    return "null"
-  }
-  return JSON.stringify(v)
+interface RecordProcessorConfig {
+  batchSize: number,
+  translateValues: boolean
 }
 
 /**
@@ -34,22 +29,32 @@ export function jsonToJSONCompactEachRow(v: any) {
  * One node for one table
  */
 export default class RecordProcessor {
+  readonly hasChildren: boolean
   private readonly isWithParentPK: boolean
+  private readonly isRoot: boolean
+  private readonly children: { [key: string]: RecordProcessor }
+  private ingestionStream?: Writable
+  private ingestionPromise?: Promise<void>
+  private bufferedDatasToStream: string[] = []
+  private readonly currentPkMappings: PkMap[]
 
   constructor(
     private readonly meta: ISourceMeta,
-    private readonly clickhouse: ClickhouseConnection,
-    private readonly children: Map<string, RecordProcessor> = Map(),
-    private readonly readStream?: Readable,
-    private readonly ingestionPromise?: Promise<void>,
+    private readonly clickhouse: TargetConnection,
+    private readonly config: RecordProcessorConfig,
+    private readonly level = 0,
   ) {
     this.meta = meta
-    this.isWithParentPK = this.meta.pkMappings.find((pk) => pk.pkType === PKType.PARENT) !== undefined
+    this.isRoot = level === 0
+    this.isWithParentPK = !this.isRoot && this.meta.pkMappings.find((pk) => pk.pkType === PKType.PARENT) !== undefined
+    this.hasChildren = meta.children.length > 0
+    this.children = meta.children.reduce((acc, child) => {
+      const processor = new RecordProcessor(child, this.clickhouse, this.config, this.level + 1)
+      return {...acc, [child.sqlTableName]: processor}
+    }, {})
+    this.currentPkMappings = this.meta.pkMappings.filter((pkMap) => pkMap.pkType === PKType.CURRENT)
   }
 
-  public isInitialized(): boolean {
-    return this.readStream !== undefined
-  }
   /*
       Prepare sql query by splitting fields and values
       Creates children
@@ -60,132 +65,127 @@ export default class RecordProcessor {
     maxVer: number,
     parentMeta?: SourceMetaPK,
     rootVer?: number,
-    level = 0,
-    indexInParent?: number,
+    indexInParent = -1,
     messageCount = 0,
-  ): RecordProcessor {
-    const isRoot = indexInParent === undefined
-
+  ): void {
     // When first record is pushed we start by initializing stream
     if (!this.isInitialized()) {
-      return this.startIngestion(messageCount, isRoot).pushRecord(data, maxVer, parentMeta, rootVer, level, indexInParent, messageCount)
+      this.startIngestion(messageCount)
     }
-
 
     // root version number is computed only for a root who has primaryKeys
     // version start at max existing version + 1
-    const resolvedRootVer = (isRoot && !this.meta.pkMappings.isEmpty()) ? maxVer + 1 : rootVer
+    const resolvedRootVer = (this.isRoot && this.meta.pkMappings.length > 0) ? maxVer + 1 : rootVer
 
-    const pkValues: SourceMetaPK = {
-      rootValues: parentMeta?.rootValues.isEmpty() ? parentMeta.values : parentMeta?.rootValues ?? List(), // On first recursion we retrieve root pk from parentMeta
-      parentValues: parentMeta?.values ?? List(),
-      values: this.meta.pkMappings.filter((pkMap) => pkMap.pkType === PKType.CURRENT).map((pkMapping) => extractValue(data, pkMapping)),
-      levelValues: isRoot ? List() : parentMeta?.levelValues.push(indexInParent) ?? List(),
+    const currentPkValues = new Array(this.currentPkMappings.length)
+    for (let i = 0; i < this.currentPkMappings.length; i++) {
+      currentPkValues[i] = extractValue(data, this.currentPkMappings[i], this.config.translateValues)
     }
 
-    this.readStream?.push(`[${this.buildSQLInsertValues(data,
-      pkValues.rootValues
-        .concat(this.isWithParentPK ? pkValues.parentValues : List())
-        .concat(pkValues.values)
-        .concat(pkValues.levelValues),
-      resolvedRootVer).map(jsonToJSONCompactEachRow).join(",")}]`)
+    const sourceMetaPK: SourceMetaPK = {
+      values: currentPkValues,
+      rootValues: this.isRoot ? undefined : (parentMeta?.rootValues ?? parentMeta?.values),
+      parentValues: this.isRoot ? undefined : parentMeta?.values,
+      levelValues: this.isRoot ? undefined : [...(parentMeta?.levelValues || []), indexInParent],
+    }
 
-    return new RecordProcessor(
-      this.meta,
-      this.clickhouse,
-      Map(this.meta.children.map((child) => {
-        const processor = this.children.get(child.sqlTableName) ?? new RecordProcessor(child, this.clickhouse)
+    let pkValues = currentPkValues
+    if (!this.isRoot) {
+      pkValues = sourceMetaPK.rootValues!
+        .concat(this.isWithParentPK ? sourceMetaPK.parentValues! : [])
+        .concat(pkValues)
+        .concat(sourceMetaPK.levelValues!)
+    }
 
+    const dataToStream = JSON.stringify(this.buildSQLInsertValues(data, pkValues, resolvedRootVer))
+    this.bufferedDatasToStream.push(dataToStream)
+    if (this.bufferedDatasToStream.length == this.config.batchSize) {
+      this.sendBufferedDatasToStream()
+    }
+
+    if (this.hasChildren) {
+      for (const child of this.meta.children) {
+        const childProcessor: RecordProcessor = this.children[child.sqlTableName]
         // In this record we expect a list, as that is the reason a children has been created. But some JSON Schema declaration may declare both an array and a list, so we check and create an array with only one item if it is not an array
-        const childData: Record<string, any> = get(data, child.prop.split("."))
-
-        const childDataAsArray: List<Record<string, any>> = Array.isArray(childData) ? List(childData) : List(childData ? [childData] : [])
-
-        return childDataAsArray.reduce(([key, acc], elem, idx) => [key, acc.pushRecord(elem, maxVer, pkValues, resolvedRootVer, level + 1, idx, messageCount)], [child.sqlTableName, processor])
-      })),
-      this.readStream,
-      this.ingestionPromise,
-    )
+        const childDataRaw: Record<string, any> = get(data, child.prop.split("."))
+        const childDataAsArray = Array.isArray(childDataRaw) ? childDataRaw : (childDataRaw ? [childDataRaw] : [])
+        for (let idx = 0; idx < childDataAsArray.length; idx++) {
+          childProcessor.pushRecord(childDataAsArray[idx], maxVer, sourceMetaPK, resolvedRootVer, idx, messageCount)
+        }
+      }
+    }
   }
 
   public async endIngestion() {
-    return new Promise<void>((resolve, reject) => {
+    if (this.isInitialized()) {
       log_debug(`closing stream to insert data in ${this.meta.prop}, ${this.meta.sqlTableName}`)
-      this.readStream?.push(null)
-      Promise.all(this.children.map((child) => child.endIngestion()))
-        .then(() => {
-          if (this.ingestionPromise) {
-            this.ingestionPromise
-              .then(resolve)
-              .catch(reject)
-          } else {
-            resolve()
-          }
-        })
-        .catch(reject)
-    })
+      this.sendBufferedDatasToStream()
+      this.ingestionStream?.end()
+      this.ingestionStream = undefined
+      await Promise.all([
+        this.ingestionPromise,
+        Promise.all(Object.values(this.children).map((child) => child.endIngestion())),
+      ])
+    }
   }
 
-  public buildSQLInsertField(): List<string> {
+  public buildSQLInsertField(): string[] {
     const isRoot = this.meta.pkMappings.find((pkMap) => pkMap.pkType === PKType.ROOT) === undefined
     return this.meta.pkMappings
       .map((pkMap) => pkMap.sqlIdentifier)
-      .concat(this.meta.simpleColumnMappings
-        .map((cMap) => cMap.sqlIdentifier))
-      .concat(fillIf("`_ver`", isRoot && !this.meta.pkMappings.isEmpty()))
-      .concat(fillIf("`_root_ver`", !isRoot))
+      .concat(this.meta.simpleColumnMappings.map((cMap) => cMap.sqlIdentifier))
+      .concat(isRoot ? (this.meta.pkMappings.length > 0 ? ["`_ver`"] : []) : ["`_root_ver`"])
   }
 
-  private startIngestion(messageCount: number, isRoot: boolean): RecordProcessor {
+  private isInitialized(): boolean {
+    return this.ingestionStream !== undefined
+  }
+
+  private sendBufferedDatasToStream() {
+    if (this.bufferedDatasToStream.length > 0) {
+      this.bufferedDatasToStream.push("")
+      if (!this.ingestionStream) {
+        throw new Error("Ingestion stream undefined but there is still bufferedData")
+      }
+      this.ingestionStream.write(Buffer.from(this.bufferedDatasToStream.join('\n')))
+      this.bufferedDatasToStream = []
+    }
+  }
+
+  private startIngestion(messageCount: number): void {
     const insertQuery = `INSERT INTO ${this.meta.sqlTableName} (${this.buildSQLInsertField().join(",")}) FORMAT JSONCompactEachRow`
-    if (isRoot) {
+    if (this.isRoot) {
       log_info(`[${this.meta.prop}] handling lines starting at ${messageCount}`)
     }
 
-    const readStream = new Readable({
-      // eslint-disable-next-line @typescript-eslint/no-empty-function
-      objectMode: true, read() {
-      },
-    })
-
-    const transform: Transform = new Transform({
-        objectMode: true,
-        transform(chunk, encoding, callback) {
-          log_debug(`${insertQuery}: ${chunk}`)
-          this.push(chunk)
-          callback()
-        },
-      },
-    )
+    const insertStream = this.clickhouse.createWriteStream(insertQuery)
 
     const promise = new Promise<void>((resolve, reject) => {
-      // We leave resolve and reject responsibility to insertion stream
-      const insertStream = this.clickhouse.createWriteStream(insertQuery, resolve, reject)
-      pipeline(readStream, transform, insertStream, (err) => {
-        if (err) {
-          log_error(`[${this.meta.prop}]: pipeline error: [${err.message}]`)
-          insertStream.destroy(err)
-        } else {
-          log_info(`[${this.meta.prop}]: pipeline ended`)
-        }
-      })
-    }).catch((err) => {
-      throw new Error(err) // We throw error here, as an error may be thrown before endIngestion() is called
+      insertStream.on('error', reject)
+        .on('finish', resolve)
     })
-    //   .catch((err) => {
-    //   readStream?.emit("error", err)
-    //   throw new Error(err)
-    // })
 
-    return new RecordProcessor(this.meta, this.clickhouse, this.children, readStream, promise)
+    this.ingestionStream = insertStream
+    this.ingestionPromise = promise
   }
 
   // Extract value for all simple columns in a record
   private buildSQLInsertValues = (
     data: Record<string, any>,
-    pkValues: List<any> = List(),
+    pkValues: any[] = [],
     version?: number,
-  ) => pkValues
-    .concat(this.meta.simpleColumnMappings.map(cm => extractValue(data, cm)))
-    .concat(fillIf(version, version !== undefined))
+  ) => {
+    const noPk = pkValues.length
+    const noSimpleColumn = this.meta.simpleColumnMappings.length
+    const result: any[] = new Array(noPk + noSimpleColumn + (version !== undefined ? 1 : 0))
+    for (let i = 0; i < noPk; i++) {
+      result[i] = pkValues[i]
+    }
+    for (let i = 0; i < noSimpleColumn; i++) {
+      result[i + noPk] = extractValue(data, this.meta.simpleColumnMappings[i], this.config.translateValues)
+    }
+    if (version !== undefined)
+      result[noPk + noSimpleColumn] = version
+    return result
+  }
 }
