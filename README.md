@@ -71,6 +71,8 @@ The fields available to be specified in the config file.
 
 * `logging_level` Default to `"INFO"`
 * `subtable_separator` Default to `"__"`
+* `translate_values`: Whether fields should be parsed again to allow conversion of specific values, e.g. `True` accepted as `true`. Default `false`
+* `batch_size`: Amount of records to read before sending to clickhouse. Default `100`
 
 ## Singer specification extension
 

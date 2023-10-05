@@ -1,82 +1,81 @@
 import {strict as assert} from 'assert'
 import {ColumnMap, ISourceMeta, PKType} from "../src/jsonSchemaInspector"
-import {List} from "immutable"
 import {getColumnsIntersections, listTableNames, translateCH} from "../src/jsonSchemaTranslator"
 import {Column} from "../src/ClickhouseConnection"
 
 const simpleMeta: ISourceMeta = {
-  pkMappings: List(),
-  simpleColumnMappings: List([{
+  pkMappings: [],
+  simpleColumnMappings: [{
     nullable: false,
     prop: "id",
     sqlIdentifier: "`id`",
     chType: "Int32",
-    type: "integer",
+    valueExtractor: (data) => parseInt(data.id),
     lowCardinality: false,
   }, {
     nullable: true,
     prop: "name",
     sqlIdentifier: "`name`",
     chType: "String",
-    type: "string",
+    valueExtractor: (data) => data.name,
     lowCardinality: false,
-  }]),
-  children: List(),
+  }],
+  children: [],
   sqlTableName: "`order`",
   prop: "order",
 }
 
 const emptyMeta: ISourceMeta = {
-  pkMappings: List(),
-  simpleColumnMappings: List(),
-  children: List(),
+  pkMappings: [],
+  simpleColumnMappings: [],
+  children: [],
   sqlTableName: "`order`",
   prop: "order",
 
 }
 
 const metaWithPK: ISourceMeta = {
-  pkMappings: List([{
+  pkMappings: [{
     prop: "id",
     sqlIdentifier: "`id`",
     chType: "UInt32",
-    type: "integer",
+    valueExtractor: (data) => parseInt(data.id),
     nullable: false,
     pkType: PKType.CURRENT,
     lowCardinality: false,
-  }]),
-  simpleColumnMappings: List([{
+  }],
+  simpleColumnMappings: [{
     nullable: true,
     prop: "name",
     sqlIdentifier: "`name`",
     chType: "String",
-    type: "string",
+    valueExtractor: (data) => data.name,
     lowCardinality: false,
-  }]),
-  children: List(),
+  }],
+  children: [],
   sqlTableName: "`order`",
   prop: "order",
 }
 
 const metaWithPKAndChildren: ISourceMeta = {
-  pkMappings: List([{
+  pkMappings: [{
     prop: "id",
     sqlIdentifier: "`id`",
     chType: "UInt32",
-    type: "integer",
+    valueExtractor: (data) => parseInt(data.id),
     nullable: false,
     pkType: PKType.CURRENT,
     lowCardinality: false,
-  }]),
-  simpleColumnMappings: List([{
+  }],
+  simpleColumnMappings: [{
     nullable: true,
     prop: "name",
     sqlIdentifier: "`name`",
     chType: "String",
-    type: "string",
+    valueExtractor: (data) => data.name,
     lowCardinality: false,
-  }]),
-  children: List([{...simpleMeta, sqlTableName: "`order_child`", tableName: "order_child"}]),
+  }],
+  children: [{...simpleMeta, sqlTableName: "`order_child`"}],
   sqlTableName: "`order`",
   prop: "order",
 }
@@ -91,41 +90,38 @@ describe("translateCH", () => {
 
   it("should translate basic meta", () => {
     const res = translateCH("db", simpleMeta)
-    assert.equal(res.size, 1)
-    assert.equal(res.get(0), "CREATE TABLE db.`order` ( `id` Int32, `name` Nullable(String) ) ENGINE = MergeTree ORDER BY tuple()")
+    assert.equal(res.length, 1)
+    assert.equal(res[0], "CREATE TABLE db.`order` ( `id` Int32, `name` Nullable(String) ) ENGINE = MergeTree ORDER BY tuple()")
   })
 
   it("should translate meta with PK", () => {
     const res = translateCH("db", metaWithPK)
-    assert.equal(res.size, 1)
-    assert.equal(res.get(0), "CREATE TABLE db.`order` ( `id` UInt32, `name` Nullable(String), `_ver` UInt64 ) ENGINE = ReplacingMergeTree(_ver) ORDER BY `id`")
+    assert.equal(res.length, 1)
+    assert.equal(res[0], "CREATE TABLE db.`order` ( `id` UInt32, `name` Nullable(String), `_ver` UInt64 ) ENGINE = ReplacingMergeTree(_ver) ORDER BY `id`")
   })
 
   it("should translate meta with PK and children", () => {
     const res = translateCH("db", metaWithPKAndChildren)
-    assert.equal(res.size, 2)
-    assert.equal(res.get(0), "CREATE TABLE db.`order` ( `id` UInt32, `name` Nullable(String), `_ver` UInt64 ) ENGINE = ReplacingMergeTree(_ver) ORDER BY `id`")
-    assert.equal(res.get(1), "CREATE TABLE db.`order_child` ( `id` Int32, `name` Nullable(String), `_root_ver` UInt64 ) ENGINE = MergeTree ORDER BY tuple()")
+    assert.equal(res.length, 2)
+    assert.equal(res[0], "CREATE TABLE db.`order` ( `id` UInt32, `name` Nullable(String), `_ver` UInt64 ) ENGINE = ReplacingMergeTree(_ver) ORDER BY `id`")
+    assert.equal(res[1], "CREATE TABLE db.`order_child` ( `id` Int32, `name` Nullable(String), `_root_ver` UInt64 ) ENGINE = MergeTree ORDER BY tuple()")
   })
 
   it("should translate cardinality", () => {
     const mappings = simpleMeta.simpleColumnMappings
     const res = translateCH("db",
       {
-        ...simpleMeta, simpleColumnMappings: List([mappings.get(0), {
-          ...mappings.get(1),
-          lowCardinality: true,
-        }] as ColumnMap[]),
+        ...simpleMeta, simpleColumnMappings: [mappings[0], {...mappings[1], lowCardinality: true}] as ColumnMap[],
       },
     )
-    assert.equal(res.size, 1)
-    assert.equal(res.get(0), "CREATE TABLE db.`order` ( `id` Int32, `name` LowCardinality(Nullable(String)) ) ENGINE = MergeTree ORDER BY tuple()")
+    assert.equal(res.length, 1)
+    assert.equal(res[0], "CREATE TABLE db.`order` ( `id` Int32, `name` LowCardinality(Nullable(String)) ) ENGINE = MergeTree ORDER BY tuple()")
   })
 })
 
 describe("listTableNames", () => {
   it('should list all tables names in a single array', function () {
-    assert.deepEqual(listTableNames(metaWithPKAndChildren).toArray(), ["`order`", "`order_child`"])
+    assert.deepEqual(listTableNames(metaWithPKAndChildren), ["`order`", "`order_child`"])
   })
 })
 

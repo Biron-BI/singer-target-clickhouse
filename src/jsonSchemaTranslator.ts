@@ -1,19 +1,22 @@
-import {List} from "immutable"
 import {ColumnMap, ISourceMeta, PkMap, PKType} from "./jsonSchemaInspector"
-import SchemaTranslator from "./SchemaTranslator"
 import ClickhouseConnection, {Column} from "./ClickhouseConnection"
-import * as assert from "assert"
-import {fillIf} from "./utils"
-import {log_debug, log_error} from "singer-node"
+import {log_error} from "singer-node"
 import {listLeft, mapLeft} from "./Either"
 
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const get = require("lodash.get")
-
-export function extractValue(data: { [k: string]: any }, mapping: ColumnMap | PkMap): string {
-  const v = mapping.prop ? get(data, mapping.prop.split(".")) : data
-  const translator = new SchemaTranslator(mapping)
-  return translator.extractValue(v)
+/**
+ * @param data
+ * @param mapping
+ * @param translateValue a configuration option to avoid unnecessary parsing of values, already parsed by the initial JSON.parse()
+ */
+export function extractValue(data: Record<string, any>, mapping: ColumnMap | PkMap, translateValue: boolean): string {
+  let v = mapping.valueExtractor(data)
+  if (v === undefined) {
+    v = null
+  }
+  if (!translateValue) {
+    return v
+  }
+  return mapping.valueTranslator ? mapping.valueTranslator(v) : v
 }
 
 function resolveVersionColumn(isRoot: boolean, hasPkMappings: boolean, withType = true): string {
@@ -33,7 +36,7 @@ function resolveVersionColumn(isRoot: boolean, hasPkMappings: boolean, withType 
 const resolveEngine = (isRoot: boolean, hasPkMappings: boolean): string => isRoot && hasPkMappings ? `ReplacingMergeTree(_ver)` : "MergeTree"
 
 
-const buildOrderByContent = (sqlIdentifiers: List<string>): string => `${sqlIdentifiers.size > 1 ? '(' : ''}${sqlIdentifiers.size > 0 ? sqlIdentifiers.map((sqlIdentifier) => sqlIdentifier).join(", ") : "tuple()"}${sqlIdentifiers.size > 1 ? ')' : ''}`
+const buildOrderByContent = (sqlIdentifiers: string[]): string => `${sqlIdentifiers.length > 1 ? '(' : ''}${sqlIdentifiers.length > 0 ? sqlIdentifiers.map((sqlIdentifier) => sqlIdentifier).join(", ") : "tuple()"}${sqlIdentifiers.length > 1 ? ')' : ''}`
 
 const resolveOrderBy = (meta: ISourceMeta, isRoot: boolean): string => {
   if (isRoot) {
@@ -51,12 +54,12 @@ const resolveOrderBy = (meta: ISourceMeta, isRoot: boolean): string => {
 
 // From the schema inspection we build the query to create table in Clickhouse.
 // Must respect the SHOW CREATE TABLE syntax as we also use it to ensure schema didn't change
-export function translateCH(database: string, meta: ISourceMeta, parentMeta?: ISourceMeta, rootMeta?: ISourceMeta): List<string> {
-  if (meta.simpleColumnMappings.isEmpty() && meta.pkMappings.isEmpty()) {
+export function translateCH(database: string, meta: ISourceMeta, parentMeta?: ISourceMeta, rootMeta?: ISourceMeta): string[] {
+  if (meta.simpleColumnMappings.length == 0 && meta.pkMappings.length == 0) {
     throw new Error("Attempting to create table without columns")
   }
   const isNodeRoot = rootMeta === undefined
-  const createDefs: List<string> = meta.pkMappings
+  const createDefs: string[] = meta.pkMappings
     .map(fkMapping => `${fkMapping.sqlIdentifier} ${fkMapping.chType}`)
     .concat(meta.simpleColumnMappings.map(mapping => {
       const modifiers: string[] = [
@@ -69,21 +72,25 @@ export function translateCH(database: string, meta: ISourceMeta, parentMeta?: IS
       )
       return `${mapping.sqlIdentifier} ${type}`
     }))
-    .push(resolveVersionColumn(isNodeRoot, meta.pkMappings.size > 0))
+    .concat(resolveVersionColumn(isNodeRoot, meta.pkMappings.length > 0))
 
-  return List<string>()
+  return [
     // @formatter:off
-    .push(`CREATE TABLE ${database}.${meta.sqlTableName} ( ${createDefs.filter(Boolean).join(", ")} ) ENGINE = ${resolveEngine(isNodeRoot, meta.pkMappings.size > 0)} ORDER BY ${resolveOrderBy(meta, isNodeRoot)}`)
-    .concat(meta.children.flatMap((child: ISourceMeta) => translateCH(database, child, meta, rootMeta || meta)))
+    `CREATE TABLE ${database}.${meta.sqlTableName} ( ${createDefs.filter(Boolean).join(", ")} ) ENGINE = ${resolveEngine(isNodeRoot, meta.pkMappings.length > 0)} ORDER BY ${resolveOrderBy(meta, isNodeRoot)}`,
+    ...meta.children.flatMap((child: ISourceMeta) => translateCH(database, child, meta, rootMeta || meta))
     // @formatter:on
+  ]
 }
 
-export const listTableNames = (meta: ISourceMeta): List<string> => List<string>([meta.sqlTableName])
-  .concat(meta.children.flatMap(listTableNames))
+export const listTableNames = (meta: ISourceMeta): string[] => [
+  meta.sqlTableName,
+  ...meta.children.flatMap(listTableNames),
+]
 
-export const dropStreamTablesQueries = (meta: ISourceMeta): List<string> => List<string>()
-  .push(`DROP TABLE if exists ${meta.sqlTableName}`)
-  .concat(meta.children.flatMap(dropStreamTablesQueries))
+export const dropStreamTablesQueries = (meta: ISourceMeta): string[] => [
+  `DROP TABLE if exists ${meta.sqlTableName}`,
+  ...meta.children.flatMap(dropStreamTablesQueries),
+]
 
 
 const mapToColumn = (col: ColumnMap): Column => ({
@@ -133,7 +140,7 @@ export function getColumnsIntersections(existingCols: Column[], requiredCols: Co
 export async function ensureSchemaIsEquivalent(meta: ISourceMeta, ch: ClickhouseConnection) {
   await Promise.all(meta.children.map((child) => ensureSchemaIsEquivalent(child, ch)))
 
-  const isRoot = meta.pkMappings.filter((pkMap) => pkMap.pkType === PKType.ROOT).isEmpty()
+  const isRoot = meta.pkMappings.filter((pkMap) => pkMap.pkType === PKType.ROOT).length == 0
   const existingColumns = await ch.listColumns(unescape(meta.sqlTableName))
   const expectedColumns = meta.pkMappings
     .filter((pkMap) => {
@@ -147,14 +154,14 @@ export async function ensureSchemaIsEquivalent(meta: ISourceMeta, ch: Clickhouse
     .concat(meta.pkMappings
       .filter((pkMap) => !isRoot && (pkMap.pkType === PKType.CURRENT || pkMap.pkType === PKType.PARENT)).map(mapToColumn)) // to handle properties added by "all_key_properties
     .concat(meta.simpleColumnMappings.map(mapToColumn))
-    .concat(fillIf({
+    .concat(!isRoot || (isRoot && meta.pkMappings.find((pk) => pk.pkType === PKType.CURRENT) !== undefined) ? [{
       name: isRoot ? "_ver" : "_root_ver",
       type: "UInt64",
       is_in_sorting_key: false,
-    }, !isRoot || (isRoot && meta.pkMappings.find((pk) => pk.pkType === PKType.CURRENT) !== undefined)))
+    }] : [])
 
 
-  const intersections = getColumnsIntersections(existingColumns.toArray(), expectedColumns.toArray())
+  const intersections = getColumnsIntersections(existingColumns, expectedColumns)
 
   const added = (await Promise.all(intersections.missing.map((elem) => ch.addColumn(meta.sqlTableName, elem))))
     .map((res) => mapLeft(res, (ctx) =>

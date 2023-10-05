@@ -1,9 +1,6 @@
 import {GenericContainer, StartedTestContainer} from "testcontainers"
 import {strict as assert} from 'assert'
 import {IConfig} from "../src/Config"
-import * as readline from "readline"
-import {Readable} from "stream"
-import {List} from "immutable"
 
 export async function bootClickhouseContainer(connInfo: IConfig): Promise<StartedTestContainer> {
   const container = await new GenericContainer("clickhouse/clickhouse-server:23.3.13.6")
@@ -37,14 +34,6 @@ export async function sleep(ms: number) {
   return new Promise(resolve => setTimeout(resolve, ms))
 }
 
-export async function streamToStrList(stream: Readable) {
-  const ret: string[] = []
-  const rl = readline.createInterface({
-    input: stream,
-  })
-
-  for await (const line of rl) {
-    ret.push(line)
-  }
-  return List(ret)
+export const uselessValueExtractor = () => {
+  throw "should never be called"
 }
