@@ -70,6 +70,7 @@ async function processLine(line: string, config: Config, streamProcessors: Map<s
         log_warning(`A schema has already been received for stream [${msg.stream}]. Ignoring message`)
         return
       }
+      log_info(`[${msg.stream}]: Received schema message.`)
       streamProcessors.set(msg.stream, await processSchemaMessage(msg, config))
       break;
     case MessageType.record:
@@ -83,6 +84,7 @@ async function processLine(line: string, config: Config, streamProcessors: Map<s
     case MessageType.state:
       // On a state message, we insert every batch we are currently building and echo state for tap.
       // If the tap emits state too often, we may need to bufferize state messages
+      log_info("Received state message. Commit pending changes...")
 
       await Promise.all(
         Array.from(streamProcessors.values())
