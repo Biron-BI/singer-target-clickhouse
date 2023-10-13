@@ -6,6 +6,7 @@ import {buildMeta, escapeIdentifier, JsonSchemaInspectorContext} from "./jsonSch
 import StreamProcessor from "./StreamProcessor"
 import {Config} from "./Config"
 import {dropStreamTablesQueries, ensureSchemaIsEquivalent, translateCH} from "./jsonSchemaTranslator"
+import {PromisePool} from "@supercharge/promise-pool"
 
 async function processSchemaMessage(msg: SchemaMessage, config: Config): Promise<StreamProcessor> {
   const ch = new ClickhouseConnection(config)
@@ -133,9 +134,13 @@ export async function processStream(stream: Readable, config: Config) {
     throw encounteredErr
   }
 
-  for await (const processor of streamProcessors.values()) {
-    await processor.finalizeProcessing()
-  }
+  await PromisePool
+    .withConcurrency(config.batch_size)
+    .for(streamProcessors.values())
+    .handleError(async (error) => {
+      throw error
+    })
+    .process(async (processor) => await processor.finalizeProcessing())
 
   rl.close()
 }
