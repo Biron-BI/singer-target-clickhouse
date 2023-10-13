@@ -1,5 +1,5 @@
 import * as readline from 'readline'
-import {ActiveStreamsMessage, log_fatal, log_info, log_warning, MessageType, parse_message, SchemaMessage} from "singer-node"
+import {ActiveStreamsMessage, log_error, log_fatal, log_info, log_warning, MessageType, parse_message, SchemaMessage} from "singer-node"
 import {Readable} from "stream"
 import ClickhouseConnection from "./ClickhouseConnection"
 import {buildMeta, escapeIdentifier, JsonSchemaInspectorContext} from "./jsonSchemaInspector"
@@ -35,7 +35,7 @@ async function processSchemaMessage(msg: SchemaMessage, config: Config): Promise
     log_info(`[${meta.prop}]: creating tables`)
     await Promise.all(queries.map(ch.runQuery.bind(ch)))
   }
-  return await StreamProcessor.createStreamProcessor(meta, config, msg.cleanFirst)
+  return await StreamProcessor.createStreamProcessor(ch, meta, config, msg.cleanFirst)
 }
 
 function tableShouldBeDropped(table: string, activeStreams: string[], subtableSeparator: string): boolean {
@@ -61,7 +61,7 @@ async function processActiveSchemasMessage(msg: ActiveStreamsMessage, config: Co
 }
 
 
-async function processLine(line: string, config: Config, streamProcessors: Map<string, StreamProcessor>, lineCount: number): Promise<void> {
+async function processLine(line: string, config: Config, streamProcessors: Map<string, StreamProcessor>, lineCount: number, interrupt: (err: Error) => void): Promise<void> {
   const msg = parse_message(line)
 
   switch (msg?.type) {
@@ -79,13 +79,12 @@ async function processLine(line: string, config: Config, streamProcessors: Map<s
       }
       // undefined has been checked by .has()
       // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-      await streamProcessors.get(msg.stream)!.processRecord(msg.record, line.length, lineCount)
+      await streamProcessors.get(msg.stream)!.processRecord(msg.record, line.length, lineCount, interrupt)
       break;
     case MessageType.state:
       // On a state message, we insert every batch we are currently building and echo state for tap.
       // If the tap emits state too often, we may need to bufferize state messages
       log_info("Received state message. Commit pending changes...")
-
       await Promise.all(
         Array.from(streamProcessors.values())
           .map((processor) => processor.commitPendingChanges())
@@ -110,13 +109,28 @@ export async function processStream(stream: Readable, config: Config) {
     log_fatal(`${err.message}`)
     throw new Error(`READ ERROR ${err}`)
   })
+  let encounteredErr: Error | undefined;
 
   const rl = readline.createInterface({
     input: stream,
   })
+  const abort = (err: Error) => {
+    encounteredErr = err
+    log_error(err.message)
+    log_info("manually closing read stream")
+    rl.close()
+  }
+
+
   const streamProcessors = new Map<string, StreamProcessor>()
   for await (const line of rl) {
-    await processLine(line, config, streamProcessors, lineCount++)
+    await processLine(line, config, streamProcessors, lineCount++, abort)
+  }
+  log_info("done reading lines")
+
+  // Ensure exit if an error was encountered. No processing is finalized meaning table state could be
+  if (encounteredErr) {
+    throw encounteredErr
   }
 
   for await (const processor of streamProcessors.values()) {

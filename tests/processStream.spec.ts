@@ -5,6 +5,7 @@ import {StartedTestContainer} from "testcontainers"
 import {LogLevel, set_level} from "singer-node"
 import {bootClickhouseContainer, runChQueryInContainer} from "./helpers"
 import {Config} from '../src/Config'
+import {Readable} from "stream"
 
 const initialConnInfo = new Config({
   host: "localhost",
@@ -194,6 +195,47 @@ describe("processStream", () => {
       assert.equal(execResult.output, '22\n')
     }).timeout(30000)
 
+
+    // FIXME
+    // it('should throw in case of timeout', async () => {
+    //   const schema = {
+    //     "type": "SCHEMA", "stream": "tickets", "schema": {
+    //       "properties": {
+    //         "brand_id": {"type": ["null", "integer"]},
+    //         "assignee_id": {"type": ["null", "integer"]},
+    //         "id": {"type": ["integer"]},
+    //       }, "type": ["null", "object"],
+    //     }, "key_properties": ["id"],
+    //   }
+    //   const record = {
+    //     "type": "RECORD", "stream": "tickets", "record": {
+    //       "assignee_id": 11,
+    //       "brand_id": 22,
+    //       "id": 1
+    //     },
+    //   }
+    //
+    //   const s = new Readable();
+    //   s._read = (a) => {
+    //   }; // redundant? see update below
+    //   s.push(JSON.stringify(schema) + "\n");
+    //   s.push(JSON.stringify(record) + "\n");
+    //   // s.push(null)
+    //   // await assert.rejects(async () => {
+    //     await processStream(s, {
+    //       ...connInfo,
+    //       batch_size: 1,
+    //       insert_stream_timeout_sec: 2,
+    //     })
+    //   // }, Error)
+    //
+    //   await runChQueryInContainer(container, connInfo, "SYSTEM FLUSH LOGS")
+    //
+    //   const execResult = await runChQueryInContainer(container, connInfo, "select query, user, Settings from system.query_log order by event_time desc limit 30")
+    //   console.log(execResult.output)
+    //
+    // }).timeout(30000)
+
     it('should allow reordering of schema', async () => {
       await processStream(fs.createReadStream("./tests/data/stream_short.jsonl"), connInfo)
       await processStream(fs.createReadStream("./tests/data/stream_short_reordered.jsonl"), connInfo)
@@ -225,8 +267,8 @@ describe("processStream", () => {
         translate_values: false,
       })
       const testQuery = `select sum(total_rows), sum(total_bytes)
-                                                                         from system.tables
-                                                                         where database = '${connInfo.database}'`
+                         from system.tables
+                         where database = '${connInfo.database}'`
       let execResult = await runChQueryInContainer(container, connInfo, testQuery)
       const initialResult = execResult.output
 

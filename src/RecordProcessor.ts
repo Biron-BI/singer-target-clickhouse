@@ -1,7 +1,7 @@
 import {Writable} from "stream"
 import {ISourceMeta, PkMap, PKType} from "./jsonSchemaInspector"
 import {extractValue} from "./jsonSchemaTranslator"
-import {log_debug, log_info} from "singer-node"
+import {log_debug, log_error, log_info} from "singer-node"
 import TargetConnection from "./TargetConnection"
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -62,6 +62,7 @@ export default class RecordProcessor {
    */
   pushRecord(
     data: Record<string, any>,
+    abort: (err: Error) => void,
     maxVer: number,
     parentMeta?: SourceMetaPK,
     rootVer?: number,
@@ -70,7 +71,7 @@ export default class RecordProcessor {
   ): void {
     // When first record is pushed we start by initializing stream
     if (!this.isInitialized()) {
-      this.startIngestion(messageCount)
+      this.startIngestion(messageCount, abort)
     }
 
     // root version number is computed only for a root who has primaryKeys
@@ -110,7 +111,7 @@ export default class RecordProcessor {
         const childDataRaw: Record<string, any> = get(data, child.prop.split("."))
         const childDataAsArray = Array.isArray(childDataRaw) ? childDataRaw : (childDataRaw ? [childDataRaw] : [])
         for (let idx = 0; idx < childDataAsArray.length; idx++) {
-          childProcessor.pushRecord(childDataAsArray[idx], maxVer, sourceMetaPK, resolvedRootVer, idx, messageCount)
+          childProcessor.pushRecord(childDataAsArray[idx], abort, maxVer, sourceMetaPK, resolvedRootVer, idx, messageCount)
         }
       }
     }
@@ -152,7 +153,7 @@ export default class RecordProcessor {
     }
   }
 
-  private startIngestion(messageCount: number): void {
+  private startIngestion(messageCount: number, abort: (err: Error) => void): void {
     const insertQuery = `INSERT INTO ${this.meta.sqlTableName} (${this.buildSQLInsertField().join(",")}) FORMAT JSONCompactEachRow`
     if (this.isRoot) {
       log_info(`[${this.meta.prop}] handling lines starting at ${messageCount}`)
@@ -161,7 +162,10 @@ export default class RecordProcessor {
     const insertStream = this.clickhouse.createWriteStream(insertQuery)
 
     const promise = new Promise<void>((resolve, reject) => {
-      insertStream.on('error', reject)
+      insertStream.on('error', (err) => {
+          abort(err)
+          reject(err)
+        })
         .on('finish', resolve)
     })
 

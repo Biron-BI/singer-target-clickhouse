@@ -38,11 +38,6 @@ export default class ClickhouseConnection implements TargetConnection {
   constructor(private connInfo: IConfig) {
   }
 
-  async checkConnection(): Promise<this> {
-    await this.getConnectionPooled()
-    return this
-  }
-
   public getDatabase() {
     return this.connInfo.database
   }
@@ -135,17 +130,10 @@ export default class ClickhouseConnection implements TargetConnection {
       throw new Error("Clickhouse connection was not initialized")
     }
 
-    try {
-      return this.connection.query(query, {omitFormat: true})
-        .on('error', () => {
-          log_error(`rejecting query ${query}`)
-        })
-        .on('finish', () => {
-          log_debug(`resolving query ${query}`)
-        })
-    } catch (err) {
-      throw ono("ch stream failed", err)
-    }
+    return this.connection.query(query, {omitFormat: true})
+      .on('error', () => {
+        log_error(`rejecting query ${query}`)
+      })
   }
 
   // https://github.com/apla/node-clickhouse#promise-interface
@@ -187,6 +175,10 @@ export default class ClickhouseConnection implements TargetConnection {
           insert_null_as_default: 0, // https://clickhouse.com/docs/en/operations/settings/settings/#insert_null_as_default
           input_format_null_as_default: 0,
           input_format_defaults_for_omitted_fields: 0,
+
+          // Max amount of time between two batch insertions. Meaning if the tap stop emitting data for longer than this value, it will throw
+          // <!> Doesn't seem to have any effect, clickhouse keeps the configured one.
+          http_receive_timeout: this.connInfo.insert_stream_timeout_sec,
         },
       })
 

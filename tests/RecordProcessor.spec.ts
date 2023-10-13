@@ -98,6 +98,10 @@ const metaWithPKAndChildren: ISourceMeta = {
   sqlTableName: "`order`",
 }
 
+const abort = (err: Error) => {
+  throw err
+}
+
 const metaWithNestedValueArray: ISourceMeta = {
   prop: "audits",
   sqlTableName: "`audits`",
@@ -194,6 +198,10 @@ class TestConnection implements TargetConnection {
     this.streams.push(writable)
     return writable;
   }
+
+  runQuery(query: string, retries: number): Promise<any> {
+    return Promise.resolve(undefined)
+  }
 }
 
 describe("RecordProcessor", () => {
@@ -205,8 +213,8 @@ describe("RecordProcessor", () => {
         batchSize: 1,
         translateValues: false,
       })
-      res.pushRecord({id: 1, name: "a"}, 0)
-      res.pushRecord({id: 2, name: "b"}, 0)
+      res.pushRecord({id: 1, name: "a"}, abort, 0)
+      res.pushRecord({id: 2, name: "b"}, abort, 0)
 
       assert.equal(connection.streams[0].data, '[1,"a"]\n[2,"b"]\n')
       assert.equal(res.buildSQLInsertField()[0], "`id`")
@@ -219,9 +227,9 @@ describe("RecordProcessor", () => {
         batchSize: 2,
         translateValues: false,
       })
-      res.pushRecord({id: 1, name: "a"}, 0)
-      res.pushRecord({id: 2, name: "b"}, 0)
-      res.pushRecord({id: 3, name: "c"}, 0)
+      res.pushRecord({id: 1, name: "a"}, abort, 0)
+      res.pushRecord({id: 2, name: "b"}, abort, 0)
+      res.pushRecord({id: 3, name: "c"}, abort, 0)
 
       assert.equal(connection.streams[0].data, '[1,"a"]\n[2,"b"]\n')
 
@@ -239,7 +247,7 @@ describe("RecordProcessor", () => {
         batchSize: 1,
         translateValues: true,
       })
-      res.pushRecord({id: 1, valid: "true"}, 0)
+      res.pushRecord({id: 1, valid: "true"}, abort, 0)
 
       assert.equal(connection.streams[0].data, '[1,1]\n')
     }).timeout(30000)
@@ -253,7 +261,7 @@ describe("RecordProcessor", () => {
         batchSize: 1,
         translateValues: false,
       })
-      res.pushRecord({id: 1, valid: "true"}, 0)
+      res.pushRecord({id: 1, valid: "true"}, abort, 0)
 
       assert.equal(connection.streams[0].data, '[1,"true"]\n')
     }).timeout(30000)
@@ -283,7 +291,7 @@ describe("RecordProcessor", () => {
               name: "value_e",
             }],
           }],
-        }, 50,
+        }, abort, 50,
       )
 
       assert.deepEqual(connection.streams[0].data, "[1234,\"a\",51]\n")
@@ -308,7 +316,7 @@ describe("RecordProcessor", () => {
         translateValues: false,
       })
       res.pushRecord(
-        {events: [{previous_value: "Test"}]}, 0,
+        {events: [{previous_value: "Test"}]}, abort, 0,
       )
       await res.endIngestion()
 

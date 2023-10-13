@@ -19,7 +19,7 @@ export default class StreamProcessor {
     private maxVer: number,
     private recordProcessor = new RecordProcessor(meta, clickhouse, {
       batchSize: config.batch_size,
-      translateValues: config.translate_values
+      translateValues: config.translate_values,
     }),
     private noPendingRows = 0,
     // private currentBatchSize = 0,
@@ -27,8 +27,7 @@ export default class StreamProcessor {
   ) {
   }
 
-  static async createStreamProcessor(meta: ISourceMeta, config: Config, cleanFirst: boolean) {
-    const ch = await new ClickhouseConnection(config).checkConnection()
+  static async createStreamProcessor(ch: ClickhouseConnection, meta: ISourceMeta, config: Config, cleanFirst: boolean) {
     const maxVersion = (cleanFirst || !metaRepresentsReplacingMergeTree(meta))
       ? 0
       : Number((await ch.runQuery(`SELECT max(_ver)
@@ -48,7 +47,7 @@ export default class StreamProcessor {
     await Promise.all(queries.map((query) => this.clickhouse.runQuery(query)))
   }
 
-  public async processRecord(record: Record<string, any>, messageSize: number, messageCount: number): Promise<void> {
+  public async processRecord(record: Record<string, any>, messageSize: number, messageCount: number, abort: (err: Error) => void): Promise<void> {
     if (!this.startedClean) {
       const cleaningValue = this.meta.cleaningColumn && record[this.meta.cleaningColumn]
       if (cleaningValue && !this.cleaningValues.includes(cleaningValue)) {
@@ -56,7 +55,7 @@ export default class StreamProcessor {
         this.cleaningValues.push(cleaningValue)
       }
     }
-    this.recordProcessor.pushRecord(record, this.maxVer, undefined, undefined, undefined, messageCount)
+    this.recordProcessor.pushRecord(record, abort, this.maxVer, undefined, undefined, undefined, messageCount)
     this.maxVer++
     this.noPendingRows++
   }

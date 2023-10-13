@@ -3,7 +3,7 @@ import {StartedTestContainer} from "testcontainers"
 import {LogLevel, set_level} from "singer-node"
 import {bootClickhouseContainer, runChQueryInContainer} from "./helpers"
 import ClickhouseConnection from "../src/ClickhouseConnection"
-import {IConfig} from "../src/Config"
+import {Config, IConfig} from "../src/Config"
 import {isLeft, isRight} from "../src/Either"
 
 const connInfo: IConfig = {
@@ -24,7 +24,7 @@ describe("ClickhouseConnection", () => {
     try {
       container = await bootClickhouseContainer(connInfo);
       connInfo.port = container.getMappedPort(connInfo.port)
-      ch = new ClickhouseConnection(connInfo)
+      ch = new ClickhouseConnection(new Config(connInfo))
       await runChQueryInContainer(container, connInfo, "CREATE TABLE `tickets__tags` (`_level_0_index` Int32,`_root_id` Int32,`value` String,`_root_ver` UInt64) ENGINE = MergeTree() ORDER BY (`_level_0_index`,`_root_id`)")
       await runChQueryInContainer(container, connInfo, "CREATE TABLE `tickets` (`id` Nullable(Int32)) ENGINE = MergeTree() ORDER BY tuple()")
 
