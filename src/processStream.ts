@@ -39,8 +39,9 @@ async function processSchemaMessage(msg: SchemaMessage, config: Config): Promise
   return await StreamProcessor.createStreamProcessor(ch, meta, config, msg.cleanFirst)
 }
 
-function tableShouldBeDropped(table: string, activeStreams: string[], subtableSeparator: string): boolean {
-  const doesMatchAnActiveStream = activeStreams.some((activeTable) => table === activeTable || table.startsWith(activeTable + subtableSeparator))
+function tableShouldBeDropped(table: string, activeStreams: string[], subtableSeparator: string, extraActiveTables: string[]): boolean {
+  const doesMatchAnActiveStream = activeStreams.concat(extraActiveTables).some((activeTable) => table === activeTable ||
+    table.startsWith(activeTable + subtableSeparator))
   const isAlreadyDropped = table.startsWith(ClickhouseConnection.droppedTablePrefix)
   const isArchived = table.startsWith(ClickhouseConnection.archivedTablePrefix)
 
@@ -54,7 +55,7 @@ async function processActiveSchemasMessage(msg: ActiveStreamsMessage, config: Co
 
   await Promise.all(
     tables.map(async (table) => {
-      if (tableShouldBeDropped(table, msg.streams, config.subtable_separator)) {
+      if (tableShouldBeDropped(table, msg.streams, config.subtable_separator, config.extra_active_tables)) {
         return ch.renameObsoleteColumn(table)
       }
     }),

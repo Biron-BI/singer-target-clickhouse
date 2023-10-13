@@ -121,7 +121,7 @@ describe("processStream", () => {
       let tables = execResult.output.split("\n").filter(Boolean)
       assert.equal(tables.length, 21)
       tables.forEach((table) => {
-        if (!table.startsWith("ticket_audits")) {
+        if (!table.includes("ticket_audits")) {
           assert.equal(table.startsWith("_dropped_"), true, `table ${table} should start with dropped`)
         } else {
           assert.equal(table.startsWith("_dropped_"), false, `table ${table} should not start with dropped`)
@@ -133,7 +133,7 @@ describe("processStream", () => {
       tables = execResult.output.split("\n").filter(Boolean)
       assert.equal(tables.length, 21)
       tables.forEach((table) => {
-        if (!table.startsWith("ticket_audits")) {
+        if (!table.includes("ticket_audits")) {
           assert.equal(table.startsWith("_dropped_"), true, `table ${table} should start with dropped`)
         } else {
           assert.equal(table.startsWith("_dropped_"), false, `table ${table} should not start with dropped`)
@@ -147,7 +147,7 @@ describe("processStream", () => {
       tables = execResult.output.split("\n").filter(Boolean)
       assert.equal(tables.length, 21)
       tables.forEach((table) => {
-        if (!table.startsWith("ticket_audits")) {
+        if (!table.includes("ticket_audits")) {
           if (table.includes("ticket_metrics")) {
             assert.equal(table.startsWith("_archived_"), true, `table ${table} should start with archived`)
             assert.equal(table.includes("_dropped_"), false, `table ${table} should not include dropped`)
@@ -160,6 +160,25 @@ describe("processStream", () => {
         }
       })
 
+    }).timeout(30000)
+
+    it("should not rename tables as dropped when they are no longer active if they are registered as extra_active", async () => {
+      const config = {
+        ...connInfo,
+        extra_active_tables: ["tickets"]
+      }
+      await processStream(fs.createReadStream("./tests/data/stream_1.jsonl"), config)
+      await processStream(fs.createReadStream("./tests/data/stream_1_inactive.jsonl"), config)
+      let execResult = await runChQueryInContainer(container, connInfo, `show tables from ${connInfo.database}`)
+      let tables = execResult.output.split("\n").filter(Boolean)
+      assert.equal(tables.length, 21)
+      tables.forEach((table) => {
+        if (!table.includes("ticket_audits") && !table.includes("tickets")) {
+          assert.equal(table.startsWith("_dropped_"), true, `table ${table} should start with dropped`)
+        } else {
+          assert.equal(table.startsWith("_dropped_"), false, `table ${table} should not start with dropped`)
+        }
+      })
     }).timeout(30000)
 
     it('should throw if schema already exists and new has different columns with incompatible type', async () => {

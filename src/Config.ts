@@ -13,6 +13,7 @@ export interface IConfig {
   translate_values?: boolean
   insert_stream_timeout_sec?: number
   finalize_concurrency?: number
+  extra_active_tables?: string[]
 }
 
 export class Config implements IConfig {
@@ -27,7 +28,7 @@ export class Config implements IConfig {
   readonly translate_values: boolean = false
   readonly insert_stream_timeout_sec?: number = 180
   readonly finalize_concurrency: number = 3
-
+  readonly extra_active_tables: string[] = []
   constructor({
                 database,
                 host,
@@ -40,6 +41,7 @@ export class Config implements IConfig {
                 translate_values,
                 insert_stream_timeout_sec,
                 finalize_concurrency,
+                extra_active_tables
               }: IConfig, public readonly streamToReplace: string[] = []) {
     this.database = database
     this.host = host
@@ -54,5 +56,6 @@ export class Config implements IConfig {
     this.translate_values = translate_values ?? this.translate_values
     this.insert_stream_timeout_sec = insert_stream_timeout_sec ?? this.insert_stream_timeout_sec
     this.finalize_concurrency = finalize_concurrency ?? this.finalize_concurrency
+    this.extra_active_tables = extra_active_tables ?? this.extra_active_tables
   }
 }
