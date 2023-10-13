@@ -28,6 +28,7 @@
   "homepage": "https://github.com/Biron-BI/singer-target-clickhouse#readme",
   "dependencies": {
     "@apla/clickhouse": "^1.6.4",
+    "@supercharge/promise-pool": "^3.1.0",
     "@types/retry": "^0.12.1",
     "lodash.get": "^4.4.2",
     "ono": "^7.1.3",

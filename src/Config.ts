@@ -11,6 +11,7 @@ export interface IConfig {
   logging_level?: string
   subtable_separator?: string
   translate_values?: boolean
+  finalize_concurrency?: number
 }
 
 export class Config implements IConfig {
@@ -23,6 +24,8 @@ export class Config implements IConfig {
   readonly subtable_separator: string = "__"
   readonly batch_size: number = 100
   readonly translate_values: boolean = false
+  readonly finalize_concurrency: number = 3
+
 
   constructor({
                 database,
@@ -34,6 +37,7 @@ export class Config implements IConfig {
                 subtable_separator,
                 batch_size,
                 translate_values,
+                finalize_concurrency,
               }: IConfig, public readonly streamToReplace: string[] = []) {
     this.database = database
     this.host = host
@@ -46,5 +50,6 @@ export class Config implements IConfig {
     this.subtable_separator = subtable_separator ?? this.subtable_separator
     this.batch_size = batch_size ?? this.batch_size
     this.translate_values = translate_values ?? this.translate_values
+    this.finalize_concurrency = finalize_concurrency ?? this.finalize_concurrency
   }
 }
