@@ -125,9 +125,12 @@ export async function processStream(stream: Readable, config: Config) {
 
 
   const streamProcessors = new Map<string, StreamProcessor>()
+  let processLinePromise = Promise.resolve()
   for await (const line of rl) {
-    await processLine(line, config, streamProcessors, lineCount++, abort)
+    await processLinePromise
+    processLinePromise = processLine(line, config, streamProcessors, lineCount++, abort)
   }
+  await processLinePromise
   log_info("done reading lines")
 
   // Ensure exit if an error was encountered. No processing is finalized meaning table state could be
