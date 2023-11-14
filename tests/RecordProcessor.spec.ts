@@ -212,6 +212,7 @@ describe("RecordProcessor", () => {
       const res = new RecordProcessor(simpleMeta, connection, {
         batchSize: 1,
         translateValues: false,
+        autoEndTimeoutMs: 100,
       })
       res.pushRecord({id: 1, name: "a"}, abort, 0)
       res.pushRecord({id: 2, name: "b"}, abort, 0)
@@ -226,6 +227,7 @@ describe("RecordProcessor", () => {
       const res = new RecordProcessor(simpleMeta, connection, {
         batchSize: 2,
         translateValues: false,
+        autoEndTimeoutMs: 100,
       })
       res.pushRecord({id: 1, name: "a"}, abort, 0)
       res.pushRecord({id: 2, name: "b"}, abort, 0)
@@ -246,6 +248,7 @@ describe("RecordProcessor", () => {
       }, connection, {
         batchSize: 1,
         translateValues: true,
+        autoEndTimeoutMs: 100,
       })
       res.pushRecord({id: 1, valid: "true"}, abort, 0)
 
@@ -260,6 +263,7 @@ describe("RecordProcessor", () => {
       }, connection, {
         batchSize: 1,
         translateValues: false,
+        autoEndTimeoutMs: 100,
       })
       res.pushRecord({id: 1, valid: "true"}, abort, 0)
 
@@ -272,6 +276,7 @@ describe("RecordProcessor", () => {
       const res = new RecordProcessor(metaWithPKAndChildren, connection, {
         batchSize: 1,
         translateValues: false,
+        autoEndTimeoutMs: 100,
       })
       res.pushRecord(
         {
@@ -314,6 +319,7 @@ describe("RecordProcessor", () => {
       const res = new RecordProcessor(metaWithNestedValueArray, connection, {
         batchSize: 1,
         translateValues: false,
+        autoEndTimeoutMs: 100,
       })
       res.pushRecord(
         {events: [{previous_value: "Test"}]}, abort, 0,

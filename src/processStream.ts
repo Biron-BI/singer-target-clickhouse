@@ -81,7 +81,7 @@ async function processLine(line: string, config: Config, streamProcessors: Map<s
       }
       // undefined has been checked by .has()
       // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-      await streamProcessors.get(msg.stream)!.processRecord(msg.record, line.length, lineCount, interrupt)
+      await streamProcessors.get(msg.stream)!.processRecord(msg.record, lineCount, interrupt)
       break;
     case MessageType.state:
       // On a state message, we insert every batch we are currently building and echo state for tap.

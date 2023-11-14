@@ -1,7 +1,7 @@
 import {Writable} from "stream"
 import {ISourceMeta, PkMap, PKType} from "./jsonSchemaInspector"
 import {extractValue} from "./jsonSchemaTranslator"
-import {log_debug, log_error, log_info} from "singer-node"
+import {log_debug, log_info} from "singer-node"
 import TargetConnection from "./TargetConnection"
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -18,8 +18,15 @@ type SourceMetaPK = {
 };
 
 interface RecordProcessorConfig {
-  batchSize: number,
+  batchSize: number
   translateValues: boolean
+  autoEndTimeoutMs: number
+}
+
+interface IngestionCtx {
+  stream: Writable
+  promise: Promise<void>
+  autoEndTimeout: NodeJS.Timeout
 }
 
 /**
@@ -33,8 +40,7 @@ export default class RecordProcessor {
   private readonly isWithParentPK: boolean
   private readonly isRoot: boolean
   private readonly children: { [key: string]: RecordProcessor }
-  private ingestionStream?: Writable
-  private ingestionPromise?: Promise<void>
+  private ingestionCtx?: IngestionCtx
   private bufferedDatasToStream: string[] = []
   private readonly currentPkMappings: PkMap[]
 
@@ -73,6 +79,7 @@ export default class RecordProcessor {
     if (!this.isInitialized()) {
       this.startIngestion(messageCount, abort)
     }
+    this.ingestionCtx!.autoEndTimeout.refresh()
 
     // root version number is computed only for a root who has primaryKeys
     // version start at max existing version + 1
@@ -120,11 +127,13 @@ export default class RecordProcessor {
   public async endIngestion() {
     if (this.isInitialized()) {
       log_debug(`closing stream to insert data in ${this.meta.prop}, ${this.meta.sqlTableName}`)
+      const {promise, stream, autoEndTimeout} = this.ingestionCtx!
+      clearTimeout(autoEndTimeout)
       this.sendBufferedDatasToStream()
-      this.ingestionStream?.end()
-      this.ingestionStream = undefined
+      stream.end()
+      this.ingestionCtx = undefined
       await Promise.all([
-        this.ingestionPromise,
+        promise,
         Promise.all(Object.values(this.children).map((child) => child.endIngestion())),
       ])
     }
@@ -139,16 +148,16 @@ export default class RecordProcessor {
   }
 
   private isInitialized(): boolean {
-    return this.ingestionStream !== undefined
+    return this.ingestionCtx !== undefined
   }
 
   private sendBufferedDatasToStream() {
     if (this.bufferedDatasToStream.length > 0) {
       this.bufferedDatasToStream.push("")
-      if (!this.ingestionStream) {
-        throw new Error("Ingestion stream undefined but there is still bufferedData")
+      if (!this.ingestionCtx) {
+        throw new Error("ingestionCtx is undefined but there is still bufferedData")
       }
-      this.ingestionStream.write(Buffer.from(this.bufferedDatasToStream.join('\n')))
+      this.ingestionCtx.stream.write(Buffer.from(this.bufferedDatasToStream.join('\n')))
       this.bufferedDatasToStream = []
     }
   }
@@ -160,17 +169,20 @@ export default class RecordProcessor {
     }
 
     const insertStream = this.clickhouse.createWriteStream(insertQuery)
-
-    const promise = new Promise<void>((resolve, reject) => {
-      insertStream.on('error', (err) => {
-          abort(err)
-          reject(err)
-        })
-        .on('finish', resolve)
-    })
-
-    this.ingestionStream = insertStream
-    this.ingestionPromise = promise
+    this.ingestionCtx = {
+      stream: insertStream,
+      promise: new Promise<void>((resolve, reject) => {
+        insertStream.on('error', (err) => {
+            abort(err)
+            reject(err)
+          })
+          .on('finish', resolve)
+      }),
+      autoEndTimeout: setTimeout(() => {
+        log_debug(`auto closing stream to insert data in ${this.meta.prop}, ${this.meta.sqlTableName} due to inactivity`)
+        this.endIngestion()
+      }, this.config.autoEndTimeoutMs),
+    }
   }
 
   // Extract value for all simple columns in a record

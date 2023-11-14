@@ -20,6 +20,7 @@ export default class StreamProcessor {
     private recordProcessor = new RecordProcessor(meta, clickhouse, {
       batchSize: config.batch_size,
       translateValues: config.translate_values,
+      autoEndTimeoutMs: (config.insert_stream_timeout_sec - 5) * 1000,
     }),
     private noPendingRows = 0,
     // private currentBatchSize = 0,
@@ -47,7 +48,7 @@ export default class StreamProcessor {
     await Promise.all(queries.map((query) => this.clickhouse.runQuery(query)))
   }
 
-  public async processRecord(record: Record<string, any>, messageSize: number, messageCount: number, abort: (err: Error) => void): Promise<void> {
+  public async processRecord(record: Record<string, any>, messageCount: number, abort: (err: Error) => void): Promise<void> {
     if (!this.startedClean) {
       const cleaningValue = this.meta.cleaningColumn && record[this.meta.cleaningColumn]
       if (cleaningValue && !this.cleaningValues.includes(cleaningValue)) {

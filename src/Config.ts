@@ -26,7 +26,7 @@ export class Config implements IConfig {
   readonly subtable_separator: string = "__"
   readonly batch_size: number = 100
   readonly translate_values: boolean = false
-  readonly insert_stream_timeout_sec?: number = 180
+  readonly insert_stream_timeout_sec: number = 180
   readonly finalize_concurrency: number = 3
   readonly extra_active_tables: string[] = []
   constructor({
