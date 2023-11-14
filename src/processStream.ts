@@ -5,7 +5,7 @@ import ClickhouseConnection from "./ClickhouseConnection"
 import {buildMeta, escapeIdentifier, JsonSchemaInspectorContext} from "./jsonSchemaInspector"
 import StreamProcessor from "./StreamProcessor"
 import {Config} from "./Config"
-import {dropStreamTablesQueries, ensureSchemaIsEquivalent, translateCH} from "./jsonSchemaTranslator"
+import {dropStreamTablesQueries, updateSchema, translateCH} from "./jsonSchemaTranslator"
 import {PromisePool} from "@supercharge/promise-pool"
 
 async function processSchemaMessage(msg: SchemaMessage, config: Config): Promise<StreamProcessor> {
@@ -22,21 +22,12 @@ async function processSchemaMessage(msg: SchemaMessage, config: Config): Promise
     msg.cleaningColumn,
     msg.allKeyProperties,
   ))
-  const queries = translateCH(ch.getDatabase(), meta)
-
   if (config.streamToReplace.includes(meta.prop)) {
     log_info(`[${meta.prop}]: dropping root and children tables`)
     await Promise.all(dropStreamTablesQueries(meta).map((query) => ch.runQuery(query)))
   }
 
-  const rootAlreadyExists = (await ch.listTables()).map((table) => escapeIdentifier(table)).includes(meta.sqlTableName)
-  if (rootAlreadyExists) {
-    await ensureSchemaIsEquivalent(meta, ch)
-  } else {
-    log_info(`[${meta.prop}]: creating tables`)
-    await Promise.all(queries.map(ch.runQuery.bind(ch)))
-  }
-  return await StreamProcessor.createStreamProcessor(ch, meta, config, msg.cleanFirst)
+  return StreamProcessor.createStreamProcessor(ch, meta, config, msg.cleanFirst)
 }
 
 function tableShouldBeDropped(table: string, activeStreams: string[], subtableSeparator: string, extraActiveTables: string[]): boolean {

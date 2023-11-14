@@ -90,28 +90,47 @@ describe("processStream", () => {
       assert.equal(execResult.output.split("\n").length, 22)
     }).timeout(30000)
 
-    it('should create / update / delete columns if schema already exists and new has different columns', async () => {
-      await processStream(fs.createReadStream("./tests/data/stream_1.jsonl"), connInfo)
-      await processStream(fs.createReadStream("./tests/data/stream_1_modified.jsonl"), connInfo)
-      let execResult = await runChQueryInContainer(container, connInfo, `show tables from ${connInfo.database}`)
+    describe("columns update", () => {
+      it('should create / update / delete columns if schema already exists and new has different columns', async () => {
+        await processStream(fs.createReadStream("./tests/data/stream_1.jsonl"), connInfo)
+        await processStream(fs.createReadStream("./tests/data/stream_1_modified.jsonl"), connInfo)
+        let execResult = await runChQueryInContainer(container, connInfo, `show tables from ${connInfo.database}`)
 
-      assert.equal(execResult.output.split("\n").length, 22)
+        assert.equal(execResult.output.split("\n").length, 22)
 
-      execResult = await runChQueryInContainer(container, connInfo, `select name, type
-                                                                     from system.columns
-                                                                     where table = 'tickets'
-                                                                       and database = '${initialConnInfo.database}'
-                                                                     order by name`)
+        execResult = await runChQueryInContainer(container, connInfo, `select name, type
+                                                                       from system.columns
+                                                                       where table = 'tickets'
+                                                                         and database = '${initialConnInfo.database}'
+                                                                       order by name`)
 
-      // @ts-ignore
-      const columns: string[] = execResult.output.split("\n").map(it => it.replaceAll("\t", " "))
+        // @ts-ignore
+        const columns: string[] = execResult.output.split("\n").map(it => it.replaceAll("\t", " "))
 
-      // ensure col is created, updated and deleted
-      assert.equal(columns.includes("organization_id Nullable(String)"), true)
-      assert.equal(columns.includes("new_requester_id Nullable(Int64)"), true)
-      assert.equal(columns.includes("requester_id Nullable(Int64)"), false)
+        // ensure col is created, updated and deleted
+        assert.equal(columns.includes("organization_id Nullable(String)"), true)
+        assert.equal(columns.includes("new_requester_id Nullable(Int64)"), true)
+        assert.equal(columns.includes("requester_id Nullable(Int64)"), false)
 
-    }).timeout(30000)
+      }).timeout(30000)
+
+      it('should start by truncating before applying schema update', async () => {
+        await processStream(fs.createReadStream("./tests/data/stream_nullable.jsonl"), connInfo)
+        await processStream(fs.createReadStream("./tests/data/stream_non_nullable.jsonl"), connInfo)
+
+        let execResult = await runChQueryInContainer(container, connInfo, `select name, type
+                                                                       from system.columns
+                                                                       where table = 'users'
+                                                                         and database = '${initialConnInfo.database}'
+                                                                       order by name`)
+
+        // @ts-ignore
+        const columns: string[] = execResult.output.split("\n").map(it => it.replaceAll("\t", " ")).filter(Boolean)
+
+        assert.equal(columns.includes("id Int64"), true)
+        assert.equal(columns.length, 1)
+      }).timeout(30000)
+    })
 
     it("should rename tables as dropped when they are no longer active, and exclude dropped and archived", async () => {
       await processStream(fs.createReadStream("./tests/data/stream_1.jsonl"), connInfo)

@@ -5,6 +5,7 @@ import {escapeIdentifier, formatRootPKColumn, ISourceMeta, PkMap} from "./jsonSc
 import {Config} from "./Config"
 import {escapeValue} from "./utils"
 import RecordProcessor from "./RecordProcessor"
+import {updateSchema, translateCH} from "./jsonSchemaTranslator"
 
 // expects root meta as param
 const metaRepresentsReplacingMergeTree = (meta: ISourceMeta) => meta.pkMappings.length > 0
@@ -29,17 +30,29 @@ export default class StreamProcessor {
   }
 
   static async createStreamProcessor(ch: ClickhouseConnection, meta: ISourceMeta, config: Config, cleanFirst: boolean) {
-    const maxVersion = (cleanFirst || !metaRepresentsReplacingMergeTree(meta))
-      ? 0
-      : Number((await ch.runQuery(`SELECT max(_ver)
-                                   FROM ${meta.sqlTableName}`)).data[0][0])
+    const streamProcessor = new StreamProcessor(ch, meta, cleanFirst, config, 0)
 
-    log_info(`[${meta.prop}]: initial max version is [${maxVersion}]`)
-
-    const streamProcessor = new StreamProcessor(ch, meta, cleanFirst, config, maxVersion)
     if (cleanFirst) {
       await streamProcessor.clearTables()
     }
+
+    const rootAlreadyExists = (await ch.listTables())
+      .map((table) => escapeIdentifier(table))
+      .includes(meta.sqlTableName)
+
+    if (rootAlreadyExists) {
+      await updateSchema(meta, ch)
+    } else {
+      log_info(`[${meta.prop}]: creating tables`)
+      await Promise.all(translateCH(ch.getDatabase(), meta).map(ch.runQuery.bind(ch)))
+    }
+
+    streamProcessor.maxVer = (cleanFirst || !metaRepresentsReplacingMergeTree(meta))
+      ? streamProcessor.maxVer
+      : Number((await ch.runQuery(`SELECT max(_ver)
+                                   FROM ${meta.sqlTableName}`)).data[0][0])
+
+    log_info(`[${meta.prop}]: initial max version is [${streamProcessor.maxVer}]`)
     return streamProcessor
   }
 
