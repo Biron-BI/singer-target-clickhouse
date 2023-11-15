@@ -106,6 +106,7 @@ async function processLine(
 
 export async function processStream(stream: Readable, config: Config) {
   const ch = new ClickhouseConnection(config)
+  const existingTables = await ch.listTables()
   let lineCount = 0
   stream.on("error", (err: any) => {
     log_fatal(`${err.message}`)
@@ -128,7 +129,7 @@ export async function processStream(stream: Readable, config: Config) {
   let processLinePromise = Promise.resolve()
   for await (const line of rl) {
     await processLinePromise
-    processLinePromise = processLine(line, config, ch, streamProcessors, await ch.listTables(), lineCount++, abort)
+    processLinePromise = processLine(line, config, ch, streamProcessors, existingTables, lineCount++, abort)
   }
   await processLinePromise
   log_info("done reading lines")
