@@ -1,0 +1,6 @@
+{"type": "SCHEMA", "stream": "tickets", "schema": {"properties": {"id": {"type": ["integer"]}}, "type": ["null", "object"]}, "key_properties": ["id"]}
+{"type": "RECORD", "stream": "tickets", "record": {"id": 1}}
+{"type": "RECORD", "stream": "tickets", "record": {"id": 2}}
+{"type": "RECORD", "stream": "tickets", "record": {"id": 3}}
+{"type": "STATE", "value": {"bookmarks": {"toto":  "tata"}, ",currently_syncing": "tickets"}}
+{"type": "STATE", "value": {"bookmarks": {}, "currently_syncing": null}}

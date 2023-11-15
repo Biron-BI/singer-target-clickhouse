@@ -1,5 +1,5 @@
 import {Writable} from "stream"
 
 export default interface TargetConnection {
-  createWriteStream(query: string): Writable
+  createWriteStream(query: string, callback: (err: any, res: any) => void): Writable
 }

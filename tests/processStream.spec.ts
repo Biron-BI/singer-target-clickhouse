@@ -5,7 +5,6 @@ import {StartedTestContainer} from "testcontainers"
 import {LogLevel, set_level} from "singer-node"
 import {bootClickhouseContainer, runChQueryInContainer} from "./helpers"
 import {Config} from '../src/Config'
-import {Readable} from "stream"
 
 const initialConnInfo = new Config({
   host: "localhost",
@@ -131,6 +130,22 @@ describe("processStream", () => {
         assert.equal(columns.length, 1)
       }).timeout(30000)
     })
+
+    it('should handle state at the end of the stream + a closing state, launched several times', async () => {
+      for (let i = 0; i < 10; i++) {
+        await processStream(fs.createReadStream("./tests/data/stream_with_state.jsonl"), connInfo)
+        await processStream(fs.createReadStream("./tests/data/stream_tiny.jsonl"), connInfo)
+      }
+
+      let execResult = await runChQueryInContainer(container, connInfo, `select *
+                                                                       from ${initialConnInfo.database}.tickets`)
+
+      // @ts-ignore
+      const columns: string[] = execResult.output.split("\n").map(it => it.replaceAll("\t", ",")).filter(Boolean)
+
+      assert.equal(columns.length, 3)
+      assert.equal(columns[1], "2,59")
+    }).timeout(30000)
 
     it("should rename tables as dropped when they are no longer active, and exclude dropped and archived", async () => {
       await processStream(fs.createReadStream("./tests/data/stream_1.jsonl"), connInfo)

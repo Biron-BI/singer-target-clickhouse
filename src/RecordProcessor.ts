@@ -168,16 +168,24 @@ export default class RecordProcessor {
       log_info(`[${this.meta.prop}] handling lines starting at ${messageCount}`)
     }
 
-    const insertStream = this.clickhouse.createWriteStream(insertQuery)
+    let promiseResolve: (value: (void | PromiseLike<void>)) => void
+    let promiseReject: (reason?: any) => void;
+
+    const promise = new Promise<void>((resolve, reject) => {
+      promiseResolve = resolve;
+      promiseReject = reject;
+    })
+
     this.ingestionCtx = {
-      stream: insertStream,
-      promise: new Promise<void>((resolve, reject) => {
-        insertStream.on('error', (err) => {
-            abort(err)
-            reject(err)
-          })
-          .on('finish', resolve)
+      stream: this.clickhouse.createWriteStream(insertQuery, (err: any) => {
+        if (err) {
+          abort(err)
+          promiseReject(err)
+        } else {
+          promiseResolve()
+        }
       }),
+      promise,
       autoEndTimeout: setTimeout(() => {
         log_debug(`auto closing stream to insert data in ${this.meta.prop}, ${this.meta.sqlTableName} due to inactivity`)
         this.endIngestion()

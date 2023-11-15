@@ -193,8 +193,11 @@ class TestConnection implements TargetConnection {
   constructor() {
   }
 
-  public createWriteStream(query: string): Writable {
+  public createWriteStream(query: string, callback: (err: any, res: any) => void): Writable {
     const writable = new StringWritable()
+    writable.on("finish", () => {
+      callback(null, null)
+    })
     this.streams.push(writable)
     return writable;
   }
