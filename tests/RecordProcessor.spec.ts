@@ -4,7 +4,7 @@ import {ColumnMap, ISourceMeta, PkMap, PKType} from "../src/jsonSchemaInspector"
 import TargetConnection from "../src/TargetConnection"
 import {Writable} from "stream"
 import {StringDecoder} from "string_decoder"
-import {uselessValueExtractor} from "./helpers"
+import {sleep, uselessValueExtractor} from "./helpers"
 import {Value} from "../src/SchemaTranslator"
 
 // Represents an id column, for a PK for instance
@@ -219,6 +219,22 @@ describe("RecordProcessor", () => {
       })
       res.pushRecord({id: 1, name: "a"}, abort, 0)
       res.pushRecord({id: 2, name: "b"}, abort, 0)
+
+      assert.equal(connection.streams[0].data, '[1,"a"]\n[2,"b"]\n')
+      assert.equal(res.buildSQLInsertField()[0], "`id`")
+      assert.equal(res.buildSQLInsertField()[1], "`name`")
+    }).timeout(30000)
+
+    it("should auto timeout to end ingestion", async () => {
+      const connection = new TestConnection()
+      const res = new RecordProcessor(simpleMeta, connection, {
+        batchSize: 5,
+        translateValues: false,
+        autoEndTimeoutMs: 200,
+      })
+      res.pushRecord({id: 1, name: "a"}, abort, 0)
+      res.pushRecord({id: 2, name: "b"}, abort, 0)
+      await sleep(400)
 
       assert.equal(connection.streams[0].data, '[1,"a"]\n[2,"b"]\n')
       assert.equal(res.buildSQLInsertField()[0], "`id`")

@@ -3,8 +3,9 @@ import * as fs from "fs"
 import {processStream} from "../src/processStream"
 import {StartedTestContainer} from "testcontainers"
 import {LogLevel, set_level} from "singer-node"
-import {bootClickhouseContainer, runChQueryInContainer} from "./helpers"
+import {bootClickhouseContainer, runChQueryInContainer, sleep} from "./helpers"
 import {Config} from '../src/Config'
+import {Readable} from "stream"
 
 const initialConnInfo = new Config({
   host: "localhost",
@@ -118,10 +119,10 @@ describe("processStream", () => {
         await processStream(fs.createReadStream("./tests/data/stream_non_nullable.jsonl"), connInfo)
 
         let execResult = await runChQueryInContainer(container, connInfo, `select name, type
-                                                                       from system.columns
-                                                                       where table = 'users'
-                                                                         and database = '${initialConnInfo.database}'
-                                                                       order by name`)
+                                                                           from system.columns
+                                                                           where table = 'users'
+                                                                             and database = '${initialConnInfo.database}'
+                                                                           order by name`)
 
         // @ts-ignore
         const columns: string[] = execResult.output.split("\n").map(it => it.replaceAll("\t", " ")).filter(Boolean)
@@ -138,7 +139,7 @@ describe("processStream", () => {
       }
 
       let execResult = await runChQueryInContainer(container, connInfo, `select *
-                                                                       from ${initialConnInfo.database}.tickets`)
+                                                                         from ${initialConnInfo.database}.tickets`)
 
       // @ts-ignore
       const columns: string[] = execResult.output.split("\n").map(it => it.replaceAll("\t", ",")).filter(Boolean)
@@ -199,7 +200,7 @@ describe("processStream", () => {
     it("should not rename tables as dropped when they are no longer active if they are registered as extra_active", async () => {
       const config = {
         ...connInfo,
-        extra_active_tables: ["tickets"]
+        extra_active_tables: ["tickets"],
       }
       await processStream(fs.createReadStream("./tests/data/stream_1.jsonl"), config)
       await processStream(fs.createReadStream("./tests/data/stream_1_inactive.jsonl"), config)
@@ -249,45 +250,45 @@ describe("processStream", () => {
     }).timeout(30000)
 
 
-    // FIXME
-    // it('should throw in case of timeout', async () => {
-    //   const schema = {
-    //     "type": "SCHEMA", "stream": "tickets", "schema": {
-    //       "properties": {
-    //         "brand_id": {"type": ["null", "integer"]},
-    //         "assignee_id": {"type": ["null", "integer"]},
-    //         "id": {"type": ["integer"]},
-    //       }, "type": ["null", "object"],
-    //     }, "key_properties": ["id"],
-    //   }
-    //   const record = {
-    //     "type": "RECORD", "stream": "tickets", "record": {
-    //       "assignee_id": 11,
-    //       "brand_id": 22,
-    //       "id": 1
-    //     },
-    //   }
-    //
-    //   const s = new Readable();
-    //   s._read = (a) => {
-    //   }; // redundant? see update below
-    //   s.push(JSON.stringify(schema) + "\n");
-    //   s.push(JSON.stringify(record) + "\n");
-    //   // s.push(null)
-    //   // await assert.rejects(async () => {
-    //     await processStream(s, {
-    //       ...connInfo,
-    //       batch_size: 1,
-    //       insert_stream_timeout_sec: 2,
-    //     })
-    //   // }, Error)
-    //
-    //   await runChQueryInContainer(container, connInfo, "SYSTEM FLUSH LOGS")
-    //
-    //   const execResult = await runChQueryInContainer(container, connInfo, "select query, user, Settings from system.query_log order by event_time desc limit 30")
-    //   console.log(execResult.output)
-    //
-    // }).timeout(30000)
+    it('should insert record after some time even if stream isnt ended nor state message were received', async () => {
+      const schema = {
+        "type": "SCHEMA", "stream": "tickets", "schema": {
+          "properties": {
+            "id": {"type": ["integer"]},
+          }, "type": ["null", "object"],
+        }, "key_properties": ["id"],
+      }
+      const record = {
+        "type": "RECORD", "stream": "tickets", "record": {
+          "id": 155,
+        },
+      }
+
+      const s = new Readable();
+      s._read = (a) => {
+      }; // redundant? see update below
+      s.push(JSON.stringify(schema) + "\n");
+      s.push(JSON.stringify(record) + "\n");
+
+      processStream(s, {
+        ...connInfo,
+        batch_size: 10,
+        insert_stream_timeout_sec: 8,
+      })
+
+      await sleep(1000)
+
+      let execResult = await runChQueryInContainer(container, connInfo, "select id from tickets")
+      console.log(execResult.output)
+      assert.equal(execResult.output, "")
+      await sleep(4000)
+
+      execResult = await runChQueryInContainer(container, connInfo, "select id from tickets")
+      console.log(execResult.output)
+
+      assert.equal(execResult.output, "155\n")
+
+    }).timeout(30000)
 
     it('should allow reordering of schema', async () => {
       await processStream(fs.createReadStream("./tests/data/stream_short.jsonl"), connInfo)
