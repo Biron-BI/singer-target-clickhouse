@@ -2,14 +2,13 @@ import * as readline from 'readline'
 import {ActiveStreamsMessage, log_error, log_fatal, log_info, log_warning, MessageType, parse_message, SchemaMessage} from "singer-node"
 import {Readable} from "stream"
 import ClickhouseConnection from "./ClickhouseConnection"
-import {buildMeta, escapeIdentifier, JsonSchemaInspectorContext} from "./jsonSchemaInspector"
+import {buildMeta, JsonSchemaInspectorContext} from "./jsonSchemaInspector"
 import StreamProcessor from "./StreamProcessor"
 import {Config} from "./Config"
-import {dropStreamTablesQueries, updateSchema, translateCH} from "./jsonSchemaTranslator"
+import {dropStreamTablesQueries} from "./jsonSchemaTranslator"
 import {PromisePool} from "@supercharge/promise-pool"
 
-async function processSchemaMessage(msg: SchemaMessage, config: Config): Promise<StreamProcessor> {
-  const ch = new ClickhouseConnection(config)
+async function processSchemaMessage(msg: SchemaMessage, config: Config, ch: ClickhouseConnection, existingTables: string[]): Promise<StreamProcessor> {
 
   const meta = buildMeta(new JsonSchemaInspectorContext(
     msg.stream,
@@ -25,9 +24,11 @@ async function processSchemaMessage(msg: SchemaMessage, config: Config): Promise
   if (config.streamToReplace.includes(meta.prop)) {
     log_info(`[${meta.prop}]: dropping root and children tables`)
     await Promise.all(dropStreamTablesQueries(meta).map((query) => ch.runQuery(query)))
+    // refresh list to remove table and children
+    existingTables = await ch.listTables()
   }
 
-  return StreamProcessor.createStreamProcessor(ch, meta, config, msg.cleanFirst)
+  return StreamProcessor.createStreamProcessor(ch, meta, config, msg.cleanFirst, existingTables)
 }
 
 function tableShouldBeDropped(table: string, activeStreams: string[], subtableSeparator: string, extraActiveTables: string[]): boolean {
@@ -54,7 +55,14 @@ async function processActiveSchemasMessage(msg: ActiveStreamsMessage, config: Co
 }
 
 
-async function processLine(line: string, config: Config, streamProcessors: Map<string, StreamProcessor>, lineCount: number, interrupt: (err: Error) => void): Promise<void> {
+async function processLine(
+  line: string,
+  config: Config,
+  ch: ClickhouseConnection,
+  streamProcessors: Map<string, StreamProcessor>,
+  existingTables: string[],
+  lineCount: number,
+  interrupt: (err: Error) => void): Promise<void> {
   const msg = parse_message(line)
 
   switch (msg?.type) {
@@ -64,7 +72,7 @@ async function processLine(line: string, config: Config, streamProcessors: Map<s
         return
       }
       log_info(`[${msg.stream}]: Received schema message.`)
-      streamProcessors.set(msg.stream, await processSchemaMessage(msg, config))
+      streamProcessors.set(msg.stream, await processSchemaMessage(msg, config, ch, existingTables))
       break;
     case MessageType.record:
       if (!streamProcessors.has(msg.stream)) {
@@ -80,7 +88,7 @@ async function processLine(line: string, config: Config, streamProcessors: Map<s
       log_info("Received state message. Commit pending changes...")
       await Promise.all(
         Array.from(streamProcessors.values())
-          .map((processor) => processor.commitPendingChanges())
+          .map((processor) => processor.commitPendingChanges()),
       )
 
       // Should be the one and only console log in this package: the tap expects output in stdout to save state
@@ -97,6 +105,7 @@ async function processLine(line: string, config: Config, streamProcessors: Map<s
 }
 
 export async function processStream(stream: Readable, config: Config) {
+  const ch = new ClickhouseConnection(config)
   let lineCount = 0
   stream.on("error", (err: any) => {
     log_fatal(`${err.message}`)
@@ -119,7 +128,7 @@ export async function processStream(stream: Readable, config: Config) {
   let processLinePromise = Promise.resolve()
   for await (const line of rl) {
     await processLinePromise
-    processLinePromise = processLine(line, config, streamProcessors, lineCount++, abort)
+    processLinePromise = processLine(line, config, ch, streamProcessors, await ch.listTables(), lineCount++, abort)
   }
   await processLinePromise
   log_info("done reading lines")

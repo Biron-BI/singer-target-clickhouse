@@ -29,14 +29,14 @@ export default class StreamProcessor {
   ) {
   }
 
-  static async createStreamProcessor(ch: ClickhouseConnection, meta: ISourceMeta, config: Config, cleanFirst: boolean) {
+  static async createStreamProcessor(ch: ClickhouseConnection, meta: ISourceMeta, config: Config, cleanFirst: boolean, existingTables: string[]) {
     const streamProcessor = new StreamProcessor(ch, meta, cleanFirst, config, 0)
 
     if (cleanFirst) {
       await streamProcessor.clearTables()
     }
 
-    const rootAlreadyExists = (await ch.listTables())
+    const rootAlreadyExists = existingTables
       .map((table) => escapeIdentifier(table))
       .includes(meta.sqlTableName)
 
