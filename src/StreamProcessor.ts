@@ -180,6 +180,6 @@ export default class StreamProcessor {
 }
 
 const buildTruncateTableQueries = (meta: ISourceMeta): string[] => [
-  `TRUNCATE TABLE ${meta.sqlTableName}`,
+  `TRUNCATE TABLE IF EXISTS ${meta.sqlTableName}`,
   ...meta.children.flatMap(buildTruncateTableQueries),
 ]
