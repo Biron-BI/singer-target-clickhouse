@@ -7,6 +7,7 @@ import StreamProcessor from "./StreamProcessor"
 import {Config} from "./Config"
 import {dropStreamTablesQueries} from "./jsonSchemaTranslator"
 import {PromisePool} from "@supercharge/promise-pool"
+import forAwaitOnMacroTaskQueue from "./forAwaitOnMacroTaskQueue"
 
 async function processSchemaMessage(msg: SchemaMessage, config: Config, ch: ClickhouseConnection, existingTables: string[]): Promise<StreamProcessor> {
 
@@ -127,10 +128,10 @@ export async function processStream(stream: Readable, config: Config) {
 
   const streamProcessors = new Map<string, StreamProcessor>()
   let processLinePromise = Promise.resolve()
-  for await (const line of rl) {
+  await forAwaitOnMacroTaskQueue(rl[Symbol.asyncIterator](), async line => {
     await processLinePromise
     processLinePromise = processLine(line, config, ch, streamProcessors, existingTables, lineCount++, abort)
-  }
+  })
   await processLinePromise
   log_info("done reading lines")
 
