@@ -79,7 +79,6 @@ export default class RecordProcessor {
     if (!this.isInitialized()) {
       this.startIngestion(messageCount, abort)
     }
-    this.ingestionCtx!.autoEndTimeout.refresh()
 
     // root version number is computed only for a root who has primaryKeys
     // version start at max existing version + 1
@@ -108,6 +107,7 @@ export default class RecordProcessor {
     const dataToStream = JSON.stringify(this.buildSQLInsertValues(data, pkValues, resolvedRootVer))
     this.bufferedDatasToStream.push(dataToStream)
     if (this.bufferedDatasToStream.length == this.config.batchSize) {
+      this.ingestionCtx!.autoEndTimeout.refresh()
       this.sendBufferedDatasToStream()
     }
 
@@ -126,7 +126,7 @@ export default class RecordProcessor {
 
   public async endIngestion() {
     if (this.isInitialized()) {
-      log_debug(`closing stream to insert data in ${this.meta.prop}, ${this.meta.sqlTableName}`)
+      log_debug(`[${this.meta.prop}] closing stream to insert data`)
       const {promise, stream, autoEndTimeout} = this.ingestionCtx!
       clearTimeout(autoEndTimeout)
       this.sendBufferedDatasToStream()
@@ -187,7 +187,7 @@ export default class RecordProcessor {
       }),
       promise,
       autoEndTimeout: setTimeout(() => {
-        log_debug(`auto closing stream to insert data in ${this.meta.prop}, ${this.meta.sqlTableName} due to inactivity`)
+        log_debug(`[${this.meta.prop}] auto closing stream to insert data due to inactivity`)
         this.endIngestion()
       }, this.config.autoEndTimeoutMs),
     }
