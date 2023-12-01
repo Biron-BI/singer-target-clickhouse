@@ -349,7 +349,7 @@ describe("JSON Schema Inspector", () => {
                 {
                   "sqlIdentifier": "`value`",
                   "chType": "String",
-                  "nullable": false,
+                  "nullable": true,
                   "lowCardinality": false,
                   valueExtractor: uselessValueExtractor,
                 },

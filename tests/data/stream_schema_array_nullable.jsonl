@@ -1,0 +1,1 @@
+{"type": "SCHEMA", "stream": "return_requests", "schema": {"type": "object", "properties": {"created_at": {"type": "string", "format": "date-time"}, "line_items": {"type": "array", "items": {"type": "object", "properties": {"return_reasons": {"type": "array", "items": {"type": ["null", "string"]}}}}}}}, "key_properties": ["created_at"], "bookmark_properties": ["created_at"]}

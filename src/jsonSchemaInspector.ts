@@ -262,7 +262,7 @@ function buildMetaProps(ctx: JsonSchemaInspectorContext): MetaProps {
         valueExtractor: buildValueExtractor(undefined),
         sqlIdentifier: escapeIdentifier("value", ctx.subtableSeparator),
         ...getSimpleColumnType(ctx, undefined),
-        nullable: false,
+        nullable: getNullable(ctx.schema),
         lowCardinality: false,
       }],
       children: [],

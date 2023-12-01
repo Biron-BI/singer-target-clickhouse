@@ -64,6 +64,13 @@ describe("processStream", () => {
       assert.equal(execResult.output.includes("tickets__custom_fields"), true)
     }).timeout(30000)
 
+    it("should create schema with nullable scalar array", async () => {
+      await processStream(fs.createReadStream("./tests/data/stream_schema_array_nullable.jsonl"), connInfo)
+      const execResult = await runChQueryInContainer(container, connInfo, `select name, type from system.columns where table LIKE 'return_requests_%' and database = '${connInfo.database}' and name = 'value'`)
+
+      assert.equal(execResult.output, "value\tNullable(String)\n")
+    })
+
     it('should create schemas which specifies cardinality', async () => {
       await processStream(fs.createReadStream("./tests/data/stream_cardinality.jsonl"), connInfo)
       let execResult = await runChQueryInContainer(container, connInfo, `show tables from ${connInfo.database}`)
