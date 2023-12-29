@@ -8,6 +8,7 @@ export interface IConfig {
   password: string
   database: string
   batch_size?: number
+  deletion_batch_size?: number
   logging_level?: string
   subtable_separator?: string
   translate_values?: boolean
@@ -25,6 +26,7 @@ export class Config implements IConfig {
   readonly log_level: LogLevel = LogLevel.INFO
   readonly subtable_separator: string = "__"
   readonly batch_size: number = 100
+  readonly deletion_batch_size: number = 100
   readonly translate_values: boolean = false
   readonly insert_stream_timeout_sec: number = 180
   readonly finalize_concurrency: number = 3
@@ -38,6 +40,7 @@ export class Config implements IConfig {
                 logging_level,
                 subtable_separator,
                 batch_size,
+                deletion_batch_size,
                 translate_values,
                 insert_stream_timeout_sec,
                 finalize_concurrency,
@@ -53,6 +56,7 @@ export class Config implements IConfig {
     this.username = username
     this.subtable_separator = subtable_separator ?? this.subtable_separator
     this.batch_size = batch_size ?? this.batch_size
+    this.deletion_batch_size = deletion_batch_size ?? this.deletion_batch_size
     this.translate_values = translate_values ?? this.translate_values
     this.insert_stream_timeout_sec = insert_stream_timeout_sec ?? this.insert_stream_timeout_sec
     this.finalize_concurrency = finalize_concurrency ?? this.finalize_concurrency

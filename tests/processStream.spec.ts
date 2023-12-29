@@ -413,6 +413,26 @@ describe("processStream", () => {
       assert.equal(execResult.output, '2\n')
     }).timeout(30000)
 
+    it('should handle stream which deletes existing data with one simple pk', async () => {
+      await processStream(fs.createReadStream("./tests/data/stream_tiny.jsonl"), connInfo)
+      let execResult = await runChQueryInContainer(container, connInfo, `select id from ${connInfo.database}.tickets`)
+      assert.equal(execResult.output, "1\n2\n3\n")
+      await processStream(fs.createReadStream("./tests/data/stream_tiny_with_delete.jsonl"), connInfo)
+      execResult = await runChQueryInContainer(container, connInfo, `select id from ${connInfo.database}.tickets`)
+      assert.equal(execResult.output, "1\n3\n")
+    }).timeout(30000)
+
+    it('should handle stream which deletes existing data with multiple pk', async () => {
+      await processStream(fs.createReadStream("./tests/data/stream_vanilla_with_pks.jsonl"), connInfo)
+      let execResult = await runChQueryInContainer(container, connInfo, `select id, name from ${connInfo.database}.users`)
+      // @ts-ignore
+      assert.equal(execResult.output.replaceAll("\t", " ").replaceAll("\n", " "), "1 bill 2 bill 3 jack 4 joe ")
+      await processStream(fs.createReadStream("./tests/data/stream_vanilla_with_pks_and_deletion.jsonl"), connInfo)
+      execResult = await runChQueryInContainer(container, connInfo, `select id, name from ${connInfo.database}.users`)
+      // @ts-ignore
+      assert.equal(execResult.output.replaceAll("\t", " ").replaceAll("\n", " "), "1 bill 2 bill 4 joe ")
+    }).timeout(30000)
+
   }).timeout(30000)
 
 }).timeout(30000)

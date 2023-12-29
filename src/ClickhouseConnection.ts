@@ -5,23 +5,12 @@ import {Writable} from "stream"
 import {IConfig} from "./Config"
 import {escapeValue} from "./utils"
 import {Either, makeLeft, makeRight} from "./Either"
-import TargetConnection from "./TargetConnection"
+import TargetConnection, {IQueryResult} from "./TargetConnection"
 
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const ClickHouse = require("@apla/clickhouse")
 
-interface ICHQueryResult {
-  data: string[][];
-  rows: number;
-  "rows_before_limit_at_least": number;
-  "statistics": {
-    "bytes_read": number
-    "elapsed": number,
-    "rows_read": number,
-  };
-  "transferred": number;
-}
 
 export interface Column {
   name: string,
@@ -137,7 +126,7 @@ export default class ClickhouseConnection implements TargetConnection {
   }
 
   // https://github.com/apla/node-clickhouse#promise-interface
-  public async runQuery(query: string, retries = 2): Promise<ICHQueryResult> {
+  public async runQuery(query: string, retries = 2): Promise<IQueryResult> {
     const conn = await this.getConnectionPooled()
 
     return new Promise((resolve, reject) => {

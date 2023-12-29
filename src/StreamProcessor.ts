@@ -6,6 +6,7 @@ import {Config} from "./Config"
 import {escapeValue} from "./utils"
 import RecordProcessor from "./RecordProcessor"
 import {updateSchema, translateCH} from "./jsonSchemaTranslator"
+import DeletedRecordProcessor from "./DeletedRecordProcessor"
 
 // expects root meta as param
 const metaRepresentsReplacingMergeTree = (meta: ISourceMeta) => meta.pkMappings.length > 0
@@ -22,6 +23,10 @@ export default class StreamProcessor {
       batchSize: config.batch_size,
       translateValues: config.translate_values,
       autoEndTimeoutMs: (config.insert_stream_timeout_sec - 5) * 1000,
+    }),
+    private deletedRecordProcessor = new DeletedRecordProcessor(meta, clickhouse, {
+      batchSize: config.deletion_batch_size,
+      translateValues: config.translate_values,
     }),
     private noPendingRows = 0,
     // private currentBatchSize = 0,
@@ -74,6 +79,10 @@ export default class StreamProcessor {
     this.noPendingRows++
   }
 
+  public async processDeletedRecord(record: Record<string, any>): Promise<void> {
+    await this.deletedRecordProcessor.pushDeletedRecord(record)
+  }
+
   public async commitPendingChanges(): Promise<void> {
     if (this.noPendingRows > 0) {
       log_info(`[${this.meta.prop}]: ending batch ingestion for ${this.noPendingRows} rows`)
@@ -81,6 +90,7 @@ export default class StreamProcessor {
       this.noPendingRows = 0
       this.maxVer++
     }
+    await this.deletedRecordProcessor.deleteBufferedData()
   }
 
   public async finalizeProcessing(): Promise<void> {

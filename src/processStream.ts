@@ -83,6 +83,14 @@ async function processLine(
       // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       await streamProcessors.get(msg.stream)!.processRecord(msg.record, lineCount, interrupt)
       break;
+    case MessageType.deletedRecord:
+      if (!streamProcessors.has(msg.stream)) {
+        throw new Error("Record message received before Schema is defined")
+      }
+      // undefined has been checked by .has()
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+      await streamProcessors.get(msg.stream)!.processDeletedRecord(msg.record)
+      break;
     case MessageType.state:
       // On a state message, we insert every batch we are currently building and echo state for tap.
       // If the tap emits state too often, we may need to bufferize state messages
