@@ -71,6 +71,20 @@ describe("processStream", () => {
       assert.equal(execResult.output, "value\tNullable(String)\n")
     })
 
+    it("should create schema with nullable scalar array as clickhouse array", async () => {
+      await processStream(fs.createReadStream("./tests/data/stream_schema_with_array.jsonl"), connInfo)
+      let execResult = await runChQueryInContainer(container, connInfo, `select columns.name, columns.type
+                                                                         from system.columns
+                                                                         where database = '${connInfo.database}' and table = 'query_log'`)
+      let rows = execResult.output.split("\n")
+      assert.equal(rows[0], "databases\tArray(String)")
+      assert.equal(rows[1], "event_time\tDateTime")
+
+      execResult = await runChQueryInContainer(container, connInfo, `select databases from ${connInfo.database}.query_log`)
+      rows = execResult.output.split("\n")
+      assert.equal(rows[0], "['kento','nanami']")
+    })
+
     it('should create schemas which specifies cardinality', async () => {
       await processStream(fs.createReadStream("./tests/data/stream_cardinality.jsonl"), connInfo)
       let execResult = await runChQueryInContainer(container, connInfo, `show tables from ${connInfo.database}`)

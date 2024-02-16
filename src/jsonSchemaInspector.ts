@@ -1,5 +1,5 @@
 import {ExtendedJSONSchema7, log_warning, SchemaKeyProperties} from "singer-node"
-import {JSONSchema7Definition, JSONSchema7TypeName} from "json-schema"
+import {JSONSchema7, JSONSchema7Definition, JSONSchema7TypeName} from "json-schema"
 import {asArray} from "./utils"
 import SchemaTranslator, {ValueTranslator} from "./SchemaTranslator"
 
@@ -59,6 +59,7 @@ export interface ISimpleColumnType {
   typeFormat?: string;
   nullable: boolean,
   lowCardinality: boolean,
+  nestedArray?: boolean
 }
 
 export interface IColumnMapping {
@@ -106,6 +107,7 @@ const buildMetaPkProp = (prop: string, ctx: JsonSchemaInspectorContext, pkType: 
   ...getSimpleColumnType(ctx, prop),
   nullable: false,
   lowCardinality: false,
+  nestedArray: false,
   pkType,
 })
 
@@ -140,6 +142,7 @@ const buildMetaPkProps = (ctx: JsonSchemaInspectorContext): PkMap[] => ([] as Pk
       chType: "Int32",
       nullable: false,
       lowCardinality: false,
+      nestedArray: false,
       pkType: PKType.LEVEL,
     } as PkMap
   }))
@@ -225,7 +228,7 @@ function buildMetaProps(ctx: JsonSchemaInspectorContext): MetaProps {
             simpleColumnMappings: acc.simpleColumnMappings.concat(nestedSimpleColumnMappings),
             children: acc.children.concat(nestedChildren),
           }
-        } else if (propDefTypes.includes("array")) {
+        } else if (propDefTypes.includes("array") && propDef.format !== "nested") {
           return {
             ...acc,
             children: [...acc.children, createSubTable(propDef, key, ctx)],
@@ -264,6 +267,7 @@ function buildMetaProps(ctx: JsonSchemaInspectorContext): MetaProps {
         ...getSimpleColumnType(ctx, undefined),
         nullable: getNullable(ctx.schema),
         lowCardinality: false,
+        nestedArray: false,
       }],
       children: [],
     }
@@ -285,10 +289,16 @@ function getNullable(propDef: JSONSchema7Definition) {
 const getLowCardinality = (propDef: IExtendedJSONSchema7) => propDef.lowCardinality !== null && propDef.lowCardinality === true
 
 function getSimpleColumnType(ctx: JsonSchemaInspectorContext, key?: string): ISimpleColumnType | undefined {
-  const propDef = key ? ctx.schema.properties?.[key] : ctx.schema
+  let propDef: JSONSchema7 | boolean | undefined = key ? ctx.schema.properties?.[key] : ctx.schema
+  let nestedArray = false
   if (!propDef || typeof propDef === "boolean") {
     throwError(ctx, `Key '${key}' does not match any usable prop in schema props '${ctx.schema.properties}'`)
     return
+  }
+
+  if (propDef.format === "nested" && propDef.type === "array") {
+    propDef = propDef.items as JSONSchema7
+    nestedArray = true
   }
   const type = excludeNullFromArray(propDef.type)[0]
   const chType = getSimpleColumnSqlType(ctx, propDef, key)
@@ -299,6 +309,7 @@ function getSimpleColumnType(ctx: JsonSchemaInspectorContext, key?: string): ISi
     chType,
     nullable: getNullable(propDef),
     lowCardinality: getLowCardinality(propDef),
+    nestedArray,
   } : undefined
 }
 

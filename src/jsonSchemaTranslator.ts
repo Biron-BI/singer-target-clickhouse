@@ -63,6 +63,7 @@ export function translateCH(database: string, meta: ISourceMeta, parentMeta?: IS
     .map(fkMapping => `${fkMapping.sqlIdentifier} ${fkMapping.chType}`)
     .concat(meta.simpleColumnMappings.map(mapping => {
       const modifiers: string[] = [
+        mapping.nestedArray ? `Array` : null,
         mapping.nullable ? `Nullable` : null,
         mapping.lowCardinality ? `LowCardinality` : null,
       ].filter(Boolean) as string[]
