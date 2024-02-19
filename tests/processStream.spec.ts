@@ -66,7 +66,11 @@ describe("processStream", () => {
 
     it("should create schema with nullable scalar array", async () => {
       await processStream(fs.createReadStream("./tests/data/stream_schema_array_nullable.jsonl"), connInfo)
-      const execResult = await runChQueryInContainer(container, connInfo, `select name, type from system.columns where table LIKE 'return_requests_%' and database = '${connInfo.database}' and name = 'value'`)
+      const execResult = await runChQueryInContainer(container, connInfo, `select name, type
+                                                                           from system.columns
+                                                                           where table LIKE 'return_requests_%'
+                                                                             and database = '${connInfo.database}'
+                                                                             and name = 'value'`)
 
       assert.equal(execResult.output, "value\tNullable(String)\n")
     })
@@ -76,12 +80,14 @@ describe("processStream", () => {
       await processStream(fs.createReadStream("./tests/data/stream_schema_with_array.jsonl"), connInfo)
       let execResult = await runChQueryInContainer(container, connInfo, `select columns.name, columns.type
                                                                          from system.columns
-                                                                         where database = '${connInfo.database}' and table = 'query_log'`)
+                                                                         where database = '${connInfo.database}'
+                                                                           and table = 'query_log'`)
       let rows = execResult.output.split("\n")
       assert.equal(rows[0], "databases\tArray(String)")
       assert.equal(rows[1], "event_time\tDateTime")
 
-      execResult = await runChQueryInContainer(container, connInfo, `select databases from ${connInfo.database}.query_log`)
+      execResult = await runChQueryInContainer(container, connInfo, `select databases
+                                                                     from ${connInfo.database}.query_log`)
       rows = execResult.output.split("\n")
       assert.equal(rows[0], "['kento','nanami']")
     })
@@ -321,12 +327,19 @@ describe("processStream", () => {
       assert.equal(execResult.output, '22\n')
     }).timeout(30000)
 
-    it('should ingest stream from real data', async () => {
+    it('should flatten nested object', async () => {
+      await processStream(fs.createReadStream("./tests/data/stream_nested_object.jsonl"), connInfo)
+      const execResult = await runChQueryInContainer(container, connInfo, `select follower_ids__name
+                                                                           from tickets`)
+      assert.equal(execResult.output, 'jack\n')
+    }).timeout(30000)
+
+    it('should ingest stream from real data: covidtracker', async () => {
       await processStream(fs.createReadStream("./tests/data/covidtracker.jsonl"), connInfo)
-      let execResult = await runChQueryInContainer(container, connInfo, `select sum(total_rows)
+      let execResult = await runChQueryInContainer(container, connInfo, `select sum(total_rows), sum(tables.total_bytes)
                                                                          from system.tables
                                                                          where database = '${connInfo.database}'`)
-      assert.equal(execResult.output, '5789\n')
+      assert.equal(execResult.output, '5789\t1345158\n')
 
       // Ensure no duplicates are created when run second time
       await processStream(fs.createReadStream("./tests/data/covidtracker.jsonl"), connInfo)
@@ -334,6 +347,30 @@ describe("processStream", () => {
                                                                      from system.tables
                                                                      where database = '${connInfo.database}'`)
       assert.equal(execResult.output, '5789\n')
+
+    }).timeout(60000)
+
+    it('should ingest stream from real data: clickhouse query log', async () => {
+      await processStream(fs.createReadStream("./tests/data/clickhouse_query_log.jsonl"), connInfo)
+      let execResult = await runChQueryInContainer(container, connInfo, `select sum(total_rows)
+                                                                         from system.tables
+                                                                         where database = '${connInfo.database}'`)
+      assert.equal(execResult.output, '1\n')
+
+      // Ensure no duplicates are created when run second time
+      await processStream(fs.createReadStream("./tests/data/clickhouse_query_log.jsonl"), connInfo)
+      execResult = await runChQueryInContainer(container, connInfo, `select sum(total_rows)
+                                                                     from system.tables
+                                                                     where database = '${connInfo.database}'`)
+      assert.equal(execResult.output, '1\n')
+
+      // execResult = await runChQueryInContainer(container, connInfo, `desc ${connInfo.database}.query_log`)
+      // assert.equal(execResult.output, "['system']\t['max_block_size','max_query_size','join_use_nulls','http_receive_timeout','max_expanded_ast_elements','max_memory_usage','max_parser_depth','lock_acquire_timeout']\n")
+
+
+      execResult = await runChQueryInContainer(container, connInfo, `select databases, \`Settings.Names\`
+                                                                     from ${connInfo.database}.query_log`)
+      assert.equal(execResult.output, "['system']\t['max_block_size','max_query_size','join_use_nulls','http_receive_timeout','max_expanded_ast_elements','max_memory_usage','max_parser_depth','lock_acquire_timeout']\n")
 
     }).timeout(60000)
 
@@ -430,20 +467,24 @@ describe("processStream", () => {
 
     it('should handle stream which deletes existing data with one simple pk', async () => {
       await processStream(fs.createReadStream("./tests/data/stream_tiny.jsonl"), connInfo)
-      let execResult = await runChQueryInContainer(container, connInfo, `select id from ${connInfo.database}.tickets`)
+      let execResult = await runChQueryInContainer(container, connInfo, `select id
+                                                                         from ${connInfo.database}.tickets`)
       assert.equal(execResult.output, "1\n2\n3\n")
       await processStream(fs.createReadStream("./tests/data/stream_tiny_with_delete.jsonl"), connInfo)
-      execResult = await runChQueryInContainer(container, connInfo, `select id from ${connInfo.database}.tickets`)
+      execResult = await runChQueryInContainer(container, connInfo, `select id
+                                                                     from ${connInfo.database}.tickets`)
       assert.equal(execResult.output, "1\n3\n")
     }).timeout(30000)
 
     it('should handle stream which deletes existing data with multiple pk', async () => {
       await processStream(fs.createReadStream("./tests/data/stream_vanilla_with_pks.jsonl"), connInfo)
-      let execResult = await runChQueryInContainer(container, connInfo, `select id, name from ${connInfo.database}.users`)
+      let execResult = await runChQueryInContainer(container, connInfo, `select id, name
+                                                                         from ${connInfo.database}.users`)
       // @ts-ignore
       assert.equal(execResult.output.replaceAll("\t", " ").replaceAll("\n", " "), "1 bill 2 bill 3 jack 4 joe ")
       await processStream(fs.createReadStream("./tests/data/stream_vanilla_with_pks_and_deletion.jsonl"), connInfo)
-      execResult = await runChQueryInContainer(container, connInfo, `select id, name from ${connInfo.database}.users`)
+      execResult = await runChQueryInContainer(container, connInfo, `select id, name
+                                                                     from ${connInfo.database}.users`)
       // @ts-ignore
       assert.equal(execResult.output.replaceAll("\t", " ").replaceAll("\n", " "), "1 bill 2 bill 4 joe ")
     }).timeout(30000)

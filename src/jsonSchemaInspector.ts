@@ -16,6 +16,9 @@ export interface IExtendedJSONSchema7 extends ExtendedJSONSchema7 {
   lowCardinality?: boolean
 }
 
+// Least likely to appear in column name
+export const nestedSubObjectSeparator = "$%€£"
+
 export class JsonSchemaInspectorContext {
 
   constructor(
@@ -113,7 +116,7 @@ const buildMetaPkProp = (prop: string, ctx: JsonSchemaInspectorContext, pkType: 
 
 const buildValueExtractor = (prop: string | undefined): ValueExtractor => {
   if (prop) {
-    const propParts = prop.split(".")
+    const propParts = prop.split(nestedSubObjectSeparator)
     if (propParts.length == 1) {
       const uniqPart = propParts[0]
       return (data) => data[uniqPart]
@@ -167,7 +170,8 @@ function makeNullable(type?: JSONSchema7TypeName | JSONSchema7TypeName[]): JSONS
 // flatten 1..1 relation properties into the current level
 function flattenNestedObject(propDef: IExtendedJSONSchema7, key: string, ctx: JsonSchemaInspectorContext) {
   const nullable = getNullable(propDef)
-  const nestedSchema: IExtendedJSONSchema7 = Object.entries(propDef.properties ?? {}).reduce((acc, [nestedKey, nestedPropDef]) => {
+  const nestedSchema: IExtendedJSONSchema7 = Object.entries(propDef.properties ?? {})
+    .reduce((acc, [nestedKey, nestedPropDef]) => {
     if (typeof nestedPropDef === "boolean") {
       throw new Error("unhandled boolean propdef")
     }
@@ -175,7 +179,7 @@ function flattenNestedObject(propDef: IExtendedJSONSchema7, key: string, ctx: Js
       ...acc,
       properties: {
         ...acc.properties,
-        [`${key}.${nestedKey}`]: {
+        [`${key}${nestedSubObjectSeparator}${nestedKey}`]: {
           ...nestedPropDef,
           type: nullable ? makeNullable(nestedPropDef.type) : nestedPropDef.type, // if parent is nullable, all children should also be
         },
@@ -368,7 +372,8 @@ export function getSimpleColumnSqlType(ctx: JsonSchemaInspectorContext, propDef:
 
 // ensure that id is not longer than 64 chars and enclose it within backquotes
 export function escapeIdentifier(id: string, subtableSeparator = "__"): string {
-  id = id.replace(/\./g, subtableSeparator)
+  // @ts-ignore for replaceAll
+  id = id.replaceAll(nestedSubObjectSeparator, subtableSeparator)
   if (id.length > 64) {
     const uid = sha1(id).substring(0, 10)
     id = id.substring(0, 64 - uid.length - 27) + uid + id.substring(id.length - 27)

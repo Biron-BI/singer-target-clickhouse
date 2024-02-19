@@ -1,5 +1,5 @@
 import {Writable} from "stream"
-import {ISourceMeta, PkMap, PKType} from "./jsonSchemaInspector"
+import {ISourceMeta, nestedSubObjectSeparator, PkMap, PKType} from "./jsonSchemaInspector"
 import {extractValue} from "./jsonSchemaTranslator"
 import {log_debug, log_info} from "singer-node"
 import TargetConnection from "./TargetConnection"
@@ -115,7 +115,7 @@ export default class RecordProcessor {
       for (const child of this.meta.children) {
         const childProcessor: RecordProcessor = this.children[child.sqlTableName]
         // In this record we expect a list, as that is the reason a children has been created. But some JSON Schema declaration may declare both an array and a list, so we check and create an array with only one item if it is not an array
-        const childDataRaw: Record<string, any> = get(data, child.prop.split("."))
+        const childDataRaw: Record<string, any> = get(data, child.prop.split(nestedSubObjectSeparator))
         const childDataAsArray = Array.isArray(childDataRaw) ? childDataRaw : (childDataRaw ? [childDataRaw] : [])
         for (let idx = 0; idx < childDataAsArray.length; idx++) {
           childProcessor.pushRecord(childDataAsArray[idx], abort, maxVer, sourceMetaPK, resolvedRootVer, idx, messageCount)
