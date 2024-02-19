@@ -1,6 +1,6 @@
 import {strict as assert} from 'assert'
 import {ColumnMap, ISourceMeta, PKType} from "../src/jsonSchemaInspector"
-import {getColumnsIntersections, listTableNames, translateCH} from "../src/jsonSchemaTranslator"
+import {getColumnsIntersections, listTableNames, toQualifiedType, translateCH} from "../src/jsonSchemaTranslator"
 import {Column} from "../src/ClickhouseConnection"
 
 const simpleMeta: ISourceMeta = {
@@ -124,6 +124,69 @@ describe("listTableNames", () => {
     assert.deepEqual(listTableNames(metaWithPKAndChildren), ["`order`", "`order_child`"])
   })
 })
+
+describe("toQualifiedType", () => {
+  it("should return qualified type without modifiers", () => {
+    const mapping: ColumnMap = {
+      sqlIdentifier: "myColumn",
+      chType: "Int32",
+      nestedArray: false,
+      nullable: false,
+      lowCardinality: false,
+      valueExtractor: () => {}
+    };
+    assert.deepEqual(toQualifiedType(mapping), "Int32");
+  });
+
+  it("should return qualified type with nested array modifier", () => {
+    const mapping = {
+      sqlIdentifier: "myColumn",
+      chType: "String",
+      nestedArray: true,
+      nullable: false,
+      lowCardinality: false,
+      valueExtractor: () => {}
+    };
+    assert.deepEqual(toQualifiedType(mapping), "Array(String)");
+  });
+
+  it("should return qualified type with nullable modifier", () => {
+    const mapping = {
+      sqlIdentifier: "myColumn",
+      chType: "UInt64",
+      nestedArray: false,
+      nullable: true,
+      lowCardinality: false,
+      valueExtractor: () => {}
+    };
+    assert.deepEqual(toQualifiedType(mapping), "Nullable(UInt64)");
+  });
+
+  it("should return qualified type with lowCardinality modifier", () => {
+    const mapping = {
+      sqlIdentifier: "myColumn",
+      chType: "DateTime",
+      nestedArray: false,
+      nullable: false,
+      lowCardinality: true,
+      valueExtractor: () => {}
+    };
+    assert.deepEqual(toQualifiedType(mapping), "LowCardinality(DateTime)");
+  });
+
+  it("should return qualified type with multiple modifiers", () => {
+    const mapping = {
+      sqlIdentifier: "myColumn",
+      chType: "UInt8",
+      nestedArray: true,
+      nullable: true,
+      lowCardinality: true,
+      valueExtractor: () => {}
+    };
+    assert.deepEqual(toQualifiedType(mapping), "Array(LowCardinality(Nullable(UInt8)))");
+  });
+});
+
 
 describe("getColumnsIntersections", () => {
   it('should list intersections', function () {

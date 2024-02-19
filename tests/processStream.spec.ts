@@ -73,6 +73,7 @@ describe("processStream", () => {
 
     it("should create schema with nullable scalar array as clickhouse array", async () => {
       await processStream(fs.createReadStream("./tests/data/stream_schema_with_array.jsonl"), connInfo)
+      await processStream(fs.createReadStream("./tests/data/stream_schema_with_array.jsonl"), connInfo)
       let execResult = await runChQueryInContainer(container, connInfo, `select columns.name, columns.type
                                                                          from system.columns
                                                                          where database = '${connInfo.database}' and table = 'query_log'`)

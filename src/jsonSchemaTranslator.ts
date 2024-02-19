@@ -61,18 +61,7 @@ export function translateCH(database: string, meta: ISourceMeta, parentMeta?: IS
   const isNodeRoot = rootMeta === undefined
   const createDefs: string[] = meta.pkMappings
     .map(fkMapping => `${fkMapping.sqlIdentifier} ${fkMapping.chType}`)
-    .concat(meta.simpleColumnMappings.map(mapping => {
-      const modifiers: string[] = [
-        mapping.nestedArray ? `Array` : null,
-        mapping.nullable ? `Nullable` : null,
-        mapping.lowCardinality ? `LowCardinality` : null,
-      ].filter(Boolean) as string[]
-      const type = modifiers.reduce(
-        (acc, modifier) => `${modifier}(${acc})`,
-        mapping.chType,
-      )
-      return `${mapping.sqlIdentifier} ${type}`
-    }))
+    .concat(meta.simpleColumnMappings.map(mapping => `${mapping.sqlIdentifier} ${toQualifiedType(mapping)}`))
     .concat(resolveVersionColumn(isNodeRoot, meta.pkMappings.length > 0))
 
   return [
@@ -93,10 +82,21 @@ export const dropStreamTablesQueries = (meta: ISourceMeta): string[] => [
   ...meta.children.flatMap(dropStreamTablesQueries),
 ]
 
+export const toQualifiedType = (mapping: ColumnMap): string => {
+  const modifiers: string[] = [
+    mapping.nullable ? `Nullable` : null,
+    mapping.lowCardinality ? `LowCardinality` : null,
+    mapping.nestedArray ? `Array` : null,
+  ].filter(Boolean) as string[]
+  return modifiers.reduce(
+    (acc, modifier) => `${modifier}(${acc})`,
+    mapping.chType,
+  ) ?? "undefined type"
+}
 
 const mapToColumn = (col: ColumnMap): Column => ({
   name: unescape(col.sqlIdentifier) ?? "",
-  type: `${col.nullable ? 'Nullable(' : ''}${col.chType}${col.nullable ? ')' : ''}`,
+  type: toQualifiedType(col),
   is_in_sorting_key: false,
 })
 
