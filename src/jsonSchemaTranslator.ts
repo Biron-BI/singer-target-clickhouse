@@ -142,6 +142,9 @@ export async function updateSchema(meta: ISourceMeta, ch: ClickhouseConnection) 
   await Promise.all(meta.children.map((child) => updateSchema(child, ch)))
 
   const isRoot = meta.pkMappings.filter((pkMap) => pkMap.pkType === PKType.ROOT).length == 0
+  if (!(await ch.listTables()).includes(meta.sqlTableName.slice(1, meta.sqlTableName.length - 1))) {
+    await Promise.all(translateCH(ch.getDatabase(), meta, undefined, meta).map(ch.runQuery.bind(ch)))
+  }
   const existingColumns = await ch.listColumns(unescape(meta.sqlTableName))
   const expectedColumns = meta.pkMappings
     .filter((pkMap) => {
