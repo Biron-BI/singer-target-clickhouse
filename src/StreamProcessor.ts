@@ -46,7 +46,7 @@ export default class StreamProcessor {
       .includes(meta.sqlTableName)
 
     if (rootAlreadyExists) {
-      await updateSchema(meta, ch)
+      await updateSchema(meta, ch, existingTables)
     } else {
       log_info(`[${meta.prop}]: creating tables`)
       await Promise.all(translateCH(ch.getDatabase(), meta).map(ch.runQuery.bind(ch)))

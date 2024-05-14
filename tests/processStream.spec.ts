@@ -413,6 +413,19 @@ describe("processStream", () => {
 
     }).timeout(60000)
 
+    it('should update schema by creating sub table', async () => {
+      await processStream(fs.createReadStream("./tests/data/stream_vanilla.jsonl"), connInfo)
+      let execResult = await runChQueryInContainer(container, connInfo, `select count()
+                                                                         from \`users\``)
+      assert.equal(execResult.output, '4\n')
+
+
+      await processStream(fs.createReadStream("./tests/data/stream_with_array.jsonl"), connInfo)
+      execResult = await runChQueryInContainer(container, connInfo, `select count()
+                                                                     from \`users__roles\``)
+      assert.equal(execResult.output, '5\n')
+    })
+
     it('should handle cleaning column', async () => {
       await processStream(fs.createReadStream("./tests/data/stream_vanilla.jsonl"), connInfo)
       let execResult = await runChQueryInContainer(container, connInfo, `select count()

@@ -1,0 +1,5 @@
+{"type":"SCHEMA","stream":"users","schema":{"properties":{"id":{"type":["null","integer"]},"name":{"type":["string"]},"roles":{"type":"array","items":{"type":"string"}}},"type":["null","object"]},"key_properties":["id"]}
+{"type":"RECORD","stream":"users","record":{"id":1,"name":"bill","roles":["engineer","designer"]}}
+{"type":"RECORD","stream":"users","record":{"id":2,"name":"bill","roles":[]}}
+{"type":"RECORD","stream":"users","record":{"id":3,"name":"jack","roles":["product_manager"]}}
+{"type":"RECORD","stream":"users","record":{"id":4,"name":"joe","roles":["scrum_master","engineer"]}}
