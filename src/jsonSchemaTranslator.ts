@@ -138,11 +138,11 @@ export function getColumnsIntersections(existingCols: Column[], requiredCols: Co
   }
 }
 
-export async function updateSchema(meta: ISourceMeta, ch: ClickhouseConnection) {
-  await Promise.all(meta.children.map((child) => updateSchema(child, ch)))
+export async function updateSchema(meta: ISourceMeta, ch: ClickhouseConnection, existingTables: string[]) {
+  await Promise.all(meta.children.map((child) => updateSchema(child, ch, existingTables)))
 
   const isRoot = meta.pkMappings.filter((pkMap) => pkMap.pkType === PKType.ROOT).length == 0
-  if (!(await ch.listTables()).includes(meta.sqlTableName.slice(1, meta.sqlTableName.length - 1))) {
+  if (!existingTables.includes(unescape(meta.sqlTableName))) {
     await Promise.all(translateCH(ch.getDatabase(), meta, undefined, meta).map(ch.runQuery.bind(ch)))
   }
   const existingColumns = await ch.listColumns(unescape(meta.sqlTableName))
