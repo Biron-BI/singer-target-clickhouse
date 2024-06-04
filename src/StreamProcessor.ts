@@ -1,7 +1,7 @@
 import {ono} from "ono"
 import {log_info, log_warning} from "singer-node"
 import ClickhouseConnection from "./ClickhouseConnection"
-import {ColumnMap, escapeIdentifier, formatRootPKColumn, ISimpleColumnType, ISourceMeta, PkMap} from "./jsonSchemaInspector"
+import {ColumnMap, escapeIdentifier, formatRootPKColumn, ISourceMeta, PkMap} from "./jsonSchemaInspector"
 import {Config} from "./Config"
 import {escapeValue} from "./utils"
 import RecordProcessor from "./RecordProcessor"
