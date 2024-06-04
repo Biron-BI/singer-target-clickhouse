@@ -1,7 +1,7 @@
 import {ono} from "ono"
 import {log_info, log_warning} from "singer-node"
 import ClickhouseConnection from "./ClickhouseConnection"
-import {escapeIdentifier, formatRootPKColumn, ISourceMeta, PkMap} from "./jsonSchemaInspector"
+import {ColumnMap, escapeIdentifier, formatRootPKColumn, ISourceMeta, PkMap} from "./jsonSchemaInspector"
 import {Config} from "./Config"
 import {escapeValue} from "./utils"
 import RecordProcessor from "./RecordProcessor"
@@ -123,7 +123,10 @@ export default class StreamProcessor {
       return
     }
 
-    const cleaningColumnMeta = this.meta.simpleColumnMappings.find((column) => column.prop === this.meta.cleaningColumn)
+    const cleaningColumnMeta = this.meta.simpleColumnMappings
+      .concat(this.meta.pkMappings)
+      .find((column) => column.prop === this.meta.cleaningColumn)
+
     if (!cleaningColumnMeta) {
       throw new Error(`[${this.meta.prop}] could not resolve cleaning column meta (looking for ${this.meta.cleaningColumn})`)
     }

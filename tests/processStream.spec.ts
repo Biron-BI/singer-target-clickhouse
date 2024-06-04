@@ -426,7 +426,7 @@ describe("processStream", () => {
       assert.equal(execResult.output, '5\n')
     })
 
-    it('should handle cleaning column', async () => {
+    it('should handle cleaning column in standard columns', async () => {
       await processStream(fs.createReadStream("./tests/data/stream_vanilla.jsonl"), connInfo)
       let execResult = await runChQueryInContainer(container, connInfo, `select count()
                                                                          from \`users\``)
@@ -442,6 +442,28 @@ describe("processStream", () => {
                                                                      where name = 'bill'`)
       assert.equal(execResult.output, '7\n')
 
+
+    }).timeout(60000)
+
+
+    it('should handle cleaning column in pk', async () => {
+      await processStream(fs.createReadStream("./tests/data/stream_cleaningColumn_pk.jsonl"), connInfo)
+      let execResult = await runChQueryInContainer(container, connInfo, `select id, name from \`users\``)
+      // @ts-ignore
+      let rows = execResult.output.replaceAll("\t", " ").split("\n")
+      assert.equal(rows[0], "5 bob")
+      assert.equal(rows[1], "7 bill")
+      assert.equal(rows[2], "8 bill")
+      assert.equal(rows[3], "9 helen")
+
+      await processStream(fs.createReadStream("./tests/data/stream_cleaningColumn_pk_2.jsonl"), connInfo)
+      execResult = await runChQueryInContainer(container, connInfo, `select id, name from \`users\``)
+      // @ts-ignore
+      rows = execResult.output.replaceAll("\t", " ").split("\n")
+      console.log(rows)
+      assert.equal(rows[0], "5 bob")
+      assert.equal(rows[1], "9 helen")
+      assert.equal(rows[2], "10 bill")
 
     }).timeout(60000)
 
