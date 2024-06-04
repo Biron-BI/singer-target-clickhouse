@@ -123,8 +123,10 @@ export default class StreamProcessor {
       return
     }
 
-    const columns: (PkMap|ColumnMap)[] = this.meta.simpleColumnMappings.concat(this.meta.pkMappings)
-    const cleaningColumnMeta = columns.find((column) => column.prop === this.meta.cleaningColumn)
+    const cleaningColumnMeta = this.meta.simpleColumnMappings
+      .concat(this.meta.pkMappings)
+      .find((column) => column.prop === this.meta.cleaningColumn)
+
     if (!cleaningColumnMeta) {
       throw new Error(`[${this.meta.prop}] could not resolve cleaning column meta (looking for ${this.meta.cleaningColumn})`)
     }
