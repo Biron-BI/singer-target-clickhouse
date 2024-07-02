@@ -164,6 +164,16 @@ export async function updateSchema(meta: ISourceMeta, ch: ClickhouseConnection, 
       is_in_sorting_key: false,
     }] : [])
 
+  let newPks: string[] = []
+  let removedPks: string[] = []
+  if(isRoot) {
+    const tablePks = (await ch.listColumns(unescape(meta.sqlTableName))).filter(c => c.is_in_sorting_key).map(c => c.name)
+    const schemaPks = meta.pkMappings.map(p => p.prop)
+    newPks = schemaPks.filter(pk => !tablePks.includes(pk))
+      .map(pk => `Could not add new PK property to ${pk} in the table`)
+    removedPks = tablePks.filter(pk => !schemaPks.includes(pk))
+      .map(pk => `Could not remove the PK property of ${pk} in the table`)
+  }
 
   const intersections = getColumnsIntersections(existingColumns, expectedColumns)
 
@@ -182,7 +192,7 @@ export async function updateSchema(meta: ISourceMeta, ch: ClickhouseConnection, 
       `Could not drop column ${ctx.existing.name} ${ctx.existing.type}`,
     ))
 
-  const errors = [...listLeft(added), ...listLeft(updated), ...listLeft(removed)]
+  const errors = [...listLeft(added), ...listLeft(updated), ...listLeft(removed), ...newPks, ...removedPks]
   errors.forEach((it) => log_error(it))
   if (errors.length > 0) {
     throw new Error("Could not update table")
