@@ -138,6 +138,18 @@ export function getColumnsIntersections(existingCols: Column[], requiredCols: Co
   }
 }
 
+function checkPrimaryKeysConsistency(existingColumns: Column[], meta: ISourceMeta) {
+  const tablePks = existingColumns.filter(c => c.is_in_sorting_key).map(c => c.name)
+  const schemaPks = meta.pkMappings.map(p => p.prop)
+  const newPks = schemaPks.filter(pk => !tablePks.includes(pk)).map(pk => `Could not add new PK property to ${pk} in the table`)
+  const removedPks = tablePks.filter(pk => !schemaPks.includes(pk)).map(pk => `Could not remove the PK property of ${pk} in the table`)
+  const errors = [...newPks, ...removedPks]
+  errors.forEach((it) => log_error(it))
+  if (errors.length > 0) {
+    throw new Error("Could not update table because of key properties")
+  }
+}
+
 export async function updateSchema(meta: ISourceMeta, ch: ClickhouseConnection, existingTables: string[]) {
   await Promise.all(meta.children.map((child) => updateSchema(child, ch, existingTables)))
 
@@ -164,8 +176,11 @@ export async function updateSchema(meta: ISourceMeta, ch: ClickhouseConnection, 
       is_in_sorting_key: false,
     }] : [])
 
-
   const intersections = getColumnsIntersections(existingColumns, expectedColumns)
+
+  if (isRoot) {
+    checkPrimaryKeysConsistency(existingColumns, meta)
+  }
 
   const added = (await Promise.all(intersections.missing.map((elem) => ch.addColumn(meta.sqlTableName, elem))))
     .map((res) => mapLeft(res, (ctx) =>
