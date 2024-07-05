@@ -444,6 +444,18 @@ describe("processStream", () => {
       await assert.rejects(processStream(fs.createReadStream("./tests/data/stream_vanilla_with_removed_pks.jsonl"), connInfo))
     })
 
+    it('should allow pk to be added if stream is in cleanFirst', async () => {
+      await processStream(fs.createReadStream("./tests/data/stream_vanilla_with_pks.jsonl"), connInfo)
+      let execResult = await runChQueryInContainer(container, connInfo, `select count()
+                                                                         from \`users\``)
+      assert.equal(execResult.output, '4\n')
+
+      await processStream(fs.createReadStream("./tests/data/stream_vanilla_with_new_pks_and_clean_first.jsonl"), connInfo)
+      execResult = await runChQueryInContainer(container, connInfo, `select count()
+                                                                         from \`users\``)
+      assert.equal(execResult.output, '4\n')
+    })
+
 
     it('should handle cleaning column in standard columns', async () => {
       await processStream(fs.createReadStream("./tests/data/stream_vanilla.jsonl"), connInfo)

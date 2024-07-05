@@ -1,7 +1,7 @@
 import {ono} from "ono"
 import {log_info, log_warning} from "singer-node"
 import ClickhouseConnection from "./ClickhouseConnection"
-import {ColumnMap, escapeIdentifier, formatRootPKColumn, ISourceMeta, PkMap} from "./jsonSchemaInspector"
+import {escapeIdentifier, formatRootPKColumn, ISourceMeta, PkMap} from "./jsonSchemaInspector"
 import {Config} from "./Config"
 import {escapeValue} from "./utils"
 import RecordProcessor from "./RecordProcessor"
@@ -39,6 +39,7 @@ export default class StreamProcessor {
 
     if (cleanFirst) {
       await streamProcessor.clearTables()
+      existingTables = await ch.listTables()
     }
 
     const rootAlreadyExists = existingTables
@@ -62,7 +63,7 @@ export default class StreamProcessor {
   }
 
   async clearTables(): Promise<void> {
-    const queries = buildTruncateTableQueries(this.meta)
+    const queries = buildDropTablesQueries(this.meta)
     await Promise.all(queries.map((query) => this.clickhouse.runQuery(query)))
   }
 
@@ -192,7 +193,7 @@ export default class StreamProcessor {
   }
 }
 
-const buildTruncateTableQueries = (meta: ISourceMeta): string[] => [
-  `TRUNCATE TABLE IF EXISTS ${meta.sqlTableName}`,
-  ...meta.children.flatMap(buildTruncateTableQueries),
+const buildDropTablesQueries = (meta: ISourceMeta): string[] => [
+  `DROP TABLE IF EXISTS ${meta.sqlTableName}`,
+  ...meta.children.flatMap(buildDropTablesQueries),
 ]
