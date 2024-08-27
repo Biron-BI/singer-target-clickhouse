@@ -557,6 +557,22 @@ describe("processStream", () => {
       assert.equal(execResult.output.replaceAll("\t", " ").replaceAll("\n", " "), "1 bill 2 bill 4 joe ")
     }).timeout(30000)
 
+    it('should deduplicate tables when receiving only schema', async () => {
+      await processStream(fs.createReadStream("./tests/data/stream_vanilla_with_pks.jsonl"), connInfo)
+      let execResult = await runChQueryInContainer(container, connInfo, `select count()
+                                                                           from users`)
+      assert.equal(execResult.output, '4\n')
+      await runChQueryInContainer(container, connInfo, `INSERT INTO users VALUES(4, 'joe', 90);`)
+      execResult = await runChQueryInContainer(container, connInfo, `select count()
+                                                                           from users`)
+      assert.equal(execResult.output, '5\n')
+      await processStream(fs.createReadStream("./tests/data/stream_vanilla_with_pks_no_records.jsonl"), connInfo)
+      execResult = await runChQueryInContainer(container, connInfo, `select count()
+                                                                           from users`)
+      assert.equal(execResult.output, '4\n')
+    }).timeout(30000)
+
+
   }).timeout(30000)
 
 }).timeout(30000)
