@@ -6,6 +6,7 @@ docker build --build-arg TAG="$TAG" -t ghcr.io/biron-bi/target-clickhouse:"$TAG"
 
 #Require login
 #https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry#authenticating-to-the-container-registry
+# minimal scope for PAT is "write:packages"
 docker push ghcr.io/biron-bi/target-clickhouse:"$TAG"
 
 docker build --build-arg TAG="$TAG" -t ghcr.io/biron-bi/target-clickhouse:latest .
