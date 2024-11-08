@@ -26,4 +26,6 @@ processStream(stdin, stdout, config).then(() => {
 }).catch((err) => {
   log_error(`${err}`)
   process.exit(1)
+}).finally(() => {
+  if (stdout !== process.stdout) stdout.end()
 })
