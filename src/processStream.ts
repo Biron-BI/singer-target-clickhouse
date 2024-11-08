@@ -1,6 +1,6 @@
 import * as readline from 'readline'
 import {ActiveStreamsMessage, log_error, log_fatal, log_info, log_warning, MessageType, parse_message, SchemaMessage} from "singer-node"
-import {Readable} from "stream"
+import {Readable, Writable} from "stream"
 import ClickhouseConnection from "./ClickhouseConnection"
 import {buildMeta, JsonSchemaInspectorContext} from "./jsonSchemaInspector"
 import StreamProcessor from "./StreamProcessor"
@@ -58,6 +58,7 @@ async function processActiveSchemasMessage(msg: ActiveStreamsMessage, config: Co
 
 async function processLine(
   line: string,
+  outputStream: Writable,
   config: Config,
   ch: ClickhouseConnection,
   streamProcessors: Map<string, StreamProcessor>,
@@ -100,8 +101,8 @@ async function processLine(
           .map((processor) => processor.commitPendingChanges()),
       )
 
-      // Should be the one and only console log in this package: the tap expects output in stdout to save state
-      console.log(JSON.stringify(msg.value))
+      outputStream.write(JSON.stringify(msg.value))
+      outputStream.write("\n")
       break;
     case MessageType.activeStreams:
       // Expected to be read last
@@ -113,18 +114,18 @@ async function processLine(
   }
 }
 
-export async function processStream(stream: Readable, config: Config) {
+export async function processStream(inputStream: Readable, outputStream: Writable, config: Config) {
   const ch = new ClickhouseConnection(config)
   const existingTables = await ch.listTables()
   let lineCount = 0
-  stream.on("error", (err: any) => {
+  inputStream.on("error", (err: any) => {
     log_fatal(`${err.message}`)
     throw new Error(`READ ERROR ${err}`)
   })
   let encounteredErr: Error | undefined;
 
   const rl = readline.createInterface({
-    input: stream,
+    input: inputStream,
   })
   const abort = (err: Error) => {
     encounteredErr = err
@@ -138,7 +139,7 @@ export async function processStream(stream: Readable, config: Config) {
   let processLinePromise = Promise.resolve()
   await forAwaitOnMacroTaskQueue(rl[Symbol.asyncIterator](), async line => {
     await processLinePromise
-    processLinePromise = processLine(line, config, ch, streamProcessors, existingTables, lineCount++, abort)
+    processLinePromise = processLine(line, outputStream, config, ch, streamProcessors, existingTables, lineCount++, abort)
   })
   await processLinePromise
   log_info("done reading lines")

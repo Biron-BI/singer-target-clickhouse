@@ -5,7 +5,7 @@ import {StartedTestContainer} from "testcontainers"
 import {LogLevel, set_level} from "singer-node"
 import {bootClickhouseContainer, runChQueryInContainer, sleep} from "./helpers"
 import {Config} from '../src/Config'
-import {Readable} from "stream"
+import {Readable, Writable} from "stream"
 
 const initialConnInfo = new Config({
   host: "localhost",
@@ -15,6 +15,24 @@ const initialConnInfo = new Config({
   database: "datbayse",
   // max_batch_rows: 10,
 })
+
+class InMemoryWritable extends Writable {
+  private data: any[]
+
+  constructor() {
+    super()
+    this.data = []
+  }
+
+  _write(chunk: any, encoding: BufferEncoding, callback: (error?: Error | null) => void): void {
+    this.data.push(chunk)
+    callback()
+  }
+
+  getContent(): string {
+    return Buffer.concat(this.data).toString()
+  }
+}
 
 describe("processStream", () => {
   let container: StartedTestContainer
@@ -52,9 +70,16 @@ describe("processStream", () => {
   after(async function () {
     await container.stop()
   });
+  describe("outputStream", () => {
+    it('should write state to passed outputStream', async () => {
+      const writableStream = new InMemoryWritable();
+      await processStream(fs.createReadStream("./tests/data/stream_with_state.jsonl"), writableStream, connInfo)
+      assert.equal(writableStream.getContent(), `{"bookmarks":{"toto":"tata"},",currently_syncing":"tickets"}\n{"bookmarks":{},"currently_syncing":null}\n`)
+    }).timeout(30000)
+  })
   describe("Schemas", () => {
     it('should create schemas', async () => {
-      await processStream(fs.createReadStream("./tests/data/stream_1.jsonl"), connInfo)
+      await processStream(fs.createReadStream("./tests/data/stream_1.jsonl"), process.stdout, connInfo)
       let execResult = await runChQueryInContainer(container, connInfo, `show tables from ${connInfo.database}`)
       assert.equal(execResult.output.split("\n").length, 22)
       assert.equal(execResult.output.includes("ticket_audits"), true)
@@ -65,7 +90,7 @@ describe("processStream", () => {
     }).timeout(30000)
 
     it("should create schema with nullable scalar array", async () => {
-      await processStream(fs.createReadStream("./tests/data/stream_schema_array_nullable.jsonl"), connInfo)
+      await processStream(fs.createReadStream("./tests/data/stream_schema_array_nullable.jsonl"), process.stdout, connInfo)
       const execResult = await runChQueryInContainer(container, connInfo, `select name, type
                                                                            from system.columns
                                                                            where table LIKE 'return_requests_%'
@@ -76,8 +101,8 @@ describe("processStream", () => {
     })
 
     it("should create schema with nullable scalar array as clickhouse array", async () => {
-      await processStream(fs.createReadStream("./tests/data/stream_schema_with_array.jsonl"), connInfo)
-      await processStream(fs.createReadStream("./tests/data/stream_schema_with_array.jsonl"), connInfo)
+      await processStream(fs.createReadStream("./tests/data/stream_schema_with_array.jsonl"), process.stdout, connInfo)
+      await processStream(fs.createReadStream("./tests/data/stream_schema_with_array.jsonl"), process.stdout, connInfo)
       let execResult = await runChQueryInContainer(container, connInfo, `select columns.name, columns.type
                                                                          from system.columns
                                                                          where database = '${connInfo.database}'
@@ -93,7 +118,7 @@ describe("processStream", () => {
     })
 
     it('should create schemas which specifies cardinality', async () => {
-      await processStream(fs.createReadStream("./tests/data/stream_cardinality.jsonl"), connInfo)
+      await processStream(fs.createReadStream("./tests/data/stream_cardinality.jsonl"), process.stdout, connInfo)
       let execResult = await runChQueryInContainer(container, connInfo, `show tables from ${connInfo.database}`)
       assert.equal(execResult.output.split("\n").length, 2)
       assert.equal(execResult.output.includes("users"), true)
@@ -102,7 +127,7 @@ describe("processStream", () => {
     }).timeout(30000)
 
     it('should create schemas which specifiesPK', async () => {
-      await processStream(fs.createReadStream("./tests/data/stream_schema_with_all_pk.jsonl"), connInfo)
+      await processStream(fs.createReadStream("./tests/data/stream_schema_with_all_pk.jsonl"), process.stdout, connInfo)
       let execResult = await runChQueryInContainer(container, connInfo, `describe table ${connInfo.database}.tickets__follower_ids`)
       const rows = execResult.output.split("\n")
       assert.equal(rows[0].includes("_root_id"), true)
@@ -111,8 +136,8 @@ describe("processStream", () => {
     }).timeout(30000)
 
     it('should do nothing if schemas already exists', async () => {
-      await processStream(fs.createReadStream("./tests/data/stream_1.jsonl"), connInfo)
-      await processStream(fs.createReadStream("./tests/data/stream_1.jsonl"), connInfo)
+      await processStream(fs.createReadStream("./tests/data/stream_1.jsonl"), process.stdout, connInfo)
+      await processStream(fs.createReadStream("./tests/data/stream_1.jsonl"), process.stdout, connInfo)
       const execResult = await runChQueryInContainer(container, connInfo, `show tables from ${connInfo.database}`)
 
       assert.equal(execResult.output.split("\n").length, 22)
@@ -120,8 +145,8 @@ describe("processStream", () => {
 
     describe("columns update", () => {
       it('should create / update / delete columns if schema already exists and new has different columns', async () => {
-        await processStream(fs.createReadStream("./tests/data/stream_1.jsonl"), connInfo)
-        await processStream(fs.createReadStream("./tests/data/stream_1_modified.jsonl"), connInfo)
+        await processStream(fs.createReadStream("./tests/data/stream_1.jsonl"), process.stdout, connInfo)
+        await processStream(fs.createReadStream("./tests/data/stream_1_modified.jsonl"), process.stdout, connInfo)
         let execResult = await runChQueryInContainer(container, connInfo, `show tables from ${connInfo.database}`)
 
         assert.equal(execResult.output.split("\n").length, 22)
@@ -143,8 +168,8 @@ describe("processStream", () => {
       }).timeout(30000)
 
       it('should start by truncating before applying schema update', async () => {
-        await processStream(fs.createReadStream("./tests/data/stream_nullable.jsonl"), connInfo)
-        await processStream(fs.createReadStream("./tests/data/stream_non_nullable.jsonl"), connInfo)
+        await processStream(fs.createReadStream("./tests/data/stream_nullable.jsonl"), process.stdout, connInfo)
+        await processStream(fs.createReadStream("./tests/data/stream_non_nullable.jsonl"), process.stdout, connInfo)
 
         let execResult = await runChQueryInContainer(container, connInfo, `select name, type
                                                                            from system.columns
@@ -162,8 +187,8 @@ describe("processStream", () => {
 
     it('should handle state at the end of the stream + a closing state, launched several times', async () => {
       for (let i = 0; i < 10; i++) {
-        await processStream(fs.createReadStream("./tests/data/stream_with_state.jsonl"), connInfo)
-        await processStream(fs.createReadStream("./tests/data/stream_tiny.jsonl"), connInfo)
+        await processStream(fs.createReadStream("./tests/data/stream_with_state.jsonl"), process.stdout, connInfo)
+        await processStream(fs.createReadStream("./tests/data/stream_tiny.jsonl"), process.stdout, connInfo)
       }
 
       let execResult = await runChQueryInContainer(container, connInfo, `select *
@@ -177,9 +202,9 @@ describe("processStream", () => {
     }).timeout(30000)
 
     it("should rename tables as dropped when they are no longer active, and exclude dropped and archived", async () => {
-      await processStream(fs.createReadStream("./tests/data/stream_1.jsonl"), connInfo)
+      await processStream(fs.createReadStream("./tests/data/stream_1.jsonl"), process.stdout, connInfo)
 
-      await processStream(fs.createReadStream("./tests/data/stream_1_inactive.jsonl"), connInfo)
+      await processStream(fs.createReadStream("./tests/data/stream_1_inactive.jsonl"), process.stdout, connInfo)
       let execResult = await runChQueryInContainer(container, connInfo, `show tables from ${connInfo.database}`)
       let tables = execResult.output.split("\n").filter(Boolean)
       assert.equal(tables.length, 21)
@@ -191,7 +216,7 @@ describe("processStream", () => {
         }
       })
 
-      await processStream(fs.createReadStream("./tests/data/stream_1_inactive.jsonl"), connInfo)
+      await processStream(fs.createReadStream("./tests/data/stream_1_inactive.jsonl"), process.stdout, connInfo)
       execResult = await runChQueryInContainer(container, connInfo, `show tables from ${connInfo.database}`)
       tables = execResult.output.split("\n").filter(Boolean)
       assert.equal(tables.length, 21)
@@ -205,7 +230,7 @@ describe("processStream", () => {
       })
 
       await runChQueryInContainer(container, connInfo, `RENAME TABLE ${connInfo.database}._dropped_ticket_metrics TO ${connInfo.database}._archived_ticket_metrics`)
-      await processStream(fs.createReadStream("./tests/data/stream_1_inactive.jsonl"), connInfo)
+      await processStream(fs.createReadStream("./tests/data/stream_1_inactive.jsonl"), process.stdout, connInfo)
       execResult = await runChQueryInContainer(container, connInfo, `show tables from ${connInfo.database}`)
       tables = execResult.output.split("\n").filter(Boolean)
       assert.equal(tables.length, 21)
@@ -230,8 +255,8 @@ describe("processStream", () => {
         ...connInfo,
         extra_active_tables: ["tickets"],
       }
-      await processStream(fs.createReadStream("./tests/data/stream_1.jsonl"), config)
-      await processStream(fs.createReadStream("./tests/data/stream_1_inactive.jsonl"), config)
+      await processStream(fs.createReadStream("./tests/data/stream_1.jsonl"), process.stdout, config)
+      await processStream(fs.createReadStream("./tests/data/stream_1_inactive.jsonl"), process.stdout, config)
       let execResult = await runChQueryInContainer(container, connInfo, `show tables from ${connInfo.database}`)
       let tables = execResult.output.split("\n").filter(Boolean)
       assert.equal(tables.length, 21)
@@ -245,21 +270,21 @@ describe("processStream", () => {
     }).timeout(30000)
 
     it('should throw if schema already exists and new has different columns with incompatible type', async () => {
-      await processStream(fs.createReadStream("./tests/data/stream_vanilla.jsonl"), connInfo)
+      await processStream(fs.createReadStream("./tests/data/stream_vanilla.jsonl"), process.stdout, connInfo)
       await assert.rejects(async () => {
-        await processStream(fs.createReadStream("./tests/data/stream_vanilla_with_incompatible_update.jsonl"), connInfo)
+        await processStream(fs.createReadStream("./tests/data/stream_vanilla_with_incompatible_update.jsonl"), process.stdout, connInfo)
       }, Error)
     }).timeout(30000)
 
     it('should ignore second schema definition', async () => {
-      await processStream(fs.createReadStream("./tests/data/stream_multiple_schema.jsonl"), connInfo)
+      await processStream(fs.createReadStream("./tests/data/stream_multiple_schema.jsonl"), process.stdout, connInfo)
     }).timeout(30000)
 
     it('should recreate if schemas already exists, new is different but specified to be recreated', async () => {
-      await processStream(fs.createReadStream("./tests/data/stream_1.jsonl"), connInfo)
+      await processStream(fs.createReadStream("./tests/data/stream_1.jsonl"), process.stdout, connInfo)
 
       const config = new Config({...connInfo}, ["tickets"])
-      await processStream(fs.createReadStream("./tests/data/stream_1_modified.jsonl"), config)
+      await processStream(fs.createReadStream("./tests/data/stream_1_modified.jsonl"), process.stdout, config)
       const execResult = await runChQueryInContainer(container, connInfo, `show tables from ${connInfo.database}`)
 
       assert.equal(execResult.output.split("\n").length, 22)
@@ -270,7 +295,7 @@ describe("processStream", () => {
   describe("Records", () => {
 
     it('should insert simple records', async () => {
-      await processStream(fs.createReadStream("./tests/data/stream_short.jsonl"), connInfo)
+      await processStream(fs.createReadStream("./tests/data/stream_short.jsonl"), process.stdout, connInfo)
       const execResult = await runChQueryInContainer(container, connInfo, `select brand_id
                                                                            from tickets
                                                                            where assignee_id = 11`)
@@ -298,7 +323,7 @@ describe("processStream", () => {
       s.push(JSON.stringify(schema) + "\n");
       s.push(JSON.stringify(record) + "\n");
 
-      processStream(s, {
+      processStream(s, process.stdout, {
         ...connInfo,
         batch_size: 10,
         insert_stream_timeout_sec: 8,
@@ -319,8 +344,8 @@ describe("processStream", () => {
     }).timeout(30000)
 
     it('should allow reordering of schema', async () => {
-      await processStream(fs.createReadStream("./tests/data/stream_short.jsonl"), connInfo)
-      await processStream(fs.createReadStream("./tests/data/stream_short_reordered.jsonl"), connInfo)
+      await processStream(fs.createReadStream("./tests/data/stream_short.jsonl"), process.stdout, connInfo)
+      await processStream(fs.createReadStream("./tests/data/stream_short_reordered.jsonl"), process.stdout, connInfo)
       const execResult = await runChQueryInContainer(container, connInfo, `select brand_id
                                                                            from tickets
                                                                            where assignee_id = 11`)
@@ -328,21 +353,21 @@ describe("processStream", () => {
     }).timeout(30000)
 
     it('should flatten nested object', async () => {
-      await processStream(fs.createReadStream("./tests/data/stream_nested_object.jsonl"), connInfo)
+      await processStream(fs.createReadStream("./tests/data/stream_nested_object.jsonl"), process.stdout, connInfo)
       const execResult = await runChQueryInContainer(container, connInfo, `select follower_ids__name
                                                                            from tickets`)
       assert.equal(execResult.output, 'jack\n')
     }).timeout(30000)
 
     it('should ingest stream from real data: covidtracker', async () => {
-      await processStream(fs.createReadStream("./tests/data/covidtracker.jsonl"), connInfo)
+      await processStream(fs.createReadStream("./tests/data/covidtracker.jsonl"), process.stdout, connInfo)
       let execResult = await runChQueryInContainer(container, connInfo, `select sum(total_rows), sum(tables.total_bytes)
                                                                          from system.tables
                                                                          where database = '${connInfo.database}'`)
       assert.equal(execResult.output, '5789\t1345158\n')
 
       // Ensure no duplicates are created when run second time
-      await processStream(fs.createReadStream("./tests/data/covidtracker.jsonl"), connInfo)
+      await processStream(fs.createReadStream("./tests/data/covidtracker.jsonl"), process.stdout, connInfo)
       execResult = await runChQueryInContainer(container, connInfo, `select sum(total_rows)
                                                                      from system.tables
                                                                      where database = '${connInfo.database}'`)
@@ -351,14 +376,14 @@ describe("processStream", () => {
     }).timeout(60000)
 
     it('should ingest stream from real data: clickhouse query log', async () => {
-      await processStream(fs.createReadStream("./tests/data/clickhouse_query_log.jsonl"), connInfo)
+      await processStream(fs.createReadStream("./tests/data/clickhouse_query_log.jsonl"), process.stdout, connInfo)
       let execResult = await runChQueryInContainer(container, connInfo, `select sum(total_rows)
                                                                          from system.tables
                                                                          where database = '${connInfo.database}'`)
       assert.equal(execResult.output, '1\n')
 
       // Ensure no duplicates are created when run second time
-      await processStream(fs.createReadStream("./tests/data/clickhouse_query_log.jsonl"), connInfo)
+      await processStream(fs.createReadStream("./tests/data/clickhouse_query_log.jsonl"), process.stdout, connInfo)
       execResult = await runChQueryInContainer(container, connInfo, `select sum(total_rows)
                                                                      from system.tables
                                                                      where database = '${connInfo.database}'`)
@@ -375,7 +400,7 @@ describe("processStream", () => {
     }).timeout(60000)
 
     it('should produce same result from real data whether translate value is effective or not', async () => {
-      await processStream(fs.createReadStream("./tests/data/covidtracker.jsonl"), {
+      await processStream(fs.createReadStream("./tests/data/covidtracker.jsonl"), process.stdout, {
         ...connInfo,
         translate_values: false,
       })
@@ -387,7 +412,7 @@ describe("processStream", () => {
 
       const otherDb = "otherDB"
       await runChQueryInContainer(container, connInfo, `CREATE DATABASE ${otherDb}`)
-      await processStream(fs.createReadStream("./tests/data/covidtracker.jsonl"), {
+      await processStream(fs.createReadStream("./tests/data/covidtracker.jsonl"), process.stdout, {
         ...connInfo,
         database: otherDb,
         translate_values: true,
@@ -401,12 +426,12 @@ describe("processStream", () => {
     }).timeout(60000)
 
     it('should handle cleanFirst', async () => {
-      await processStream(fs.createReadStream("./tests/data/stream_vanilla.jsonl"), connInfo)
+      await processStream(fs.createReadStream("./tests/data/stream_vanilla.jsonl"), process.stdout, connInfo)
       let execResult = await runChQueryInContainer(container, connInfo, `select count()
                                                                          from \`users\``)
       assert.equal(execResult.output, '4\n')
 
-      await processStream(fs.createReadStream("./tests/data/stream_cleanFirst.jsonl"), connInfo)
+      await processStream(fs.createReadStream("./tests/data/stream_cleanFirst.jsonl"), process.stdout, connInfo)
       execResult = await runChQueryInContainer(container, connInfo, `select count()
                                                                      from \`users\``)
       assert.equal(execResult.output, '2\n')
@@ -414,56 +439,56 @@ describe("processStream", () => {
     }).timeout(60000)
 
     it('should update schema by creating sub table', async () => {
-      await processStream(fs.createReadStream("./tests/data/stream_vanilla.jsonl"), connInfo)
+      await processStream(fs.createReadStream("./tests/data/stream_vanilla.jsonl"), process.stdout, connInfo)
       let execResult = await runChQueryInContainer(container, connInfo, `select count()
                                                                          from \`users\``)
       assert.equal(execResult.output, '4\n')
 
 
-      await processStream(fs.createReadStream("./tests/data/stream_with_array.jsonl"), connInfo)
+      await processStream(fs.createReadStream("./tests/data/stream_with_array.jsonl"), process.stdout, connInfo)
       execResult = await runChQueryInContainer(container, connInfo, `select count()
                                                                      from \`users__roles\``)
       assert.equal(execResult.output, '5\n')
     })
 
     it('should throw when new pks are added', async () => {
-      await processStream(fs.createReadStream("./tests/data/stream_vanilla_with_pks.jsonl"), connInfo)
+      await processStream(fs.createReadStream("./tests/data/stream_vanilla_with_pks.jsonl"), process.stdout, connInfo)
       let execResult = await runChQueryInContainer(container, connInfo, `select count()
                                                                          from \`users\``)
       assert.equal(execResult.output, '4\n')
 
-     await assert.rejects(processStream(fs.createReadStream("./tests/data/stream_vanilla_with_new_pks.jsonl"), connInfo))
+      await assert.rejects(processStream(fs.createReadStream("./tests/data/stream_vanilla_with_new_pks.jsonl"), process.stdout, connInfo))
     })
 
     it('should throw when pks are deleted', async () => {
-      await processStream(fs.createReadStream("./tests/data/stream_vanilla_with_pks.jsonl"), connInfo)
+      await processStream(fs.createReadStream("./tests/data/stream_vanilla_with_pks.jsonl"), process.stdout, connInfo)
       let execResult = await runChQueryInContainer(container, connInfo, `select count()
                                                                          from \`users\``)
       assert.equal(execResult.output, '4\n')
 
-      await assert.rejects(processStream(fs.createReadStream("./tests/data/stream_vanilla_with_removed_pks.jsonl"), connInfo))
+      await assert.rejects(processStream(fs.createReadStream("./tests/data/stream_vanilla_with_removed_pks.jsonl"), process.stdout, connInfo))
     })
 
     it('should allow pk to be added if stream is in cleanFirst', async () => {
-      await processStream(fs.createReadStream("./tests/data/stream_vanilla_with_pks.jsonl"), connInfo)
+      await processStream(fs.createReadStream("./tests/data/stream_vanilla_with_pks.jsonl"), process.stdout, connInfo)
       let execResult = await runChQueryInContainer(container, connInfo, `select count()
                                                                          from \`users\``)
       assert.equal(execResult.output, '4\n')
 
-      await processStream(fs.createReadStream("./tests/data/stream_vanilla_with_new_pks_and_clean_first.jsonl"), connInfo)
+      await processStream(fs.createReadStream("./tests/data/stream_vanilla_with_new_pks_and_clean_first.jsonl"), process.stdout, connInfo)
       execResult = await runChQueryInContainer(container, connInfo, `select count()
-                                                                         from \`users\``)
+                                                                     from \`users\``)
       assert.equal(execResult.output, '4\n')
     })
 
 
     it('should handle cleaning column in standard columns', async () => {
-      await processStream(fs.createReadStream("./tests/data/stream_vanilla.jsonl"), connInfo)
+      await processStream(fs.createReadStream("./tests/data/stream_vanilla.jsonl"), process.stdout, connInfo)
       let execResult = await runChQueryInContainer(container, connInfo, `select count()
                                                                          from \`users\``)
       assert.equal(execResult.output, '4\n')
 
-      await processStream(fs.createReadStream("./tests/data/stream_cleaningColumn.jsonl"), connInfo)
+      await processStream(fs.createReadStream("./tests/data/stream_cleaningColumn.jsonl"), process.stdout, connInfo)
       execResult = await runChQueryInContainer(container, connInfo, `select count()
                                                                      from \`users\``)
       assert.equal(execResult.output, '5\n')
@@ -478,7 +503,7 @@ describe("processStream", () => {
 
 
     it('should handle cleaning column in pk', async () => {
-      await processStream(fs.createReadStream("./tests/data/stream_cleaningColumn_pk.jsonl"), connInfo)
+      await processStream(fs.createReadStream("./tests/data/stream_cleaningColumn_pk.jsonl"), process.stdout, connInfo)
       let execResult = await runChQueryInContainer(container, connInfo, `select id, name
                                                                          from \`users\``)
       // @ts-ignore
@@ -488,7 +513,7 @@ describe("processStream", () => {
       assert.equal(rows[2], "8 bill")
       assert.equal(rows[3], "9 helen")
 
-      await processStream(fs.createReadStream("./tests/data/stream_cleaningColumn_pk_2.jsonl"), connInfo)
+      await processStream(fs.createReadStream("./tests/data/stream_cleaningColumn_pk_2.jsonl"), process.stdout, connInfo)
       execResult = await runChQueryInContainer(container, connInfo, `select id, name
                                                                      from \`users\``)
       // @ts-ignore
@@ -501,7 +526,7 @@ describe("processStream", () => {
     }).timeout(60000)
 
     it('should handle record when schema specifiesPK', async () => {
-      await processStream(fs.createReadStream("./tests/data/stream_short_with_all_pk.jsonl"), connInfo)
+      await processStream(fs.createReadStream("./tests/data/stream_short_with_all_pk.jsonl"), process.stdout, connInfo)
       let execResult = await runChQueryInContainer(container, connInfo, `describe table ${connInfo.database}.tickets__follower_ids`)
       const rows = execResult.output.split("\n")
       assert.equal(rows[0].includes("_root_id"), true)
@@ -517,7 +542,7 @@ describe("processStream", () => {
     }).timeout(30000)
 
     it('should handle record when schema specifies complex PK', async () => {
-      await processStream(fs.createReadStream("./tests/data/stream_short_with_all_pk2.jsonl"), connInfo)
+      await processStream(fs.createReadStream("./tests/data/stream_short_with_all_pk2.jsonl"), process.stdout, connInfo)
       let execResult = await runChQueryInContainer(container, connInfo, `describe table ${connInfo.database}.tickets__follower_ids`)
       const rows = execResult.output.split("\n")
       assert.equal(rows[0].includes("_root_id"), true)
@@ -534,23 +559,23 @@ describe("processStream", () => {
     }).timeout(30000)
 
     it('should handle stream which deletes existing data with one simple pk', async () => {
-      await processStream(fs.createReadStream("./tests/data/stream_tiny.jsonl"), connInfo)
+      await processStream(fs.createReadStream("./tests/data/stream_tiny.jsonl"), process.stdout, connInfo)
       let execResult = await runChQueryInContainer(container, connInfo, `select id
                                                                          from ${connInfo.database}.tickets`)
       assert.equal(execResult.output, "1\n2\n3\n")
-      await processStream(fs.createReadStream("./tests/data/stream_tiny_with_delete.jsonl"), connInfo)
+      await processStream(fs.createReadStream("./tests/data/stream_tiny_with_delete.jsonl"), process.stdout, connInfo)
       execResult = await runChQueryInContainer(container, connInfo, `select id
                                                                      from ${connInfo.database}.tickets`)
       assert.equal(execResult.output, "1\n3\n")
     }).timeout(30000)
 
     it('should handle stream which deletes existing data with multiple pk', async () => {
-      await processStream(fs.createReadStream("./tests/data/stream_vanilla_with_pks.jsonl"), connInfo)
+      await processStream(fs.createReadStream("./tests/data/stream_vanilla_with_pks.jsonl"), process.stdout, connInfo)
       let execResult = await runChQueryInContainer(container, connInfo, `select id, name
                                                                          from ${connInfo.database}.users`)
       // @ts-ignore
       assert.equal(execResult.output.replaceAll("\t", " ").replaceAll("\n", " "), "1 bill 2 bill 3 jack 4 joe ")
-      await processStream(fs.createReadStream("./tests/data/stream_vanilla_with_pks_and_deletion.jsonl"), connInfo)
+      await processStream(fs.createReadStream("./tests/data/stream_vanilla_with_pks_and_deletion.jsonl"), process.stdout, connInfo)
       execResult = await runChQueryInContainer(container, connInfo, `select id, name
                                                                      from ${connInfo.database}.users`)
       // @ts-ignore
@@ -558,17 +583,18 @@ describe("processStream", () => {
     }).timeout(30000)
 
     it('should deduplicate tables when receiving only schema', async () => {
-      await processStream(fs.createReadStream("./tests/data/stream_vanilla_with_pks.jsonl"), connInfo)
+      await processStream(fs.createReadStream("./tests/data/stream_vanilla_with_pks.jsonl"), process.stdout, connInfo)
       let execResult = await runChQueryInContainer(container, connInfo, `select count()
-                                                                           from users`)
+                                                                         from users`)
       assert.equal(execResult.output, '4\n')
-      await runChQueryInContainer(container, connInfo, `INSERT INTO users VALUES(4, 'joe', 90);`)
+      await runChQueryInContainer(container, connInfo, `INSERT INTO users
+                                                        VALUES (4, 'joe', 90);`)
       execResult = await runChQueryInContainer(container, connInfo, `select count()
-                                                                           from users`)
+                                                                     from users`)
       assert.equal(execResult.output, '5\n')
-      await processStream(fs.createReadStream("./tests/data/stream_vanilla_with_pks_no_records.jsonl"), connInfo)
+      await processStream(fs.createReadStream("./tests/data/stream_vanilla_with_pks_no_records.jsonl"), process.stdout, connInfo)
       execResult = await runChQueryInContainer(container, connInfo, `select count()
-                                                                           from users`)
+                                                                     from users`)
       assert.equal(execResult.output, '4\n')
     }).timeout(30000)
 
