@@ -1,6 +1,6 @@
 import {strict as assert} from 'assert'
 import {StartedTestContainer} from "testcontainers"
-import {LogLevel, set_level} from "singer-node"
+import {LogLevel, set_log_level} from "singer-node"
 import {bootClickhouseContainer, runChQueryInContainer} from "./helpers"
 import ClickhouseConnection from "../src/ClickhouseConnection"
 import {Config, IConfig} from "../src/Config"
@@ -32,9 +32,9 @@ describe("ClickhouseConnection", () => {
       await runChQueryInContainer(container, connInfo, "INSERT INTO `box` VALUES (1, 50, 'box1', 'qwer')")
 
     } catch (err) {
-      console.log("err", err);
+      console.error("err", err);
     }
-    set_level(LogLevel.TRACE)
+    set_log_level(LogLevel.TRACE)
   });
 
   after(async function () {

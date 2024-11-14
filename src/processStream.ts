@@ -1,6 +1,16 @@
 import * as readline from 'readline'
-import {ActiveStreamsMessage, log_error, log_fatal, log_info, log_warning, MessageType, parse_message, SchemaMessage} from "singer-node"
-import {Readable, Writable} from "stream"
+import {
+  ActiveStreamsMessage,
+  log_error,
+  log_fatal,
+  log_info,
+  log_warning,
+  MessageType,
+  parse_message,
+  SchemaMessage,
+  write_line,
+} from "singer-node"
+import {Readable} from "stream"
 import ClickhouseConnection from "./ClickhouseConnection"
 import {buildMeta, JsonSchemaInspectorContext} from "./jsonSchemaInspector"
 import StreamProcessor from "./StreamProcessor"
@@ -58,7 +68,6 @@ async function processActiveSchemasMessage(msg: ActiveStreamsMessage, config: Co
 
 async function processLine(
   line: string,
-  outputStream: Writable,
   config: Config,
   ch: ClickhouseConnection,
   streamProcessors: Map<string, StreamProcessor>,
@@ -101,8 +110,7 @@ async function processLine(
           .map((processor) => processor.commitPendingChanges()),
       )
 
-      outputStream.write(JSON.stringify(msg.value))
-      outputStream.write("\n")
+      write_line(JSON.stringify(msg.value))
       break;
     case MessageType.activeStreams:
       // Expected to be read last
@@ -114,7 +122,7 @@ async function processLine(
   }
 }
 
-export async function processStream(inputStream: Readable, outputStream: Writable, config: Config) {
+export async function processStream(inputStream: Readable, config: Config) {
   const ch = new ClickhouseConnection(config)
   const existingTables = await ch.listTables()
   let lineCount = 0
@@ -139,7 +147,7 @@ export async function processStream(inputStream: Readable, outputStream: Writabl
   let processLinePromise = Promise.resolve()
   await forAwaitOnMacroTaskQueue(rl[Symbol.asyncIterator](), async line => {
     await processLinePromise
-    processLinePromise = processLine(line, outputStream, config, ch, streamProcessors, existingTables, lineCount++, abort)
+    processLinePromise = processLine(line, config, ch, streamProcessors, existingTables, lineCount++, abort)
   })
   await processLinePromise
   log_info("done reading lines")
