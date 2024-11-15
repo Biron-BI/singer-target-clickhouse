@@ -84,24 +84,24 @@ describe("translateCH", () => {
 
   it("should refuse empty meta", () => {
     assert.throws(() => {
-      translateCH("db", emptyMeta)
+      translateCH("db", emptyMeta, true)
     }, Error)
   })
 
   it("should translate basic meta", () => {
-    const res = translateCH("db", simpleMeta)
+    const res = translateCH("db", simpleMeta, true)
     assert.equal(res.length, 1)
     assert.equal(res[0], "CREATE TABLE db.`order` ( `id` Int32, `name` Nullable(String) ) ENGINE = MergeTree ORDER BY tuple()")
   })
 
   it("should translate meta with PK", () => {
-    const res = translateCH("db", metaWithPK)
+    const res = translateCH("db", metaWithPK, true)
     assert.equal(res.length, 1)
     assert.equal(res[0], "CREATE TABLE db.`order` ( `id` UInt32, `name` Nullable(String), `_ver` UInt64 ) ENGINE = ReplacingMergeTree(_ver) ORDER BY `id`")
   })
 
   it("should translate meta with PK and children", () => {
-    const res = translateCH("db", metaWithPKAndChildren)
+    const res = translateCH("db", metaWithPKAndChildren, true)
     assert.equal(res.length, 2)
     assert.equal(res[0], "CREATE TABLE db.`order` ( `id` UInt32, `name` Nullable(String), `_ver` UInt64 ) ENGINE = ReplacingMergeTree(_ver) ORDER BY `id`")
     assert.equal(res[1], "CREATE TABLE db.`order_child` ( `id` Int32, `name` Nullable(String), `_root_ver` UInt64 ) ENGINE = MergeTree ORDER BY tuple()")
@@ -112,7 +112,7 @@ describe("translateCH", () => {
     const res = translateCH("db",
       {
         ...simpleMeta, simpleColumnMappings: [mappings[0], {...mappings[1], lowCardinality: true}] as ColumnMap[],
-      },
+      }, true,
     )
     assert.equal(res.length, 1)
     assert.equal(res[0], "CREATE TABLE db.`order` ( `id` Int32, `name` LowCardinality(Nullable(String)) ) ENGINE = MergeTree ORDER BY tuple()")

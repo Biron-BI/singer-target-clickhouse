@@ -50,7 +50,7 @@ export default class StreamProcessor {
       await updateSchema(meta, ch, existingTables)
     } else {
       log_info(`[${meta.prop}]: creating tables`)
-      await Promise.all(translateCH(ch.getDatabase(), meta).map(ch.runQuery.bind(ch)))
+      await Promise.all(translateCH(ch.getDatabase(), meta, true).map(ch.runQuery.bind(ch)))
     }
 
     streamProcessor.maxVer = (cleanFirst || !metaRepresentsReplacingMergeTree(meta))
