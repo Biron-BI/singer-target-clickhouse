@@ -1,0 +1,1 @@
+{"type":"SCHEMA","stream":"users","schema":{"properties":{"id":{"type":["null","integer"]},"name":{"type":["string"]}},"type":["null","object"]},"key_properties":["id"]}

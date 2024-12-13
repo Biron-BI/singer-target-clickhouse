@@ -1,5 +1,0 @@
-{"type":"SCHEMA","stream":"users","schema":{"properties":{"id":{"type":["null","integer"]},"name":{"type":["string"]},"roles":{"type":"array","items":{"type":"object", "properties": { "scopes": { "type": "array", "items": { "type": "string" } } }}}},"type":["null","object"]},"key_properties":["id"]}
-{"type":"RECORD","stream":"users","record":{"id":1,"name":"bill","roles":[{"scopes": ["reviewing", "adding"]},{"scopes": ["designing"]}]}}
-{"type":"RECORD","stream":"users","record":{"id":2,"name":"bill","roles":[]}}
-{"type":"RECORD","stream":"users","record":{"id":3,"name":"jack","roles":[{"scopes":  ["reviewing", "adding"]}]}}
-{"type":"RECORD","stream":"users","record":{"id":4,"name":"joe","roles":[{"scopes":  ["reviewing", "designing"]}]}}
