@@ -278,6 +278,16 @@ describe("processStream", () => {
       assert.equal(execResult.output.split("\n").length, 22)
     }).timeout(30000)
 
+    it('should handle additional nested array', async () => {
+      await processStream(fs.createReadStream("./tests/data/stream_nested_array.jsonl"), connInfo)
+      await processStream(fs.createReadStream("./tests/data/stream_nested_array_additional.jsonl"), connInfo)
+
+      const execResult = await runChQueryInContainer(container, connInfo, `show tables from ${connInfo.database}`)
+      const tables = execResult.output.split("\n").filter(Boolean)
+
+      assert.deepStrictEqual(tables, ["users", "users__roles", "users__roles__scopes"])
+    }).timeout(30000)
+
   }).timeout(30000)
 
   describe("Records", () => {
