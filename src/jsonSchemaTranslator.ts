@@ -54,7 +54,7 @@ const resolveOrderBy = (meta: ISourceMeta, isRoot: boolean): string => {
 
 // From the schema inspection we build the query to create table in Clickhouse.
 // Must respect the SHOW CREATE TABLE syntax as we also use it to ensure schema didn't change
-export function translateCH(database: string, meta: ISourceMeta, parentMeta?: ISourceMeta, rootMeta?: ISourceMeta): string[] {
+export function translateCH(database: string, meta: ISourceMeta, recursive: boolean, parentMeta?: ISourceMeta, rootMeta?: ISourceMeta): string[] {
   if (meta.simpleColumnMappings.length == 0 && meta.pkMappings.length == 0) {
     throw new Error("Attempting to create table without columns")
   }
@@ -64,12 +64,17 @@ export function translateCH(database: string, meta: ISourceMeta, parentMeta?: IS
     .concat(meta.simpleColumnMappings.map(mapping => `${mapping.sqlIdentifier} ${toQualifiedType(mapping)}`))
     .concat(resolveVersionColumn(isNodeRoot, meta.pkMappings.length > 0))
 
-  return [
-    // @formatter:off
-    `CREATE TABLE ${database}.${meta.sqlTableName} ( ${createDefs.filter(Boolean).join(", ")} ) ENGINE = ${resolveEngine(isNodeRoot, meta.pkMappings.length > 0)} ORDER BY ${resolveOrderBy(meta, isNodeRoot)}`,
-    ...meta.children.flatMap((child: ISourceMeta) => translateCH(database, child, meta, rootMeta || meta))
-    // @formatter:on
+  // @formatter:off
+  const ret: string[] = [
+    `CREATE TABLE ${database}.${meta.sqlTableName} ( ${createDefs.filter(Boolean).join(", ")} ) ENGINE = ${resolveEngine(isNodeRoot, meta.pkMappings.length > 0)} ORDER BY ${resolveOrderBy(meta, isNodeRoot)}`
   ]
+  // @formatter:on
+
+  if (recursive) {
+    ret.push(...meta.children.flatMap((child: ISourceMeta) => translateCH(database, child, recursive, meta, rootMeta || meta)))
+  }
+
+  return ret
 }
 
 export const listTableNames = (meta: ISourceMeta): string[] => [
@@ -155,7 +160,7 @@ export async function updateSchema(meta: ISourceMeta, ch: ClickhouseConnection, 
 
   const isRoot = meta.pkMappings.filter((pkMap) => pkMap.pkType === PKType.ROOT).length == 0
   if (!existingTables.includes(unescape(meta.sqlTableName))) {
-    await Promise.all(translateCH(ch.getDatabase(), meta, undefined, meta).map(ch.runQuery.bind(ch)))
+    await Promise.all(translateCH(ch.getDatabase(), meta, false, undefined, meta).map(ch.runQuery.bind(ch)))
   }
   const existingColumns = await ch.listColumns(unescape(meta.sqlTableName))
   const expectedColumns = meta.pkMappings
