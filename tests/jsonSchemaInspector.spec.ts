@@ -145,6 +145,9 @@ const nestedValueArraySchema: IExtendedJSONSchema7 = {
     "object",
   ],
   "properties": {
+    "id": {
+      type: "string",
+    },
     "events": {
       "type": [
         "null",
@@ -298,17 +301,36 @@ describe("JSON Schema Inspector", () => {
   })
 
   it("should handle nested value array schema", () => {
-    const res = buildMeta(new JsonSchemaInspectorContext("audits", nestedValueArraySchema, []))
+    const res = buildMeta(new JsonSchemaInspectorContext("audits", nestedValueArraySchema, ["id"]))
     const expectedResult: ISourceMeta = {
       "prop": "audits",
       "sqlTableName": "`audits`",
-      "pkMappings": [],
+      "pkMappings": [{
+        "prop": "id",
+        "sqlIdentifier": "`id`",
+        "chType": "String",
+        "nullable": false,
+        "lowCardinality": false,
+        "nestedArray": false,
+        "pkType": PKType.CURRENT,
+        valueExtractor: uselessValueExtractor,
+      }],
       "simpleColumnMappings": [],
       "children": [
         {
           "prop": "events",
           "sqlTableName": "`audits__events`",
           "pkMappings": [
+            {
+              "prop": "id",
+              "sqlIdentifier": "`_root_id`",
+              "chType": "String",
+              "nullable": false,
+              "lowCardinality": false,
+              "nestedArray": false,
+              "pkType": PKType.ROOT,
+              valueExtractor: uselessValueExtractor,
+            },
             {
               "prop": "_level_0_index",
               "sqlIdentifier": "`_level_0_index`",
@@ -326,6 +348,16 @@ describe("JSON Schema Inspector", () => {
               "prop": "previous_value",
               "sqlTableName": "`audits__events__previous_value`",
               "pkMappings": [
+                {
+                  "prop": "id",
+                  "sqlIdentifier": "`_root_id`",
+                  "chType": "String",
+                  "nullable": false,
+                  "lowCardinality": false,
+                  "nestedArray": false,
+                  "pkType": PKType.ROOT,
+                  valueExtractor: uselessValueExtractor,
+                },
                 {
                   "prop": "_level_0_index",
                   "sqlIdentifier": "`_level_0_index`",

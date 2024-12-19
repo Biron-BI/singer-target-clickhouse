@@ -264,6 +264,12 @@ describe("processStream", () => {
       }, Error)
     }).timeout(30000)
 
+    it('should throw if schema has no primary key but has array children', async () => {
+      await assert.rejects(async () => {
+      await processStream(fs.createReadStream("./tests/data/stream_with_nested_array_without_root_pk.jsonl"), connInfo)
+      }, Error)
+    }).timeout(30000)
+
     it('should ignore second schema definition', async () => {
       await processStream(fs.createReadStream("./tests/data/stream_multiple_schema.jsonl"), connInfo)
     }).timeout(30000)
@@ -592,7 +598,6 @@ describe("processStream", () => {
                                                                      from users`)
       assert.equal(execResult.output, '4\n')
     }).timeout(30000)
-
 
   }).timeout(30000)
 

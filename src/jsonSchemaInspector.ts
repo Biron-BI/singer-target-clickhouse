@@ -1,4 +1,4 @@
-import {ExtendedJSONSchema7, log_warning, SchemaKeyProperties} from "singer-node"
+import {ExtendedJSONSchema7, log_error, log_warning, SchemaKeyProperties} from "singer-node"
 import {JSONSchema7, JSONSchema7Definition, JSONSchema7TypeName} from "json-schema"
 import {asArray} from "./utils"
 import SchemaTranslator, {ValueTranslator} from "./SchemaTranslator"
@@ -233,6 +233,9 @@ function buildMetaProps(ctx: JsonSchemaInspectorContext): MetaProps {
             children: acc.children.concat(nestedChildren),
           }
         } else if (propDefTypes.includes("array") && propDef.format !== "nested") {
+          if (ctx.getRootContext().keyProperties.length === 0 && ctx.getRootContext().allKeyProperties.props.length === 0) {
+            throwError(ctx, `${key} refused: array child with no root key properties`)
+          }
           return {
             ...acc,
             children: [...acc.children, createSubTable(propDef, key, ctx)],
@@ -387,6 +390,7 @@ function throwError(ctx: JsonSchemaInspectorContext, msg: string, childAlias?: s
   if (ctx.parentCtx) {
     throwError(ctx.parentCtx, msg, alias)
   } else {
+    log_error(`${alias}: ${msg}`)
     throw new Error(`${alias}: ${msg}`)
   }
 }
