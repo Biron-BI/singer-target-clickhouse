@@ -34,7 +34,7 @@ using [singer-node](https://www.npmjs.com/package/singer-node).
 2. Run `target-clickhouse` against a [Singer](https://singer.io) tap.
 
 *In the following exemples:*
- 
+
 * *We echo state at the end of a 'state.jsonl' file*
 
 * *The file current_state.json contains last line of state.jsonl*
@@ -71,7 +71,8 @@ The fields available to be specified in the config file.
 
 * `logging_level` Default to `"INFO"`
 * `subtable_separator` Default to `"__"`
-* `translate_values`: Whether fields should be parsed again to allow conversion of specific values, e.g. `True` accepted as `true`. Default `false`
+* `translate_values`: Whether fields should be parsed again to allow conversion of specific values, e.g. `True` accepted as `true`. Default
+  `false`
 * `batch_size`: Amount of records to read before sending to clickhouse. Default `100`
 * `finalize_concurrency`: Amount of concurrent stream ingestion finalisation. Default `3`
 * `extra_active_tables`: List of tables that are considered active even if not present in ACTIVE_STREAMS message. Default `[]`

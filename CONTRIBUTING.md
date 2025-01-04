@@ -13,6 +13,7 @@ This library is built without as little mutable data as possible, using [immutab
 Code is fully tested using mocha and testcontainers-js, so you don't have to boot your own clickhouse instance to run tests.
 
 Make sure you add tests to your PR and before committing run
+
 ```sh
 yarn test
 ```

@@ -1,0 +1,539 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="AutoImportSettings">
+    <option name="autoReloadType" value="SELECTIVE" />
+  </component>
+  <component name="ChangeListManager">
+    <list default="true" id="d22bfa54-76f4-49b1-a427-a423bfc34df4" name="Changes" comment="version bump for singer-node">
+      <change afterPath="$PROJECT_DIR$/.idea/gradle.xml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/CONTRIBUTING.md" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/LICENSE" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/gradle/libs.versions.toml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/gradle/wrapper/gradle-wrapper.jar" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/gradle/wrapper/gradle-wrapper.properties" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/gradlew" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/gradlew.bat" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/MainTest.kt" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/utilsTest/kotest/ProjectConfig.kt" afterDir="false" />
+    </list>
+    <option name="SHOW_DIALOG" value="false" />
+    <option name="HIGHLIGHT_CONFLICTS" value="true" />
+    <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
+    <option name="LAST_RESOLUTION" value="IGNORE" />
+  </component>
+  <component name="CodeStyleSettingsInfer">
+    <option name="done" value="true" />
+  </component>
+  <component name="ComposerSettings">
+    <execution />
+  </component>
+  <component name="ExternalProjectsData">
+    <projectState path="$PROJECT_DIR$">
+      <ProjectState />
+    </projectState>
+  </component>
+  <component name="ExternalProjectsManager">
+    <system id="GRADLE">
+      <state>
+        <projects_view>
+          <tree_state>
+            <expand>
+              <path>
+                <item name="" type="6a2764b6:ExternalProjectsStructure$RootNode" />
+                <item name="singer-target-clickhouse" type="f1a62948:ProjectNode" />
+              </path>
+            </expand>
+            <select />
+          </tree_state>
+        </projects_view>
+      </state>
+    </system>
+  </component>
+  <component name="FileTemplateManagerImpl">
+    <option name="RECENT_TEMPLATES">
+      <list>
+        <option value="JavaScript File" />
+        <option value="TypeScript File" />
+        <option value="Kotlin Class" />
+      </list>
+    </option>
+  </component>
+  <component name="Git.Settings">
+    <option name="RECENT_BRANCH_BY_REPOSITORY">
+      <map>
+        <entry key="$PROJECT_DIR$" value="master" />
+      </map>
+    </option>
+    <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
+    <option name="RESET_MODE" value="MIXED" />
+  </component>
+  <component name="GitHubPullRequestSearchHistory">{
+  &quot;lastFilter&quot;: {
+    &quot;state&quot;: &quot;OPEN&quot;,
+    &quot;assignee&quot;: &quot;PHaroZ&quot;
+  }
+}</component>
+  <component name="GitSEFilterConfiguration">
+    <file-type-list>
+      <filtered-out-file-type name="LOCAL_BRANCH" />
+      <filtered-out-file-type name="REMOTE_BRANCH" />
+      <filtered-out-file-type name="TAG" />
+      <filtered-out-file-type name="COMMIT_BY_MESSAGE" />
+    </file-type-list>
+  </component>
+  <component name="GithubPullRequestsUISettings">{
+  &quot;selectedUrlAndAccountId&quot;: {
+    &quot;url&quot;: &quot;git@github.com:Biron-BI/singer-target-clickhouse.git&quot;,
+    &quot;accountId&quot;: &quot;a5507dd4-7a9e-401a-8d69-83265464724b&quot;
+  }
+}</component>
+  <component name="KotlinMultiplatform">
+    <allAvailableExecutables />
+  </component>
+  <component name="MacroExpansionManager">
+    <option name="directoryName" value="jpwy4f1n" />
+  </component>
+  <component name="MarkdownSettingsMigration">
+    <option name="stateVersion" value="1" />
+  </component>
+  <component name="ProblemsViewState">
+    <option name="selectedTabId" value="CurrentFile" />
+  </component>
+  <component name="ProjectCodeStyleSettingsMigration">
+    <option name="version" value="2" />
+  </component>
+  <component name="ProjectColorInfo">{
+  &quot;associatedIndex&quot;: 0
+}</component>
+  <component name="ProjectId" id="23aa8AsEG7mdGRPMndIAJUB8zBV" />
+  <component name="ProjectLevelVcsManager">
+    <OptionsSetting value="false" id="Update" />
+    <ConfirmationsSetting value="2" id="Add" />
+  </component>
+  <component name="ProjectViewState">
+    <option name="abbreviatePackageNames" value="true" />
+    <option name="showLibraryContents" value="true" />
+    <option name="showModules" value="false" />
+  </component>
+  <component name="PropertiesComponent">{
+  &quot;keyToString&quot;: {
+    &quot;ASKED_SHARE_PROJECT_CONFIGURATION_FILES&quot;: &quot;true&quot;,
+    &quot;Gradle.Build singer-target-clickhouse.executor&quot;: &quot;Run&quot;,
+    &quot;Kotest.All tests in '' (1).executor&quot;: &quot;Run&quot;,
+    &quot;Kotest.All tests in ''.executor&quot;: &quot;Run&quot;,
+    &quot;Kotlin.MainKt (1).executor&quot;: &quot;Run&quot;,
+    &quot;Kotlin.MainKt.executor&quot;: &quot;Run&quot;,
+    &quot;Mocha.ClickhouseConnection.addColumn.executor&quot;: &quot;Run&quot;,
+    &quot;Mocha.ClickhouseConnection.executor&quot;: &quot;Run&quot;,
+    &quot;Mocha.ClickhouseConnection.should list tables.executor&quot;: &quot;Run&quot;,
+    &quot;Mocha.processStream.outputStream.executor&quot;: &quot;Run&quot;,
+    &quot;Mocha.processStream.outputStream.should write state to passed outputStream.executor&quot;: &quot;Debug&quot;,
+    &quot;RunOnceActivity.Enable generate summary features in internal mode&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.OpenProjectViewOnStart&quot;: &quot;true&quot;,
+    &quot;SHARE_PROJECT_CONFIGURATION_FILES&quot;: &quot;true&quot;,
+    &quot;WebServerToolWindowFactoryState&quot;: &quot;false&quot;,
+    &quot;git-widget-placeholder&quot;: &quot;kotlin&quot;,
+    &quot;jdk.selected.JAVA_MODULE&quot;: &quot;graalvm-17&quot;,
+    &quot;js.last.introduce.type&quot;: &quot;CONST&quot;,
+    &quot;kotlin-language-version-configured&quot;: &quot;true&quot;,
+    &quot;last_directory_selection&quot;: &quot;/home/sestienney/idea-project/biron/singer-target-clickhouse/src/test/kotlin/com/biron/singerTargetClickhouse&quot;,
+    &quot;last_opened_file_path&quot;: &quot;/home/sestienney/idea-project/biron/singer-target-clickhouse/gradle&quot;,
+    &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
+    &quot;node.js.detected.package.tslint&quot;: &quot;true&quot;,
+    &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
+    &quot;node.js.selected.package.tslint&quot;: &quot;(autodetect)&quot;,
+    &quot;nodejs.mocha.mocha_node_package_dir&quot;: &quot;/home/sestienney/idea-project/biron/singer-target-clickhouse/node_modules/mocha&quot;,
+    &quot;nodejs_package_manager_path&quot;: &quot;yarn&quot;,
+    &quot;npm.build.executor&quot;: &quot;Run&quot;,
+    &quot;npm.test.executor&quot;: &quot;Run&quot;,
+    &quot;org.rust.cargo.project.model.impl.CargoExternalSystemProjectAware.subscribe.first.balloon&quot;: &quot;&quot;,
+    &quot;project.structure.last.edited&quot;: &quot;Modules&quot;,
+    &quot;project.structure.proportion&quot;: &quot;0.15&quot;,
+    &quot;project.structure.side.proportion&quot;: &quot;0.24217314&quot;,
+    &quot;settings.editor.selected.configurable&quot;: &quot;settings.typescriptcompiler&quot;,
+    &quot;ts.external.directory.path&quot;: &quot;/home/sestienney/idea-project/biron/singer-target-clickhouse/node_modules/typescript/lib&quot;,
+    &quot;vcs.patch.to.clipboard&quot;: &quot;true&quot;
+  }
+}</component>
+  <component name="RecentsManager">
+    <key name="CopyFile.RECENT_KEYS">
+      <recent name="$PROJECT_DIR$/gradle" />
+    </key>
+    <key name="MoveFile.RECENT_KEYS">
+      <recent name="$PROJECT_DIR$/src/main/kotlin/com/biron/singerTargetClickhouse" />
+    </key>
+    <key name="MoveKotlinTopLevelDeclarationsDialog.RECENTS_KEY">
+      <recent name="com.biron.singerTargetClickhouse.utilsTest.kotest" />
+    </key>
+    <key name="CopyKotlinDeclarationDialog.RECENTS_KEY">
+      <recent name="com.biron.singerTargetClickhouse.utilsTest.lifecycle" />
+    </key>
+  </component>
+  <component name="RunManager" selected="Kotlin.MainKt (1)">
+    <configuration name="MainKt (1)" type="JetRunConfigurationType" temporary="true" nameIsGenerated="true">
+      <option name="MAIN_CLASS_NAME" value="com.biron.singerTargetClickhouse.MainKt" />
+      <module name="singer-target-clickhouse.main" />
+      <method v="2">
+        <option name="Make" enabled="true" />
+      </method>
+    </configuration>
+    <configuration name="MainKt" type="JetRunConfigurationType" temporary="true" nameIsGenerated="true">
+      <option name="MAIN_CLASS_NAME" value="com.biron.com.biron.singerTargetClickhouse.MainKt" />
+      <module name="singer-target-clickhouse.main" />
+      <method v="2">
+        <option name="Make" enabled="true" />
+      </method>
+    </configuration>
+    <configuration name="build" type="js.build_tools.npm" temporary="true" nameIsGenerated="true">
+      <package-json value="$PROJECT_DIR$/package.json" />
+      <command value="run" />
+      <scripts>
+        <script value="build" />
+      </scripts>
+      <node-interpreter value="project" />
+      <envs />
+      <method v="2" />
+    </configuration>
+    <configuration name="test" type="js.build_tools.npm" temporary="true" nameIsGenerated="true">
+      <package-json value="$PROJECT_DIR$/package.json" />
+      <command value="run" />
+      <scripts>
+        <script value="test" />
+      </scripts>
+      <node-interpreter value="project" />
+      <envs />
+      <method v="2" />
+    </configuration>
+    <configuration name="ClickhouseConnection" type="mocha-javascript-test-runner" temporary="true" nameIsGenerated="true">
+      <node-interpreter>project</node-interpreter>
+      <node-options />
+      <mocha-package>$PROJECT_DIR$/node_modules/mocha</mocha-package>
+      <working-directory>$PROJECT_DIR$</working-directory>
+      <pass-parent-env>true</pass-parent-env>
+      <ui>bdd</ui>
+      <extra-mocha-options />
+      <test-kind>SUITE</test-kind>
+      <test-file>$PROJECT_DIR$/tests/ClickhouseConnection.spec.ts</test-file>
+      <test-names>
+        <name value="ClickhouseConnection" />
+      </test-names>
+      <method v="2" />
+    </configuration>
+    <list>
+      <item itemvalue="Kotlin.MainKt" />
+      <item itemvalue="Kotlin.MainKt (1)" />
+      <item itemvalue="Mocha.ClickhouseConnection" />
+      <item itemvalue="npm.build" />
+      <item itemvalue="npm.test" />
+    </list>
+    <recent_temporary>
+      <list>
+        <item itemvalue="Kotlin.MainKt (1)" />
+        <item itemvalue="Kotlin.MainKt" />
+        <item itemvalue="npm.test" />
+        <item itemvalue="npm.build" />
+        <item itemvalue="Mocha.ClickhouseConnection" />
+      </list>
+    </recent_temporary>
+  </component>
+  <component name="SharedIndexes">
+    <attachedChunks>
+      <set>
+        <option value="bundled-jdk-9823dce3aa75-28b599e66164-intellij.indexing.shared.core-IU-242.23726.103" />
+        <option value="bundled-js-predefined-d6986cc7102b-5c90d61e3bab-JavaScript-IU-242.23726.103" />
+      </set>
+    </attachedChunks>
+  </component>
+  <component name="SpellCheckerSettings" RuntimeDictionaries="0" Folders="0" CustomDictionaries="0" DefaultDictionary="application-level" UseSingleDictionary="true" transferred="true" />
+  <component name="TaskManager">
+    <task active="true" id="Default" summary="Default task">
+      <changelist id="d22bfa54-76f4-49b1-a427-a423bfc34df4" name="Changes" comment="" />
+      <created>1641974492198</created>
+      <option name="number" value="Default" />
+      <option name="presentableId" value="Default" />
+      <updated>1641974492198</updated>
+      <workItem from="1641974494680" duration="13330000" />
+      <workItem from="1642414324286" duration="4257000" />
+      <workItem from="1690549986175" duration="491000" />
+      <workItem from="1693295990832" duration="3268000" />
+      <workItem from="1693487831569" duration="988000" />
+      <workItem from="1693555525134" duration="1673000" />
+      <workItem from="1693565618725" duration="751000" />
+      <workItem from="1694527158258" duration="1561000" />
+      <workItem from="1694791656937" duration="22000" />
+      <workItem from="1695023709789" duration="1237000" />
+      <workItem from="1695108020788" duration="24622000" />
+      <workItem from="1695154810485" duration="7881000" />
+      <workItem from="1695185517583" duration="14605000" />
+      <workItem from="1695298953032" duration="4359000" />
+      <workItem from="1695366858530" duration="5809000" />
+      <workItem from="1695394895217" duration="687000" />
+      <workItem from="1695637723509" duration="8235000" />
+      <workItem from="1695659608373" duration="397000" />
+      <workItem from="1695722912203" duration="803000" />
+      <workItem from="1695787089775" duration="406000" />
+      <workItem from="1695787516494" duration="9425000" />
+      <workItem from="1695802044586" duration="481000" />
+      <workItem from="1696609161352" duration="19000" />
+      <workItem from="1696867161693" duration="76000" />
+      <workItem from="1696867633106" duration="75000" />
+      <workItem from="1697112649203" duration="2786000" />
+      <workItem from="1697192295735" duration="962000" />
+      <workItem from="1697204021728" duration="3103000" />
+      <workItem from="1697402196123" duration="8381000" />
+      <workItem from="1699376610533" duration="391000" />
+      <workItem from="1699424339052" duration="277000" />
+      <workItem from="1699953355078" duration="5982000" />
+      <workItem from="1699959527473" duration="611000" />
+      <workItem from="1699981344925" duration="1597000" />
+      <workItem from="1700142818801" duration="1351000" />
+      <workItem from="1700207749024" duration="1137000" />
+      <workItem from="1700216742758" duration="26000" />
+      <workItem from="1700227693222" duration="760000" />
+      <workItem from="1700460905680" duration="9344000" />
+      <workItem from="1700475349534" duration="11468000" />
+      <workItem from="1700550572428" duration="1347000" />
+      <workItem from="1701437888122" duration="81000" />
+      <workItem from="1701442684580" duration="33000" />
+      <workItem from="1701785830478" duration="799000" />
+      <workItem from="1703252820738" duration="1126000" />
+      <workItem from="1704791286462" duration="21000" />
+      <workItem from="1708501362683" duration="61000" />
+      <workItem from="1731057194238" duration="7365000" />
+      <workItem from="1731085546393" duration="1104000" />
+      <workItem from="1731395352590" duration="3055000" />
+      <workItem from="1731433300019" duration="669000" />
+      <workItem from="1731581582721" duration="2637000" />
+      <workItem from="1731594376462" duration="1211000" />
+      <workItem from="1731656671285" duration="680000" />
+      <workItem from="1732869916103" duration="64000" />
+      <workItem from="1733329279814" duration="68000" />
+      <workItem from="1735894667039" duration="4873000" />
+      <workItem from="1735981551882" duration="1800000" />
+      <workItem from="1736026144610" duration="35000" />
+    </task>
+    <task id="LOCAL-00001" summary="add some missing types">
+      <option name="closed" value="true" />
+      <created>1693300001913</created>
+      <option name="number" value="00001" />
+      <option name="presentableId" value="LOCAL-00001" />
+      <option name="project" value="LOCAL" />
+      <updated>1693300001913</updated>
+    </task>
+    <task id="LOCAL-00002" summary="first working version">
+      <option name="closed" value="true" />
+      <created>1695134291685</created>
+      <option name="number" value="00002" />
+      <option name="presentableId" value="LOCAL-00002" />
+      <option name="project" value="LOCAL" />
+      <updated>1695134291685</updated>
+    </task>
+    <task id="LOCAL-00003" summary="remove immutable for record processing">
+      <option name="closed" value="true" />
+      <created>1695136699914</created>
+      <option name="number" value="00003" />
+      <option name="presentableId" value="LOCAL-00003" />
+      <option name="project" value="LOCAL" />
+      <updated>1695136699914</updated>
+    </task>
+    <task id="LOCAL-00004" summary="remove immutability">
+      <option name="closed" value="true" />
+      <created>1695139167503</created>
+      <option name="number" value="00004" />
+      <option name="presentableId" value="LOCAL-00004" />
+      <option name="project" value="LOCAL" />
+      <updated>1695139167503</updated>
+    </task>
+    <task id="LOCAL-00005" summary="some others optimization">
+      <option name="closed" value="true" />
+      <created>1695161813699</created>
+      <option name="number" value="00005" />
+      <option name="presentableId" value="LOCAL-00005" />
+      <option name="project" value="LOCAL" />
+      <updated>1695161813699</updated>
+    </task>
+    <task id="LOCAL-00006" summary="simplify stream pipeline">
+      <option name="closed" value="true" />
+      <created>1695162174491</created>
+      <option name="number" value="00006" />
+      <option name="presentableId" value="LOCAL-00006" />
+      <option name="project" value="LOCAL" />
+      <updated>1695162174491</updated>
+    </task>
+    <task id="LOCAL-00007" summary="buffer data before sending tout CH stream">
+      <option name="closed" value="true" />
+      <created>1695212279066</created>
+      <option name="number" value="00007" />
+      <option name="presentableId" value="LOCAL-00007" />
+      <option name="project" value="LOCAL" />
+      <updated>1695212279066</updated>
+    </task>
+    <task id="LOCAL-00008" summary="fixes issue with _ver in table without PK">
+      <option name="closed" value="true" />
+      <created>1695215382666</created>
+      <option name="number" value="00008" />
+      <option name="presentableId" value="LOCAL-00008" />
+      <option name="project" value="LOCAL" />
+      <updated>1695215382666</updated>
+    </task>
+    <task id="LOCAL-00009" summary="fixes issue with batching">
+      <option name="closed" value="true" />
+      <created>1695302968298</created>
+      <option name="number" value="00009" />
+      <option name="presentableId" value="LOCAL-00009" />
+      <option name="project" value="LOCAL" />
+      <updated>1695302968298</updated>
+    </task>
+    <task id="LOCAL-00010" summary="fixes some tests">
+      <option name="closed" value="true" />
+      <created>1695371248359</created>
+      <option name="number" value="00010" />
+      <option name="presentableId" value="LOCAL-00010" />
+      <option name="project" value="LOCAL" />
+      <updated>1695371248359</updated>
+    </task>
+    <task id="LOCAL-00011" summary="add --input parameter">
+      <option name="closed" value="true" />
+      <created>1695371482486</created>
+      <option name="number" value="00011" />
+      <option name="presentableId" value="LOCAL-00011" />
+      <option name="project" value="LOCAL" />
+      <updated>1695371482486</updated>
+    </task>
+    <task id="LOCAL-00012" summary="add --input parameter">
+      <option name="closed" value="true" />
+      <created>1695795582888</created>
+      <option name="number" value="00012" />
+      <option name="presentableId" value="LOCAL-00012" />
+      <option name="project" value="LOCAL" />
+      <updated>1695795582888</updated>
+    </task>
+    <task id="LOCAL-00013" summary="remove useless file">
+      <option name="closed" value="true" />
+      <created>1695795689579</created>
+      <option name="number" value="00013" />
+      <option name="presentableId" value="LOCAL-00013" />
+      <option name="project" value="LOCAL" />
+      <updated>1695795689579</updated>
+    </task>
+    <task id="LOCAL-00014" summary="parallelize processor.finalizeProcessing">
+      <option name="closed" value="true" />
+      <created>1697207916048</created>
+      <option name="number" value="00014" />
+      <option name="presentableId" value="LOCAL-00014" />
+      <option name="project" value="LOCAL" />
+      <updated>1697207916048</updated>
+    </task>
+    <task id="LOCAL-00015" summary="parallelize readLine &amp; processLine">
+      <option name="closed" value="true" />
+      <created>1697402680697</created>
+      <option name="number" value="00015" />
+      <option name="presentableId" value="LOCAL-00015" />
+      <option name="project" value="LOCAL" />
+      <updated>1697402680697</updated>
+    </task>
+    <task id="LOCAL-00016" summary="fixes #14">
+      <option name="closed" value="true" />
+      <created>1699959376613</created>
+      <option name="number" value="00016" />
+      <option name="presentableId" value="LOCAL-00016" />
+      <option name="project" value="LOCAL" />
+      <updated>1699959376613</updated>
+    </task>
+    <task id="LOCAL-00017" summary="deal with microTasks/macroTasks">
+      <option name="closed" value="true" />
+      <created>1700494123406</created>
+      <option name="number" value="00017" />
+      <option name="presentableId" value="LOCAL-00017" />
+      <option name="project" value="LOCAL" />
+      <updated>1700494123406</updated>
+    </task>
+    <task id="LOCAL-00018" summary="fixes #24">
+      <option name="closed" value="true" />
+      <created>1731063652831</created>
+      <option name="number" value="00018" />
+      <option name="presentableId" value="LOCAL-00018" />
+      <option name="project" value="LOCAL" />
+      <updated>1731063652831</updated>
+    </task>
+    <task id="LOCAL-00019" summary="enhance documentation">
+      <option name="closed" value="true" />
+      <created>1731064648414</created>
+      <option name="number" value="00019" />
+      <option name="presentableId" value="LOCAL-00019" />
+      <option name="project" value="LOCAL" />
+      <updated>1731064648414</updated>
+    </task>
+    <task id="LOCAL-00020" summary="close output at end">
+      <option name="closed" value="true" />
+      <created>1731085893656</created>
+      <option name="number" value="00020" />
+      <option name="presentableId" value="LOCAL-00020" />
+      <option name="project" value="LOCAL" />
+      <updated>1731085893656</updated>
+    </task>
+    <task id="LOCAL-00021" summary="version bump for singer-node">
+      <option name="closed" value="true" />
+      <created>1731593992725</created>
+      <option name="number" value="00021" />
+      <option name="presentableId" value="LOCAL-00021" />
+      <option name="project" value="LOCAL" />
+      <updated>1731593992725</updated>
+    </task>
+    <option name="localTasksCounter" value="22" />
+    <servers />
+  </component>
+  <component name="TypeScriptGeneratedFilesManager">
+    <option name="version" value="3" />
+  </component>
+  <component name="Vcs.Log.History.Properties">
+    <option name="COLUMN_ID_ORDER">
+      <list>
+        <option value="Default.Root" />
+        <option value="Default.Author" />
+        <option value="Default.Date" />
+        <option value="Default.Subject" />
+        <option value="GitHub.CommitStatus" />
+      </list>
+    </option>
+  </component>
+  <component name="Vcs.Log.Tabs.Properties">
+    <option name="TAB_STATES">
+      <map>
+        <entry key="MAIN">
+          <value>
+            <State />
+          </value>
+        </entry>
+      </map>
+    </option>
+  </component>
+  <component name="VcsManagerConfiguration">
+    <MESSAGE value="add some missing types" />
+    <MESSAGE value="first working version" />
+    <MESSAGE value="remove immutable for record processing" />
+    <MESSAGE value="remove immutability" />
+    <MESSAGE value="some others optimization" />
+    <MESSAGE value="simplify stream pipeline" />
+    <MESSAGE value="buffer data before sending tout CH stream" />
+    <MESSAGE value="fixes issue with _ver in table without PK" />
+    <MESSAGE value="fixes issue with batching" />
+    <MESSAGE value="fixes some tests" />
+    <MESSAGE value="add --input parameter" />
+    <MESSAGE value="remove useless file" />
+    <MESSAGE value="parallelize processor.finalizeProcessing" />
+    <MESSAGE value="parallelize readLine &amp; processLine" />
+    <MESSAGE value="fixes #14" />
+    <MESSAGE value="deal with microTasks/macroTasks" />
+    <MESSAGE value="fixes #24" />
+    <MESSAGE value="enhance documentation" />
+    <MESSAGE value="close output at end" />
+    <MESSAGE value="version bump for singer-node" />
+    <option name="LAST_COMMIT_MESSAGE" value="version bump for singer-node" />
+  </component>
+  <component name="XSLT-Support.FileAssociations.UIState">
+    <expand />
+    <select />
+  </component>
+</project>
