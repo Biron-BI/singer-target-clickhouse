@@ -182,10 +182,9 @@ export default class StreamProcessor {
     const pks: string = meta.pkMappings.map((elem: PkMap) => elem.sqlIdentifier).join(",")
 
     const query = `SELECT ${pks}
-                   FROM (SELECT ${pks} FROM ${meta.sqlTableName} ORDER BY ${pks})
-                   WHERE (${pks}) = neighbor(
-                           (${pks}), -1, (${meta.pkMappings.map(() => "null").join(",")}))
-                   LIMIT 1`
+                   FROM (SELECT ${pks}, ROW_NUMBER() OVER (PARTITION BY ${pks}) AS row_number FROM ${meta.sqlTableName})
+                   WHERE row_number > 1
+                       LIMIT 1`
     const result = await this.clickhouse.runQuery(query)
     if (result.rows > 0) {
       throw ono("Duplicate key on table %s, data: %j, aborting process", meta.sqlTableName, result.data)
