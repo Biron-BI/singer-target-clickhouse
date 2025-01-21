@@ -1,0 +1,1 @@
+{"type":"SCHEMA","stream":"tickets","schema":{"properties":{"id":{"type":["null","integer"]},"follower_ids":{"items":{"type":["null","integer"]},"type":["null","array"]}},"type":["null","object"]},"key_properties":["id"],"all_key_properties":{"props":["id"],"children":{"follower_ids":{"props":[],"children":{}}}}}

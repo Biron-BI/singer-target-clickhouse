@@ -1,0 +1,2 @@
+{"type": "SCHEMA", "stream": "query_log", "schema": {"type": "object", "properties": {"databases": {"type": "array", "format": "nested", "items": {"type": "string"}},"event_time": {"type": "string", "format": "date-time"} }}, "key_properties": [], "bookmark_properties": ["event_time"]}
+{"type": "RECORD", "stream": "query_log", "record": {"databases": ["kento", "nanami"], "event_time": "1999-01-01 11:11:11" }}

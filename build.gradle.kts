@@ -32,6 +32,9 @@ dependencies {
 	testImplementation("org.springframework.boot:spring-boot-starter-test")
 	testImplementation(libs.testcontainers)
 	testImplementation(libs.testcontainers.clickhouse)
+
+	testImplementation("ru.yandex.clickhouse:clickhouse-jdbc:0.3.1")
+
 }
 
 tasks.test {

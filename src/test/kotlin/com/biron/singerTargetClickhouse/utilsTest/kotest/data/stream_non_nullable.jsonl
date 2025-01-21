@@ -1,0 +1,3 @@
+{"type":"SCHEMA","stream":"users","schema":{"properties":{"id":{"type":["integer"]}},"type":["null","object"]},"key_properties":[], "clean_first": true}
+{"type": "RECORD", "stream": "users", "record": {"id":  null}}
+{"type": "RECORD", "stream": "users", "record": {"id":  2}}

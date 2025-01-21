@@ -1,0 +1,2 @@
+{"type": "SCHEMA", "stream": "tickets", "schema": {"properties": {"id": {"type": ["integer"]}, "follower_ids": {"properties": {"name": {"type": "string"}}, "type": ["object"]}}, "type": ["null", "object"]}, "key_properties": ["id"]}
+{"type": "RECORD", "stream": "tickets", "record": {"id": 11, "follower_ids": {"name": "jack"}}}
