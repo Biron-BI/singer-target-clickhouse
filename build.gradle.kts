@@ -32,7 +32,8 @@ dependencies {
 	testImplementation("org.springframework.boot:spring-boot-starter-test")
 	testImplementation(libs.testcontainers)
 	testImplementation(libs.testcontainers.clickhouse)
-
+	testImplementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.5.1")
+	testImplementation("com.fasterxml.jackson.module:jackson-module-kotlin:2.13.0")
 	testImplementation("ru.yandex.clickhouse:clickhouse-jdbc:0.3.1")
 
 }
