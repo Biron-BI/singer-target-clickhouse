@@ -1,4 +1,3 @@
-import io.kotest.assertions.throwables.shouldThrowAny
 import io.kotest.core.spec.style.DescribeSpec
 import io.kotest.matchers.collections.shouldContain
 import io.kotest.matchers.collections.shouldContainExactly
@@ -10,13 +9,14 @@ import org.springframework.jdbc.core.JdbcTemplate
 import org.testcontainers.clickhouse.ClickHouseContainer
 import org.testcontainers.containers.Network
 import ru.yandex.clickhouse.ClickHouseDataSource
-import java.io.File
-import java.io.IOException
 import java.nio.charset.Charset
 import java.nio.file.Files
 import java.nio.file.Paths
 import java.util.logging.Logger
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import io.kotest.assertions.throwables.shouldThrow
+import java.io.*
+import kotlin.concurrent.thread
 
 data class Config(
     val host: String,
@@ -100,7 +100,7 @@ class ProcessStreamTest : DescribeSpec({
 
             val exitCode = process.waitFor()
             if (exitCode != 0) {
-                val errorMessage = process.inputStream.bufferedReader().use { it.readText() }
+                val errorMessage = process.errorStream.bufferedReader().use { it.readText() }
                 throw Error("Docker command failed with exit code $exitCode: $errorMessage")
             }
 
@@ -122,7 +122,7 @@ class ProcessStreamTest : DescribeSpec({
             "extra_active_tables": ${initialConnInfo.extra_active_tables.joinToString(prefix = "[", postfix = "]") { "\"$it\"" }},
             "tablesToRecreate": ${initialConnInfo.tablesToRecreate.joinToString(prefix = "[", postfix = "]") { "\"$it\"" }},
             "batch_size": ${initialConnInfo.batch_size ?: "null"},
-            "insert_stream_timeout_sec": ${initialConnInfo.insert_stream_timeout_sec ?: "null"}
+            "insert_stream_timeout_sec": ${initialConnInfo.insert_stream_timeout_sec ?: "null"},
             "translate_values": ${initialConnInfo.translate_values}
         }
         """.trimIndent()
@@ -135,6 +135,7 @@ class ProcessStreamTest : DescribeSpec({
 
 
     describe("outputStream") {
+
         it("should write state to passed outputStream") {
             val configFile = configFile(initialConnInfo)
             runDockerCommandWithPowershell(configFile.absolutePath, "./src/test/kotlin/com/biron/singerTargetClickHouse/utilsTest/kotest/data/stream_with_state.jsonl", network.id)
@@ -162,8 +163,6 @@ class ProcessStreamTest : DescribeSpec({
             runDockerCommandWithPowershell(configFile.absolutePath, "./src/test/kotlin/com/biron/singerTargetClickHouse/utilsTest/kotest/data/stream_1.jsonl", network.id)
 
             val tables = jdbcTemplate.queryForList("SHOW TABLES FROM ${initialConnInfo.database}", String::class.java)
-            println("Tables existantes dans la base de données '${initialConnInfo.database}' : $tables")
-
             tables.size shouldBe 21
             tables shouldContain "ticket_audits"
             tables shouldContain "ticket_audits__events__attachments"
@@ -227,6 +226,7 @@ class ProcessStreamTest : DescribeSpec({
             }
             dataResult[0] shouldBe "['kento', 'nanami']"
         }
+
         it("should create schemas which specifies cardinality") {
             val configFile = configFile(initialConnInfo)
             runDockerCommandWithPowershell(configFile.absolutePath, "./src/test/kotlin/com/biron/singerTargetClickHouse/utilsTest/kotest/data/stream_cardinality.jsonl", network.id)
@@ -248,11 +248,10 @@ class ProcessStreamTest : DescribeSpec({
             val createTableOutput = jdbcTemplate.queryForList(createTableQuery).joinToString("\n") { row ->
                 row.values.joinToString("\t")
             }
-
-            println("Structure de la table 'users' :\n$createTableOutput")
             createTableOutput shouldContain "`name` LowCardinality(Nullable(String))"
 
         }
+
         it("should create schemas which specifiesPK") {
             val configFile = configFile(initialConnInfo)
             runDockerCommandWithPowershell(configFile.absolutePath, "./src/test/kotlin/com/biron/singerTargetClickHouse/utilsTest/kotest/data/stream_schema_with_all_pk.jsonl", network.id)
@@ -268,27 +267,24 @@ class ProcessStreamTest : DescribeSpec({
             columns[1] shouldInclude "_parent_id"
             columns[2] shouldInclude "_level_0_index"
         }
+
         it("should do nothing if schemas already exists") {
             val configFile = configFile(initialConnInfo)
             runDockerCommandWithPowershell(configFile.absolutePath, "./src/test/kotlin/com/biron/singerTargetClickHouse/utilsTest/kotest/data/stream_1.jsonl", network.id)
             runDockerCommandWithPowershell(configFile.absolutePath, "./src/test/kotlin/com/biron/singerTargetClickHouse/utilsTest/kotest/data/stream_1.jsonl", network.id)
 
-            val tablesAfter =
-                jdbcTemplate.queryForList("SHOW TABLES FROM ${initialConnInfo.database}", String::class.java)
-            println("Tables existantes dans la base de données '${initialConnInfo.database}' : $tablesAfter")
-
+            val tablesAfter = jdbcTemplate.queryForList("SHOW TABLES FROM ${initialConnInfo.database}", String::class.java)
             tablesAfter.size shouldBe 21
         }
     }
     describe("columns update") {
+
         it("should create / update / delete columns if schema already exists and new has different columns") {
             val configFile = configFile(initialConnInfo)
             runDockerCommandWithPowershell(configFile.absolutePath, "./src/test/kotlin/com/biron/singerTargetClickHouse/utilsTest/kotest/data/stream_1.jsonl", network.id)
             runDockerCommandWithPowershell(configFile.absolutePath, "./src/test/kotlin/com/biron/singerTargetClickHouse/utilsTest/kotest/data/stream_1_modified.jsonl", network.id)
 
             val columns = jdbcTemplate.queryForList("show tables from ${initialConnInfo.database}")
-
-            println("Columns : $columns")
             columns.size shouldBe 21
 
             val execResult = jdbcTemplate.queryForList(
@@ -301,13 +297,12 @@ class ProcessStreamTest : DescribeSpec({
                 row.values.joinToString("\t")
             }.map { it.replace("\t", " ") }
 
-            println("Columns : $execResult")
-
             execResult shouldContain "organization_id Nullable(String)"
             execResult shouldContain "new_requester_id Nullable(Int64)"
             execResult shouldNotContain "requester_id Nullable(Int64)"
 
         }
+
         it("should start by truncating before applying schema update") {
             val configFile = configFile(initialConnInfo)
             runDockerCommandWithPowershell(configFile.absolutePath, "./src/test/kotlin/com/biron/singerTargetClickHouse/utilsTest/kotest/data/stream_nullable.jsonl", network.id)
@@ -323,11 +318,11 @@ class ProcessStreamTest : DescribeSpec({
                 row.values.joinToString("\t")
             }.map { it.replace("\t", " ") }
 
-            println("Columns : $execResult")
             execResult shouldContain "id Int64"
             execResult.size shouldBe 1
         }
-        it("should handle state at the end of the stream + a closing state, launched several times") {
+
+        it("should handle state at the end of the stream + a closing state, launched several times"){
             val configFile = configFile(initialConnInfo)
             for (i in 0 until 10) {
                 runDockerCommandWithPowershell(configFile.absolutePath, "./src/test/kotlin/com/biron/singerTargetClickHouse/utilsTest/kotest/data/stream_with_state.jsonl", network.id)
@@ -338,17 +333,16 @@ class ProcessStreamTest : DescribeSpec({
                 row.values.joinToString("\t")
             }.map { it.replace("\t", ",") }
 
-            println("Columns : $execResult")
             execResult.size shouldBe 3
             execResult[1] shouldBe "2,59"
         }
+
         it("should rename tables as dropped when they are no longer active, and exclude dropped and archived") {
             val configFile = configFile(initialConnInfo)
             runDockerCommandWithPowershell(configFile.absolutePath, "./src/test/kotlin/com/biron/singerTargetClickHouse/utilsTest/kotest/data/stream_1.jsonl", network.id)
             runDockerCommandWithPowershell(configFile.absolutePath, "./src/test/kotlin/com/biron/singerTargetClickHouse/utilsTest/kotest/data/stream_1_inactive.jsonl", network.id)
 
             val tables = jdbcTemplate.queryForList("show tables from ${initialConnInfo.database}", String::class.java)
-            println("Tables : $tables")
             tables.size shouldBe 21
             tables.forEach { table ->
                 if (!table.contains("ticket_audits")) {
@@ -404,6 +398,7 @@ class ProcessStreamTest : DescribeSpec({
                 println("Table $table should not be renamed twice")
             }
         }
+
         it("should not rename tables as dropped when they are no longer active if they are registered as extra_active") {
             val configFile = configFile(initialConnInfo.copy(extra_active_tables = listOf("tickets")))
             println(configFile.readText(Charsets.UTF_8))
@@ -414,7 +409,6 @@ class ProcessStreamTest : DescribeSpec({
                 jdbcTemplate.queryForList("show tables from ${initialConnInfo.database}", String::class.java)
 
             execResult.size shouldBe 21
-            println("Tables : $execResult")
             execResult.forEach { table ->
                 if (!table.contains("ticket_audits") && !table.contains("tickets")) {
                     table.startsWith("_dropped_") shouldBe true
@@ -425,39 +419,28 @@ class ProcessStreamTest : DescribeSpec({
                 }
             }
         }
-        //ne fonctionne pas
-        xit("should throw if schema already exists and new has different columns with incompatible type") {
+
+        it("should throw if schema already exists and new has different columns with incompatible type") {
             val configFile = configFile(initialConnInfo)
             runDockerCommandWithPowershell(configFile.absolutePath, "./src/test/kotlin/com/biron/singerTargetClickHouse/utilsTest/kotest/data/stream_vanilla.jsonl", network.id)
-
-//            val error = shouldThrow<Error> {
-//                runDockerCommandWithPowershell(
-//                    configFile.absolutePath,
-//                    "./src/test/kotlin/com/biron/singerTargetClickHouse/utilsTest/kotest/data/stream_vanilla_with_incompatible_update.jsonl",
-//                    network.id
-//                )
-//            }
-//             println("error : $error")
-
-            val exception = shouldThrowAny {
+            shouldThrow<Error> {
                 runDockerCommandWithPowershell(
-                    configFile.absolutePath, "./src/test/kotlin/com/biron/singerTargetClickHouse/utilsTest/kotest/data/stream_vanilla_with_incompatible_update.jsonl", network.id)
+                    configFile.absolutePath,
+                    "./src/test/kotlin/com/biron/singerTargetClickHouse/utilsTest/kotest/data/stream_vanilla_with_incompatible_update.jsonl",
+                    network.id
+                )
             }
-
-            println("Exception type: ${exception::class}")
-            println("Exception message: ${exception.message}")
-//            try{
-//                runDockerCommandWithPowershell(
-//                    configFile.absolutePath,
-//                    "./src/test/kotlin/com/biron/singerTargetClickHouse/utilsTest/kotest/data/stream_vanilla_with_incompatible_update.jsonl",
-//                    network.id
-//                )
-//            }catch (e: Exception) {
-//                println("Exception : $e")
-//            }
-
         }
-        xit("should throw if schema has no primary key but has array children"){
+
+        it("should throw if schema has no primary key but has array children"){
+            val configFile = configFile(initialConnInfo)
+            shouldThrow<Error> {
+                runDockerCommandWithPowershell(
+                    configFile.absolutePath,
+                    "./src/test/kotlin/com/biron/singerTargetClickHouse/utilsTest/kotest/data/stream_with_nested_array_without_root_pk.jsonl",
+                    network.id
+                )
+            }
         }
 
         //a verifier
@@ -465,7 +448,6 @@ class ProcessStreamTest : DescribeSpec({
             val configFile = configFile(initialConnInfo)
             runDockerCommandWithPowershell(configFile.absolutePath, "./src/test/kotlin/com/biron/singerTargetClickHouse/utilsTest/kotest/data/stream_multiple_schema.jsonl", network.id)
         }
-
         //possible de mieux verifier
         it("should recreate if schemas already exists, new is different but specified to be recreated"){
             val configFile = configFile(initialConnInfo)
@@ -478,6 +460,7 @@ class ProcessStreamTest : DescribeSpec({
             val tables = jdbcTemplate.queryForList("show tables from ${initialConnInfo.database}")
             tables.size shouldBe 21
         }
+
         it("should handle additional nested array"){
             val configFile = configFile(initialConnInfo)
             runDockerCommandWithPowershell(configFile.absolutePath, "./src/test/kotlin/com/biron/singerTargetClickHouse/utilsTest/kotest/data/stream_nested_array.jsonl", network.id)
@@ -491,6 +474,7 @@ class ProcessStreamTest : DescribeSpec({
         }
     }
     describe("Records") {
+
         it("should insert simple records"){
             val configFile = configFile(initialConnInfo)
             runDockerCommandWithPowershell(configFile.absolutePath, "./src/test/kotlin/com/biron/singerTargetClickHouse/utilsTest/kotest/data/stream_short.jsonl", network.id)
@@ -498,7 +482,7 @@ class ProcessStreamTest : DescribeSpec({
             val execResult = jdbcTemplate.queryForList("select brand_id from ${initialConnInfo.database}.tickets where assignee_id = 11")
             execResult shouldContainExactly listOf(mapOf("brand_id" to 22L))
         }
-        // a finir la premiere requette recupere deja l'id
+        //is inserted immediately instead of waiting for the "insert_stream_timeout_sec" delay
         xit("should insert record after some time even if stream isnt ended nor state message were received"){
             val schema = mapOf(
                 "type" to "SCHEMA",
@@ -521,20 +505,23 @@ class ProcessStreamTest : DescribeSpec({
             val tempFile = File.createTempFile("schema", ".json").apply {
                 writeText("$schemaJson\n$recordJson")
             }
+            println("tempFile : ${tempFile.readText(Charsets.UTF_8)}")
 
             val config = configFile(initialConnInfo.copy(batch_size = 10, insert_stream_timeout_sec = 8))
+            println("config : ${config.readText(Charsets.UTF_8)}")
             runDockerCommandWithPowershell(config.absolutePath, tempFile.absolutePath, network.id)
             Thread.sleep(1000)
 
             val execResult = jdbcTemplate.queryForList("select id from ${initialConnInfo.database}.tickets")
             println ("execResult : $execResult")
-            //execResult shouldContainExactly listOf(mapOf("id" to ""))
+            execResult shouldContainExactly listOf(mapOf("id" to null))
             Thread.sleep(4000)
 
             val execResults = jdbcTemplate.queryForList("select id from ${initialConnInfo.database}.tickets")
             println ("execResult : $execResults")
             execResults shouldContainExactly listOf(mapOf("id" to 155L))
         }
+
         it("should allow reordering of schema"){
             val configFile = configFile(initialConnInfo)
             runDockerCommandWithPowershell(configFile.absolutePath, "./src/test/kotlin/com/biron/singerTargetClickHouse/utilsTest/kotest/data/stream_short.jsonl", network.id)
@@ -542,38 +529,36 @@ class ProcessStreamTest : DescribeSpec({
             val execResult = jdbcTemplate.queryForList("select brand_id from ${initialConnInfo.database}.tickets where assignee_id = 11")
             execResult shouldContainExactly listOf(mapOf("brand_id" to 22L))
         }
+
         it("should flatten nested object"){
             val configFile = configFile(initialConnInfo)
             runDockerCommandWithPowershell(configFile.absolutePath, "./src/test/kotlin/com/biron/singerTargetClickHouse/utilsTest/kotest/data/stream_nested_object.jsonl", network.id)
             val execResult = jdbcTemplate.queryForList("select follower_ids__name from ${initialConnInfo.database}.tickets")
             execResult shouldContainExactly listOf(mapOf("follower_ids__name" to "jack"))
         }
+
         it("should ingest stream from real data: covidtracker"){
             val configFile = configFile(initialConnInfo)
             runDockerCommandWithPowershell(configFile.absolutePath, "./src/test/kotlin/com/biron/singerTargetClickHouse/utilsTest/kotest/data/covidtracker.jsonl", network.id)
-            val execResult = jdbcTemplate.queryForList("select sum(total_rows), sum(tables.total_bytes) from system.tables where database = '${initialConnInfo.database}'").map { row ->
-                row.values.joinToString("\t")
+            val execResult = jdbcTemplate.queryForObject("select sum(total_rows), sum(tables.total_bytes) from system.tables where database = '${initialConnInfo.database}'") { rs, _ ->
+                rs.getInt(1).toString() + "\t" + rs.getInt(2).toString()
             }
-            execResult.get(0) shouldBe  "5789\t1334466"
+            execResult shouldBe "5789\t1334466"
 
             runDockerCommandWithPowershell(configFile.absolutePath, "./src/test/kotlin/com/biron/singerTargetClickHouse/utilsTest/kotest/data/covidtracker.jsonl", network.id)
-            val execResults = jdbcTemplate.queryForList("select sum(total_rows) from system.tables where database = '${initialConnInfo.database}'").map { row ->
-                row.values.joinToString("\t")
-            }
-            execResults.get(0) shouldBe  "5789"
+            val execResults = jdbcTemplate.queryForObject("select sum(total_rows) from system.tables where database = '${initialConnInfo.database}'", Int::class.java)
+            execResults shouldBe  5789
+
         }
+
         it("should ingest stream from real data: clickhouse query log"){
             val configFile = configFile(initialConnInfo)
             runDockerCommandWithPowershell(configFile.absolutePath, "./src/test/kotlin/com/biron/singerTargetClickHouse/utilsTest/kotest/data/clickhouse_query_log.jsonl", network.id)
-            val execResult = jdbcTemplate.queryForList("select sum(total_rows) from system.tables where database = '${initialConnInfo.database}'").map { row ->
-                row.values.joinToString("\t")
-            }
-            execResult.get(0) shouldBe  "1"
+            val execResult = jdbcTemplate.queryForObject("select sum(total_rows) from system.tables where database = '${initialConnInfo.database}'", Int::class.java)
+            execResult shouldBe 1
             runDockerCommandWithPowershell(configFile.absolutePath, "./src/test/kotlin/com/biron/singerTargetClickHouse/utilsTest/kotest/data/clickhouse_query_log.jsonl", network.id)
-            val execResult2 = jdbcTemplate.queryForList("select sum(total_rows) from system.tables where database = '${initialConnInfo.database}'").map { row ->
-                row.values.joinToString("\t")
-            }
-            execResult2.get(0) shouldBe  "1"
+            val execResult2 = jdbcTemplate.queryForObject("select sum(total_rows) from system.tables where database = '${initialConnInfo.database}'", Int::class.java)
+            execResult2 shouldBe 1
 
             val execResult3 = jdbcTemplate.queryForList("select databases, `Settings.Names` from ${initialConnInfo.database}.query_log").map { row ->
                 val databases = when (val db = row["databases"]) {
@@ -589,6 +574,179 @@ class ProcessStreamTest : DescribeSpec({
             execResult3.first() shouldBe "['system']\t['max_block_size', 'max_query_size', 'join_use_nulls', 'http_receive_timeout', 'max_expanded_ast_elements', 'max_memory_usage', 'max_parser_depth', 'lock_acquire_timeout']"
         }
 
+        it("should produce same result from real data whether translate value is effective or not"){
+            val configFile = configFile(initialConnInfo.copy(translate_values = false))
 
+            println("configFile : ${configFile.readText(Charsets.UTF_8)}")
+            runDockerCommandWithPowershell(configFile.absolutePath, "./src/test/kotlin/com/biron/singerTargetClickHouse/utilsTest/kotest/data/covidtracker.jsonl", network.id)
+            val testQuery = "select sum(total_rows), sum(total_bytes) from system.tables where database = '${initialConnInfo.database}'"
+            val execResult = jdbcTemplate.queryForList(testQuery)
+
+            val otherDb= "otherDB"
+            jdbcTemplate.execute("CREATE DATABASE IF NOT EXISTS $otherDb;")
+            jdbcTemplate.execute("CREATE USER IF NOT EXISTS ${initialConnInfo.username} IDENTIFIED WITH plaintext_password BY '${initialConnInfo.password}';")
+            jdbcTemplate.execute("GRANT ALL ON $otherDb.* TO ${initialConnInfo.username};")
+
+            val configFile2 = configFile(initialConnInfo.copy(translate_values = true, database = otherDb))
+            runDockerCommandWithPowershell(configFile2.absolutePath, "./src/test/kotlin/com/biron/singerTargetClickHouse/utilsTest/kotest/data/covidtracker.jsonl", network.id)
+            val execResult2 = jdbcTemplate.queryForList(testQuery.replace(initialConnInfo.database, otherDb))
+
+            execResult shouldBe execResult2
+        }
+
+        it("should handle cleanFirst") {
+            val configFile = configFile(initialConnInfo)
+            runDockerCommandWithPowershell(configFile.absolutePath, "./src/test/kotlin/com/biron/singerTargetClickHouse/utilsTest/kotest/data/stream_vanilla.jsonl", network.id)
+            val execResult = jdbcTemplate.queryForObject("select count(*) from ${initialConnInfo.database}.users", Int::class.java)
+            execResult shouldBe 4
+
+            runDockerCommandWithPowershell(configFile.absolutePath, "./src/test/kotlin/com/biron/singerTargetClickHouse/utilsTest/kotest/data/stream_with_array.jsonl", network.id)
+            val execResult2 = jdbcTemplate.queryForObject("select count(*) from ${initialConnInfo.database}.users__roles", Int::class.java)
+            execResult2 shouldBe 5
+        }
+
+        it("should throw when new pks are added"){
+            val configFile = configFile(initialConnInfo)
+            runDockerCommandWithPowershell(configFile.absolutePath, "./src/test/kotlin/com/biron/singerTargetClickHouse/utilsTest/kotest/data/stream_vanilla_with_pks.jsonl", network.id)
+            val execResult = jdbcTemplate.queryForObject("select count(*) from ${initialConnInfo.database}.users", Int::class.java)
+            execResult shouldBe 4
+
+            shouldThrow<Error> {
+                runDockerCommandWithPowershell(configFile.absolutePath, "./src/test/kotlin/com/biron/singerTargetClickHouse/utilsTest/kotest/data/stream_vanilla_with_new_pks.jsonl", network.id)
+            }
+        }
+
+        it("should throw when pks are deleted"){
+            val configFile = configFile(initialConnInfo)
+            runDockerCommandWithPowershell(configFile.absolutePath, "./src/test/kotlin/com/biron/singerTargetClickHouse/utilsTest/kotest/data/stream_vanilla_with_pks.jsonl", network.id)
+            val execResult = jdbcTemplate.queryForObject("select count(*) from ${initialConnInfo.database}.users", Int::class.java)
+            execResult shouldBe 4
+
+            shouldThrow<Error> {
+                runDockerCommandWithPowershell(configFile.absolutePath, "./src/test/kotlin/com/biron/singerTargetClickHouse/utilsTest/kotest/data/stream_vanilla_with_removed_pks.jsonl", network.id)
+            }
+        }
+
+        it("should allow pk to be added if stream is in cleanFirst"){
+            val configFile = configFile(initialConnInfo)
+            runDockerCommandWithPowershell(configFile.absolutePath, "./src/test/kotlin/com/biron/singerTargetClickHouse/utilsTest/kotest/data/stream_vanilla_with_pks.jsonl", network.id)
+            val execResult = jdbcTemplate.queryForObject("select count(*) from ${initialConnInfo.database}.users", Int::class.java)
+            execResult shouldBe 4
+
+            runDockerCommandWithPowershell(configFile.absolutePath, "./src/test/kotlin/com/biron/singerTargetClickHouse/utilsTest/kotest/data/stream_vanilla_with_new_pks_and_clean_first.jsonl", network.id)
+            val execResult2 = jdbcTemplate.queryForObject("select count(*) from ${initialConnInfo.database}.users", Int::class.java)
+            execResult2 shouldBe 4
+        }
+
+        it("should handle cleaning column in standard columns"){
+            val configFile = configFile(initialConnInfo)
+
+            runDockerCommandWithPowershell(configFile.absolutePath, "./src/test/kotlin/com/biron/singerTargetClickHouse/utilsTest/kotest/data/stream_vanilla.jsonl", network.id)
+            val execResult = jdbcTemplate.queryForObject("select count(*) from ${initialConnInfo.database}.users", Int::class.java)
+            execResult shouldBe 4
+
+            runDockerCommandWithPowershell(configFile.absolutePath, "./src/test/kotlin/com/biron/singerTargetClickHouse/utilsTest/kotest/data/stream_cleaningColumn.jsonl", network.id)
+            val execResult2 = jdbcTemplate.queryForObject("select count(*) from ${initialConnInfo.database}.users", Int::class.java)
+            execResult2 shouldBe 5
+
+            val execResult3 = jdbcTemplate.queryForObject("select id from ${initialConnInfo.database}.users where name = 'bill'", Int::class.java)
+            execResult3 shouldBe 7
+        }
+
+        it("should handle cleaning column in pk"){
+            val configFile = configFile(initialConnInfo)
+            runDockerCommandWithPowershell(configFile.absolutePath, "./src/test/kotlin/com/biron/singerTargetClickHouse/utilsTest/kotest/data/stream_cleaningColumn_pk.jsonl", network.id)
+            val  execResult = jdbcTemplate.queryForList("select id, name from ${initialConnInfo.database}.users").map { row ->
+                row.values.joinToString("\t")
+            }
+            execResult shouldContainExactly listOf("5\tbob", "7\tbill", "8\tbill", "9\thelen")
+
+            runDockerCommandWithPowershell(configFile.absolutePath, "./src/test/kotlin/com/biron/singerTargetClickHouse/utilsTest/kotest/data/stream_cleaningColumn_pk_2.jsonl", network.id)
+            val  execResult2 = jdbcTemplate.queryForList("select id, name from ${initialConnInfo.database}.users").map { row ->
+                row.values.joinToString("\t")
+            }
+            execResult2 shouldContainExactly listOf("5\tbob", "9\thelen", "10\tbill")
+
+        }
+
+        it("should handle record when schema specifiesPK") {
+            val configFile = configFile(initialConnInfo)
+            runDockerCommandWithPowershell(configFile.absolutePath, "./src/test/kotlin/com/biron/singerTargetClickHouse/utilsTest/kotest/data/stream_short_with_all_pk.jsonl", network.id)
+            val execResult = jdbcTemplate.queryForList("describe table ${initialConnInfo.database}.tickets__follower_ids").map { row ->
+                        row.values.joinToString("\t")
+                    }
+            execResult.get(0) shouldInclude "_root_id"
+            execResult.get(1) shouldInclude "_parent_id"
+            execResult.get(2) shouldInclude "_level_0_index"
+
+            var execResultForOject = jdbcTemplate.queryForObject("select count(*) from ${initialConnInfo.database}.tickets", Int::class.java)
+            execResultForOject shouldBe 1
+
+            execResultForOject = jdbcTemplate.queryForObject("select count(*) from ${initialConnInfo.database}.tickets__follower_ids", Int::class.java)
+            execResultForOject shouldBe 2
+
+        }
+
+        it("should handle record when schema specifies complex PK") {
+            val configFile = configFile(initialConnInfo)
+            runDockerCommandWithPowershell(configFile.absolutePath, "./src/test/kotlin/com/biron/singerTargetClickHouse/utilsTest/kotest/data/stream_short_with_all_pk2.jsonl", network.id)
+            val execResult = jdbcTemplate.queryForList("describe table ${initialConnInfo.database}.tickets__follower_ids").map { row ->
+                row.values.joinToString("\t")
+            }
+            execResult.get(0) shouldInclude "_root_id"
+            execResult.get(1) shouldInclude "_parent_id"
+            execResult.get(2) shouldInclude "name"
+            execResult.get(3) shouldInclude "_level_0_index"
+
+            var execResultForOject = jdbcTemplate.queryForObject("select count(*) from ${initialConnInfo.database}.tickets", Int::class.java)
+            execResultForOject shouldBe 1
+
+            execResultForOject = jdbcTemplate.queryForObject("select count(*) from ${initialConnInfo.database}.tickets__follower_ids", Int::class.java)
+            execResultForOject shouldBe 2
+        }
+
+        it("should handle stream which deletes existing data with one simple pk"){
+            val configFile = configFile(initialConnInfo)
+            runDockerCommandWithPowershell(configFile.absolutePath, "./src/test/kotlin/com/biron/singerTargetClickHouse/utilsTest/kotest/data/stream_tiny.jsonl", network.id)
+            var execResult = jdbcTemplate.queryForList("select id from ${initialConnInfo.database}.tickets").map { row ->
+                row.values.joinToString("\t")
+            }
+            execResult shouldContainExactly listOf("1", "2", "3")
+
+            runDockerCommandWithPowershell(configFile.absolutePath, "./src/test/kotlin/com/biron/singerTargetClickHouse/utilsTest/kotest/data/stream_tiny_with_delete.jsonl", network.id)
+            execResult = jdbcTemplate.queryForList("select id from ${initialConnInfo.database}.tickets").map { row ->
+                row.values.joinToString("\t")
+            }
+            execResult shouldContainExactly listOf("1", "3")
+        }
+
+        it("should handle stream which deletes existing data with multiple pk"){
+            val configFile = configFile(initialConnInfo)
+            runDockerCommandWithPowershell(configFile.absolutePath, "./src/test/kotlin/com/biron/singerTargetClickHouse/utilsTest/kotest/data/stream_vanilla_with_pks.jsonl", network.id)
+            var execResult = jdbcTemplate.queryForList("select id, name from ${initialConnInfo.database}.users").map { row ->
+                row.values.joinToString(" ")
+            }
+            execResult shouldContainExactly listOf("1 bill", "2 bill", "3 jack", "4 joe")
+            runDockerCommandWithPowershell(configFile.absolutePath, "./src/test/kotlin/com/biron/singerTargetClickHouse/utilsTest/kotest/data/stream_vanilla_with_pks_and_deletion.jsonl", network.id)
+            execResult = jdbcTemplate.queryForList("select id, name from ${initialConnInfo.database}.users").map { row ->
+                row.values.joinToString(" ")
+            }
+            execResult shouldContainExactly listOf("1 bill", "2 bill", "4 joe")
+        }
+
+        it("should deduplicate tables when receiving only schema"){
+            val configFile = configFile(initialConnInfo)
+            runDockerCommandWithPowershell(configFile.absolutePath, "./src/test/kotlin/com/biron/singerTargetClickHouse/utilsTest/kotest/data/stream_vanilla_with_pks.jsonl", network.id)
+            var execResult = jdbcTemplate.queryForObject("select count(*) from ${initialConnInfo.database}.users", Int::class.java)
+            execResult shouldBe 4
+
+            jdbcTemplate.execute("INSERT INTO ${initialConnInfo.database}.users VALUES (4, 'joe', 90);")
+            execResult = jdbcTemplate.queryForObject("select count(*) from ${initialConnInfo.database}.users", Int::class.java)
+            execResult shouldBe 5
+
+            runDockerCommandWithPowershell(configFile.absolutePath, "./src/test/kotlin/com/biron/singerTargetClickHouse/utilsTest/kotest/data/stream_vanilla_with_pks_no_records.jsonl", network.id)
+            execResult = jdbcTemplate.queryForObject("select count(*) from ${initialConnInfo.database}.users", Int::class.java)
+            execResult shouldBe 4
+        }
     }
 })
