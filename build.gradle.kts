@@ -35,6 +35,8 @@ dependencies {
 	testImplementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.5.1")
 	testImplementation("com.fasterxml.jackson.module:jackson-module-kotlin:2.13.0")
 	testImplementation("ru.yandex.clickhouse:clickhouse-jdbc:0.3.1")
+	testImplementation("org.testcontainers:testcontainers:1.17.3")
+	testImplementation("org.testcontainers:testcontainers-bom:1.17.3")
 
 }
 
