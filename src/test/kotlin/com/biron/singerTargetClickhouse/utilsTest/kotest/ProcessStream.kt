@@ -18,6 +18,9 @@ import io.kotest.assertions.throwables.shouldThrow
 import org.testcontainers.containers.GenericContainer
 import org.testcontainers.utility.MountableFile
 import java.io.*
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.*
 
 
 data class Config(
@@ -28,8 +31,8 @@ data class Config(
     val database: String,
     val extra_active_tables: List<String> = emptyList(),
     val tablesToRecreate: List<String> = emptyList(),
-    val batch_size: Int? = null,
-    val insert_stream_timeout_sec: Int? = null,
+    val batch_size: Int? = 100,
+    val insert_stream_timeout_sec: Int? = 180,
     val translate_values : Boolean = false
 )
 
@@ -103,6 +106,9 @@ class ProcessStreamTest : DescribeSpec({
                 "sh", "-c", "cat /input.jsonl | target-clickhouse --config /config.json > /state.jsonl"
             )
 
+            logger.info("Target-clickhouse logs: ${commandResult.stdout}")
+            logger.info("Errors: ${commandResult.stderr}")
+
             if (commandResult.exitCode != 0) {
                 throw RuntimeException("Error during execution of target-clickhouse: ${commandResult.stderr}")
             }
@@ -110,7 +116,7 @@ class ProcessStreamTest : DescribeSpec({
 
             targetContainer.stop()
         } catch (e: Exception) {
-            println("Error during execution of the command with Testcontainers: ${e.message}")
+            logger.info("Error during execution of the command with Testcontainers: ${e.message}")
             e.printStackTrace()
             throw e
         }
@@ -127,8 +133,8 @@ class ProcessStreamTest : DescribeSpec({
             "password": "${initialConnInfo.password}",
             "extra_active_tables": ${initialConnInfo.extra_active_tables.joinToString(prefix = "[", postfix = "]") { "\"$it\"" }},
             "tablesToRecreate": ${initialConnInfo.tablesToRecreate.joinToString(prefix = "[", postfix = "]") { "\"$it\"" }},
-            "batch_size": ${initialConnInfo.batch_size ?: "null"},
-            "insert_stream_timeout_sec": ${initialConnInfo.insert_stream_timeout_sec ?: "null"},
+            "batch_size": ${initialConnInfo.batch_size},
+            "insert_stream_timeout_sec": ${initialConnInfo.insert_stream_timeout_sec},
             "translate_values": ${initialConnInfo.translate_values}
         }
         """.trimIndent()
@@ -148,7 +154,7 @@ class ProcessStreamTest : DescribeSpec({
             if (Files.exists(stateFilePath)) {
                 val stateContent = Files.readAllLines(stateFilePath, Charset.forName("UTF-8"))
                     .map { it.trimStart('\uFEFF') }
-                println("Contenu du fichier state.jsonl: \n${stateContent.joinToString("\n")}")
+                logger.info("Contenu du fichier state.jsonl: \n${stateContent.joinToString("\n")}")
 
                 stateContent.size shouldBe 2
 
@@ -158,7 +164,7 @@ class ProcessStreamTest : DescribeSpec({
                 )
                 stateContent shouldBe expectedContent
             } else {
-                println("Le fichier state.jsonl n'existe pas")
+                logger.info("Le fichier state.jsonl n'existe pas")
             }
         }
     }
@@ -483,45 +489,66 @@ class ProcessStreamTest : DescribeSpec({
             val execResult = jdbcTemplate.queryForList("select brand_id from ${initialConnInfo.database}.tickets where assignee_id = 11")
             execResult shouldContainExactly listOf(mapOf("brand_id" to 22L))
         }
+
         //is inserted immediately instead of waiting for the "insert_stream_timeout_sec" delay
-        xit("should insert record after some time even if stream isnt ended nor state message were received"){
-            val schema = mapOf(
-                "type" to "SCHEMA",
-                "stream" to "tickets",
-                "schema" to mapOf(
-                    "properties" to mapOf(
-                        "id" to mapOf("type" to listOf("integer"))
-                    ), "type" to listOf("null", "object")
-                ), "key_properties" to listOf("id")
-            )
-            val record = mapOf(
-                "type" to "RECORD",
-                "stream" to "tickets",
-                "record" to mapOf("id" to 155)
-            )
+        xit("should insert record after some time even if stream isn't ended nor state message were received") {
+            runBlocking {
+                val schema = mapOf(
+                    "type" to "SCHEMA",
+                    "stream" to "tickets",
+                    "schema" to mapOf(
+                        "properties" to mapOf(
+                            "id" to mapOf("type" to listOf("integer"))
+                        ),
+                        "type" to listOf("null", "object")
+                    ),
+                    "key_properties" to listOf("id")
+                )
+                val record = mapOf(
+                    "type" to "RECORD",
+                    "stream" to "tickets",
+                    "record" to mapOf("id" to 155)
+                )
+                val mapper = jacksonObjectMapper()
+                val schemaJson = mapper.writeValueAsString(schema)
+                val recordJson = mapper.writeValueAsString(record)
+                val tempFile = File.createTempFile("schema", ".json").apply {
+                    writeText("$schemaJson\n$recordJson")
+                }
+                logger.info("tempFile : ${tempFile.readText(Charsets.UTF_8)}")
+                val config = configFile(initialConnInfo.copy(batch_size = 10, insert_stream_timeout_sec = 15))
+                logger.info("config : ${config.readText(Charsets.UTF_8)}")
+                val job = launch(Dispatchers.IO) { runDockerCommand(config.absolutePath, tempFile.absolutePath) }
 
-            val mapper = jacksonObjectMapper()
-            val schemaJson = mapper.writeValueAsString(schema)
-            val recordJson = mapper.writeValueAsString(record)
-            val tempFile = File.createTempFile("schema", ".json").apply {
-                writeText("$schemaJson\n$recordJson")
+                delay(3000)
+
+//                val schemaResult = jdbcTemplate.queryForList("SHOW TABLES FROM ${initialConnInfo.database}")
+//                println("Schema result: $schemaResult")
+//                schemaResult shouldContainExactly listOf(mapOf("name" to "tickets"))
+
+
+//                val initialResult = jdbcTemplate.queryForList("Select id from ${initialConnInfo.database}.tickets")
+//                logger.info("Initial result: $initialResult")
+//                initialResult shouldBe emptyList<Map<String, Any?>>()
+
+                val maxAttempts = 10
+                var attempt = 0
+                var recordInserted = false
+                while (attempt < maxAttempts && !recordInserted) {
+                    delay(1000)
+                    val execResult = jdbcTemplate.queryForList("select id from ${initialConnInfo.database}.tickets")
+                    logger.info("execResult after ${attempt + 1} attempts: $execResult")
+                    recordInserted = execResult.any { it["id"] == 155L }
+                    attempt++
+                }
+                job.join()
+
+                val execResult = jdbcTemplate.queryForList("select id from ${initialConnInfo.database}.tickets")
+                logger.info("execResult after final attempt: $execResult")
+                execResult shouldContainExactly listOf(mapOf("id" to 155L))
             }
-            println("tempFile : ${tempFile.readText(Charsets.UTF_8)}")
-
-            val config = configFile(initialConnInfo.copy(batch_size = 10, insert_stream_timeout_sec = 8))
-            println("config : ${config.readText(Charsets.UTF_8)}")
-            runDockerCommand(config.absolutePath, tempFile.absolutePath)
-            Thread.sleep(1000)
-
-            val execResult = jdbcTemplate.queryForList("select id from ${initialConnInfo.database}.tickets")
-            println ("execResult : $execResult")
-            execResult shouldContainExactly listOf(mapOf("id" to null))
-            Thread.sleep(4000)
-
-            val execResults = jdbcTemplate.queryForList("select id from ${initialConnInfo.database}.tickets")
-            println ("execResult : $execResults")
-            execResults shouldContainExactly listOf(mapOf("id" to 155L))
         }
+
 
         it("should allow reordering of schema"){
             val configFile = configFile(initialConnInfo)
