@@ -371,7 +371,7 @@ describe("processStream", () => {
       let execResult = await runChQueryInContainer(container, connInfo, `select sum(total_rows), sum(tables.total_bytes)
                                                                          from system.tables
                                                                          where database = '${connInfo.database}'`)
-      assert.equal(execResult.output, '5789\t1345158\n')
+      assert.equal(execResult.output, '5789\t1334466\n')
 
       // Ensure no duplicates are created when run second time
       await processStream(fs.createReadStream("./tests/data/covidtracker.jsonl"), connInfo)

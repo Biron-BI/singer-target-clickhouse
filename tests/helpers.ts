@@ -3,7 +3,7 @@ import {strict as assert} from 'assert'
 import {IConfig} from "../src/Config"
 
 export async function bootClickhouseContainer(connInfo: IConfig): Promise<StartedTestContainer> {
-  const container = await new GenericContainer("clickhouse/clickhouse-server:23.3.13.6")
+  const container = await new GenericContainer("clickhouse/clickhouse-server:24.12.3.47")
     .withEnv("CLICKHOUSE_DB", connInfo.database)
     .withEnv("CLICKHOUSE_USER", connInfo.username)
     .withEnv("CLICKHOUSE_PASSWORD", connInfo.password)

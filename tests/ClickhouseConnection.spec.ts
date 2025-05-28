@@ -103,7 +103,7 @@ describe("ClickhouseConnection", () => {
         is_in_sorting_key: false,
       }, {
         name: "width",
-        type: "LowCardinality(Nullable(UInt64))",
+        type: "LowCardinality(Nullable(String))",
         is_in_sorting_key: false,
       })
       assert.deepEqual(isRight(res), true)
