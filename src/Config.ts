@@ -31,6 +31,7 @@ export class Config implements IConfig {
   readonly insert_stream_timeout_sec: number = 180
   readonly finalize_concurrency: number = 3
   readonly extra_active_tables: string[] = []
+
   constructor({
                 database,
                 host,
@@ -44,8 +45,8 @@ export class Config implements IConfig {
                 translate_values,
                 insert_stream_timeout_sec,
                 finalize_concurrency,
-                extra_active_tables
-              }: IConfig, public readonly streamToReplace: string[] = []) {
+                extra_active_tables,
+              }: IConfig) {
     this.database = database
     this.host = host
 

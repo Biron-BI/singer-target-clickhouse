@@ -19,7 +19,7 @@ import {dropStreamTablesQueries} from "./jsonSchemaTranslator"
 import {PromisePool} from "@supercharge/promise-pool"
 import forAwaitOnMacroTaskQueue from "./forAwaitOnMacroTaskQueue"
 
-async function processSchemaMessage(msg: SchemaMessage, config: Config, ch: ClickhouseConnection, existingTables: string[]): Promise<StreamProcessor> {
+async function processSchemaMessage(msg: SchemaMessage, config: Config, ch: ClickhouseConnection, state: ProcessingState): Promise<StreamProcessor> {
 
   const meta = buildMeta(new JsonSchemaInspectorContext(
     msg.stream,
@@ -32,14 +32,18 @@ async function processSchemaMessage(msg: SchemaMessage, config: Config, ch: Clic
     msg.cleaningColumn,
     msg.allKeyProperties,
   ))
-  if (config.streamToReplace.includes(meta.prop)) {
+  const streamToReplaceIndex = state.streamsToReplace.indexOf(meta.prop)
+  if (streamToReplaceIndex > -1) {
     log_info(`[${meta.prop}]: dropping root and children tables`)
     await Promise.all(dropStreamTablesQueries(meta).map((query) => ch.runQuery(query)))
+    state.streamsToReplace.splice(streamToReplaceIndex, 1)
     // refresh list to remove table and children
-    existingTables = await ch.listTables()
+    state.existingTables = await ch.listTables()
   }
 
-  return StreamProcessor.createStreamProcessor(ch, meta, config, msg.cleanFirst, existingTables)
+  const streamProcessor = await StreamProcessor.createStreamProcessor(ch, meta, config, msg.cleanFirst, state.existingTables)
+  state.existingTables = await ch.listTables()
+  return streamProcessor
 }
 
 function tableShouldBeDropped(table: string, activeStreams: string[], subtableSeparator: string, extraActiveTables: string[]): boolean {
@@ -71,7 +75,7 @@ async function processLine(
   config: Config,
   ch: ClickhouseConnection,
   streamProcessors: Map<string, StreamProcessor>,
-  existingTables: string[],
+  state: ProcessingState,
   lineCount: number,
   interrupt: (err: Error) => void): Promise<void> {
   const msg = parse_message(line)
@@ -79,11 +83,10 @@ async function processLine(
   switch (msg?.type) {
     case MessageType.schema:
       if (streamProcessors.has(msg.stream)) {
-        log_warning(`A schema has already been received for stream [${msg.stream}]. Ignoring message`)
-        return
+        await streamProcessors.get(msg.stream)!.commitPendingChanges()
       }
       log_info(`[${msg.stream}]: Received schema message.`)
-      streamProcessors.set(msg.stream, await processSchemaMessage(msg, config, ch, existingTables))
+      streamProcessors.set(msg.stream, await processSchemaMessage(msg, config, ch, state))
       break;
     case MessageType.record:
       if (!streamProcessors.has(msg.stream)) {
@@ -122,9 +125,20 @@ async function processLine(
   }
 }
 
-export async function processStream(inputStream: Readable, config: Config) {
+class ProcessingState {
+  streamsToReplace: string[]
+  existingTables: string[]
+
+  constructor(streamsToReplace: string[], existingTables: string[]) {
+    this.streamsToReplace = streamsToReplace
+    this.existingTables = existingTables
+  }
+}
+
+
+export async function processStream(inputStream: Readable, config: Config, streamsToReplace: string[] = []) {
   const ch = new ClickhouseConnection(config)
-  const existingTables = await ch.listTables()
+  const state = new ProcessingState([...streamsToReplace], await ch.listTables())
   let lineCount = 0
   inputStream.on("error", (err: any) => {
     log_fatal(`${err.message}`)
@@ -147,7 +161,7 @@ export async function processStream(inputStream: Readable, config: Config) {
   let processLinePromise = Promise.resolve()
   await forAwaitOnMacroTaskQueue(rl[Symbol.asyncIterator](), async line => {
     await processLinePromise
-    processLinePromise = processLine(line, config, ch, streamProcessors, existingTables, lineCount++, abort)
+    processLinePromise = processLine(line, config, ch, streamProcessors, state, lineCount++, abort)
   })
   await processLinePromise
   log_info("done reading lines")

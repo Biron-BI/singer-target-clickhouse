@@ -14,14 +14,14 @@ const args = parse_args(["database", "host", "port", "username", "password"], [{
   description: "An alternate file to write to, instead of STDOUT",
 }])
 
-const config = new Config(args.config, args.opts.updateStreams as string[] ?? [])
+const config = new Config(args.config)
 set_log_level(config.log_level)
 
 const stdin = args.opts.input ? fs.createReadStream(args.opts.input as string) : process.stdin
 const stdout = args.opts.output ? fs.createWriteStream(args.opts.output as string) : process.stdout
 set_output_stream(stdout)
 
-processStream(stdin, config).then(() => {
+processStream(stdin, config, args.opts.updateStreams as string[] ?? []).then(() => {
   log_info("Stream processing done")
 }).catch((err) => {
   log_error(`${err}`)

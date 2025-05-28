@@ -266,19 +266,22 @@ describe("processStream", () => {
 
     it('should throw if schema has no primary key but has array children', async () => {
       await assert.rejects(async () => {
-      await processStream(fs.createReadStream("./tests/data/stream_with_nested_array_without_root_pk.jsonl"), connInfo)
+        await processStream(fs.createReadStream("./tests/data/stream_with_nested_array_without_root_pk.jsonl"), connInfo)
       }, Error)
     }).timeout(30000)
 
-    it('should ignore second schema definition', async () => {
+    it('should handle second schema definition by commiting pending changes', async () => {
       await processStream(fs.createReadStream("./tests/data/stream_multiple_schema.jsonl"), connInfo)
+      let execResult = await runChQueryInContainer(container, connInfo, `select count()
+                                                                         from tickets`)
+      assert.equal(execResult.output, '1\n')
     }).timeout(30000)
 
     it('should recreate if schemas already exists, new is different but specified to be recreated', async () => {
       await processStream(fs.createReadStream("./tests/data/stream_1.jsonl"), connInfo)
 
-      const config = new Config({...connInfo}, ["tickets"])
-      await processStream(fs.createReadStream("./tests/data/stream_1_modified.jsonl"), config)
+      const config = new Config({...connInfo})
+      await processStream(fs.createReadStream("./tests/data/stream_1_modified.jsonl"), config, ["tickets"])
       const execResult = await runChQueryInContainer(container, connInfo, `show tables from ${connInfo.database}`)
 
       assert.equal(execResult.output.split("\n").length, 22)
@@ -331,6 +334,8 @@ describe("processStream", () => {
         ...connInfo,
         batch_size: 10,
         insert_stream_timeout_sec: 8,
+      }).catch((err) => {
+        console.error("err", err)
       })
 
       await sleep(1000)

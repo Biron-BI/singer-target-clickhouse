@@ -5,7 +5,7 @@ import {escapeIdentifier, formatRootPKColumn, ISourceMeta, PkMap} from "./jsonSc
 import {Config} from "./Config"
 import {escapeValue} from "./utils"
 import RecordProcessor from "./RecordProcessor"
-import {updateSchema, translateCH} from "./jsonSchemaTranslator"
+import {translateCH, updateSchema} from "./jsonSchemaTranslator"
 import DeletedRecordProcessor from "./DeletedRecordProcessor"
 
 // expects root meta as param
@@ -37,14 +37,13 @@ export default class StreamProcessor {
   static async createStreamProcessor(ch: ClickhouseConnection, meta: ISourceMeta, config: Config, cleanFirst: boolean, existingTables: string[]) {
     const streamProcessor = new StreamProcessor(ch, meta, cleanFirst, config, 0)
 
+    let rootAlreadyExists
     if (cleanFirst) {
       await streamProcessor.clearTables()
-      existingTables = await ch.listTables()
+      rootAlreadyExists = false
+    } else {
+      rootAlreadyExists = existingTables.some((table) => meta.sqlTableName === escapeIdentifier(table))
     }
-
-    const rootAlreadyExists = existingTables
-      .map((table) => escapeIdentifier(table))
-      .includes(meta.sqlTableName)
 
     if (rootAlreadyExists) {
       await updateSchema(meta, ch, existingTables)
@@ -137,32 +136,30 @@ export default class StreamProcessor {
     const resolvedValue = cleaningColumnMeta.valueTranslator(value)
     log_info(`[${this.meta.prop}]: cleaning column: deleting based on ${resolvedValue}`)
 
-    const query = `ALTER
-                   TABLE
-                   ${this.meta.sqlTableName}
-                   DELETE
-                   WHERE \`${this.meta.cleaningColumn}\` = '${escapeValue(value)}'`
+    const query = `
+        ALTER TABLE ${this.meta.sqlTableName}
+        DELETE
+        WHERE \`${this.meta.cleaningColumn}\` = '${escapeValue(value)}'`
     await this.clickhouse.runQuery(query)
   }
 
   private async deleteChildDuplicates(currentNode: ISourceMeta) {
     // this.meta always refer to root node
 
-    const query = `ALTER
-                   TABLE
-                   ${currentNode.sqlTableName}
-                   DELETE
-                   WHERE (${
-                           this.meta.pkMappings
-                                   .map((pk) => escapeIdentifier(formatRootPKColumn(pk.prop)))
-                                   .concat(["_root_ver"])
-                                   .join(",")
-                   }) NOT IN (SELECT ${
-                           this.meta.pkMappings
-                                   .map((elem) => elem.sqlIdentifier)
-                                   .concat(["_ver"])
-                                   .join(",")
-                   } FROM ${this.meta.sqlTableName})`
+    const query = `
+        ALTER TABLE ${currentNode.sqlTableName}
+        DELETE
+        WHERE (${
+                this.meta.pkMappings
+                        .map((pk) => escapeIdentifier(formatRootPKColumn(pk.prop)))
+                        .concat(["_root_ver"])
+                        .join(",")
+        }) NOT IN (SELECT ${
+                this.meta.pkMappings
+                        .map((elem) => elem.sqlIdentifier)
+                        .concat(["_ver"])
+                        .join(",")
+        } FROM ${this.meta.sqlTableName})`
     await this.clickhouse.runQuery(query)
 
     await Promise.all(currentNode.children.map(this.deleteChildDuplicates.bind(this)))
@@ -181,10 +178,10 @@ export default class StreamProcessor {
     }
     const pks: string = meta.pkMappings.map((elem: PkMap) => elem.sqlIdentifier).join(",")
 
-    const query = `SELECT ${pks}
-                   FROM (SELECT ${pks}, ROW_NUMBER() OVER (PARTITION BY ${pks}) AS row_number FROM ${meta.sqlTableName})
-                   WHERE row_number > 1
-                       LIMIT 1`
+    const query = `
+        SELECT ${pks}
+        FROM (SELECT ${pks}, ROW_NUMBER() OVER (PARTITION BY ${pks}) AS row_number FROM ${meta.sqlTableName})
+        WHERE row_number > 1 LIMIT 1`
     const result = await this.clickhouse.runQuery(query)
     if (result.rows > 0) {
       throw ono("Duplicate key on table %s, data: %j, aborting process", meta.sqlTableName, result.data)
