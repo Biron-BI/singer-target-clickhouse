@@ -4,8 +4,9 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="d22bfa54-76f4-49b1-a427-a423bfc34df4" name="Changes" comment="all test fixed">
-      <change beforePath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/utilsTest/kotest/ProcessStream.kt" beforeDir="false" afterPath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/utilsTest/kotest/ProcessStream.kt" afterDir="false" />
+    <list default="true" id="d22bfa54-76f4-49b1-a427-a423bfc34df4" name="Changes" comment="refacto step 1">
+      <change beforePath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/MainTest.kt" beforeDir="false" afterPath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/MainTest.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/utilsTest/kotest/ProcessStream.kt" beforeDir="false" afterPath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/utilsTest/kotest/ProcessStreamTest.kt" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -117,6 +118,7 @@
   <component name="PropertiesComponent"><![CDATA[{
   "keyToString": {
     "ASKED_SHARE_PROJECT_CONFIGURATION_FILES": "true",
+    "Gradle.Build singer-target-clickhouse-kotlin.executor": "Run",
     "Gradle.Build singer-target-clickhouse.executor": "Run",
     "Gradle.Download Sources.executor": "Run",
     "Gradle.MainTest (1).executor": "Run",
@@ -125,6 +127,7 @@
     "Gradle.ProcessStreamTest.executor": "Run",
     "Kotest.All tests in '' (1).executor": "Run",
     "Kotest.All tests in ''.executor": "Run",
+    "Kotest.MainTest: failure case.executor": "Debug",
     "Kotest.ProcessStreamTest: outputStream (1).executor": "Run",
     "Kotest.ProcessStreamTest: outputStream.executor": "Run",
     "Kotest.ProcessStreamTest: should insert record after some time even if stream isn't ended nor state message were received (1).executor": "Run",
@@ -186,7 +189,7 @@
       <recent name="com.biron.singerTargetClickhouse.utilsTest.lifecycle" />
     </key>
   </component>
-  <component name="RunManager" selected="Gradle.ProcessStreamTest (1)">
+  <component name="RunManager" selected="Gradle.MainTest (1)">
     <configuration name="MainTest (1)" type="GradleRunConfiguration" factoryName="Gradle" temporary="true">
       <ExternalSystemSettings>
         <option name="executionName" />
@@ -241,15 +244,15 @@
       <GradleCoverageDisabled>false</GradleCoverageDisabled>
       <method v="2" />
     </configuration>
-    <configuration name="ProcessStreamTest: should insert record after some time even if stream isn't ended nor state message were received (1)" type="ioKotest" factoryName="Kotest" temporary="true" defaultName="singleModule">
+    <configuration name="MainTest: failure case" type="ioKotest" factoryName="Kotest" temporary="true" defaultName="singleModule">
       <module name="singer-target-clickhouse.test" />
       <option name="jrePath" value="" />
       <option name="jrePathEnabled" value="false" />
       <option name="passParentEnvs" value="true" />
       <option name="workingDirectory" value="$MODULE_WORKING_DIR$" />
       <option name="programParameters" value="" />
-      <option name="specName" value="ProcessStreamTest" />
-      <option name="testPath" value="Records -- should insert record after some time even if stream isn't ended nor state message were received" />
+      <option name="specName" value="com.biron.singerTargetClickhouse.MainTest" />
+      <option name="testPath" value="updateColumn -- failure case" />
       <option name="packageName" value="" />
       <option name="vmparams" value="" />
       <method v="2">
@@ -289,17 +292,17 @@
     <list>
       <item itemvalue="Gradle.ProcessStreamTest (1)" />
       <item itemvalue="Gradle.MainTest (1)" />
-      <item itemvalue="Kotest.ProcessStreamTest: should insert record after some time even if stream isn't ended nor state message were received (1)" />
       <item itemvalue="Kotest.ProcessStreamTest: should insert record after some time even if stream isn't ended nor state message were received (2)" />
       <item itemvalue="Kotest.ProcessStreamTest: should write state to passed outputStream (1)" />
+      <item itemvalue="Kotest.MainTest: failure case" />
     </list>
     <recent_temporary>
       <list>
-        <item itemvalue="Gradle.ProcessStreamTest (1)" />
         <item itemvalue="Gradle.MainTest (1)" />
+        <item itemvalue="Kotest.MainTest: failure case" />
+        <item itemvalue="Gradle.ProcessStreamTest (1)" />
         <item itemvalue="Kotest.ProcessStreamTest: should write state to passed outputStream (1)" />
         <item itemvalue="Kotest.ProcessStreamTest: should insert record after some time even if stream isn't ended nor state message were received (2)" />
-        <item itemvalue="Kotest.ProcessStreamTest: should insert record after some time even if stream isn't ended nor state message were received (1)" />
       </list>
     </recent_temporary>
   </component>
@@ -567,7 +570,31 @@
       <option name="project" value="LOCAL" />
       <updated>1776864546983</updated>
     </task>
-    <option name="localTasksCounter" value="24" />
+    <task id="LOCAL-00024" summary="all tests execute the same things as in TS">
+      <option name="closed" value="true" />
+      <created>1776865351661</created>
+      <option name="number" value="00024" />
+      <option name="presentableId" value="LOCAL-00024" />
+      <option name="project" value="LOCAL" />
+      <updated>1776865351661</updated>
+    </task>
+    <task id="LOCAL-00025" summary="refacto step 1">
+      <option name="closed" value="true" />
+      <created>1776879999105</created>
+      <option name="number" value="00025" />
+      <option name="presentableId" value="LOCAL-00025" />
+      <option name="project" value="LOCAL" />
+      <updated>1776879999105</updated>
+    </task>
+    <task id="LOCAL-00026" summary="refacto step 1">
+      <option name="closed" value="true" />
+      <created>1776882209117</created>
+      <option name="number" value="00026" />
+      <option name="presentableId" value="LOCAL-00026" />
+      <option name="project" value="LOCAL" />
+      <updated>1776882209117</updated>
+    </task>
+    <option name="localTasksCounter" value="27" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -619,7 +646,9 @@
     <MESSAGE value="en" />
     <MESSAGE value="update gradle config" />
     <MESSAGE value="all test fixed" />
-    <option name="LAST_COMMIT_MESSAGE" value="all test fixed" />
+    <MESSAGE value="all tests execute the same things as in TS" />
+    <MESSAGE value="refacto step 1" />
+    <option name="LAST_COMMIT_MESSAGE" value="refacto step 1" />
   </component>
   <component name="XSLT-Support.FileAssociations.UIState">
     <expand />
