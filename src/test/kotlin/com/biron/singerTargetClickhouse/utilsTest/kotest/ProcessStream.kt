@@ -2,7 +2,6 @@
 
 package com.biron.singerTargetClickhouse.utilsTest.kotest
 
-import com.clickhouse.jdbc.ClickHouseArray
 import com.clickhouse.jdbc.ClickHouseDataSource
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import io.github.oshai.kotlinlogging.KotlinLogging
@@ -233,7 +232,7 @@ class ProcessStreamTest : DescribeSpec({
 			val dataResult = jdbcTemplate.queryForList(dataQuery).map { row ->
 				val databases = row["databases"]
 				when (databases) {
-					is ClickHouseArray -> {
+					is java.sql.Array -> {
 						(databases.array as Array<*>).joinToString(prefix = "[", postfix = "]") { "'$it'" }
 					}
 
@@ -569,38 +568,66 @@ class ProcessStreamTest : DescribeSpec({
 				val mapper = jacksonObjectMapper()
 				val schemaJson = mapper.writeValueAsString(schema)
 				val recordJson = mapper.writeValueAsString(record)
-				val tempFile = File.createTempFile("schema", ".json").apply {
-					writeText("$schemaJson\n$recordJson")
-				}
-				logger.info("tempFile : ${tempFile.readText(Charsets.UTF_8)}")
-				val config = configFile(initialConnInfo.copy(batch_size = 10, insert_stream_timeout_sec = 15))
+				val insertTimeoutSec = 8
+				val keepOpenSec = 30
+				val config = configFile(initialConnInfo.copy(batch_size = 10, insert_stream_timeout_sec = insertTimeoutSec))
 				logger.info("config : ${config.readText(Charsets.UTF_8)}")
-				val job = launch(Dispatchers.IO) { runDockerCommand(config.absolutePath, tempFile.absolutePath) }
 
-				withTimeout(10.seconds) {
-					while (jdbcTemplate.queryForMap("EXISTS ${initialConnInfo.database}.tickets").values.first() == 0) {
-						delay(50.milliseconds)
+				// Pipe schema + record into node via a subshell that stays open (sleep) so stdin
+				// does not see EOF. This triggers the insert_stream_timeout_sec flush behavior.
+				val escapedSchema = schemaJson.replace("'", "'\\''")
+				val escapedRecord = recordJson.replace("'", "'\\''")
+				val shellCmd = "(printf '%s\\n' '$escapedSchema'; printf '%s\\n' '$escapedRecord'; sleep $keepOpenSec) | " +
+					"node /usr/local/lib/node_modules/target-clickhouse/dist/index.js --config /config.json --output /state.jsonl"
+
+				val targetContainer = GenericContainer<Nothing>("ghcr.io/biron-bi/target-clickhouse:2.11.0").apply {
+					withNetwork(network)
+					withCopyFileToContainer(MountableFile.forHostPath(config.absolutePath), "/config.json")
+					withCreateContainerCmdModifier { cmd ->
+						cmd.withEntrypoint("sh", "-c")
+						cmd.withCmd(shellCmd)
+					}
+					withStartupCheckStrategy(IndefiniteWaitOneShotStartupCheckStrategy())
+					withLogConsumer { logger.info("[target-clickhouse] ${it.utf8String}") }
+				}
+
+				val job = launch(Dispatchers.IO) {
+					try {
+						targetContainer.start()
+					} catch (e: Exception) {
+						logger.info(e) { "target-clickhouse container terminated" }
 					}
 				}
 
-				delay(1000)
-				jdbcTemplate.queryForList("Select id from ${initialConnInfo.database}.tickets").shouldBeEmpty()
+				try {
+					withTimeout(20.seconds) {
+						while (jdbcTemplate.queryForMap("EXISTS ${initialConnInfo.database}.tickets").values.first() == 0) {
+							delay(50.milliseconds)
+						}
+					}
 
-				val maxAttempts = 10
-				var attempt = 0
-				var recordInserted = false
-				while (attempt < maxAttempts && !recordInserted) {
+					// Table is created but no record should be inserted yet (timeout hasn't fired)
 					delay(1000)
-					val execResult = jdbcTemplate.queryForList("select id from ${initialConnInfo.database}.tickets")
-					logger.info("execResult after ${attempt + 1} attempts: $execResult")
-					recordInserted = execResult.any { it["id"] == 155L }
-					attempt++
-				}
-				job.join()
+					jdbcTemplate.queryForList("Select id from ${initialConnInfo.database}.tickets").shouldBeEmpty()
 
-				val execResult = jdbcTemplate.queryForList("select id from ${initialConnInfo.database}.tickets")
-				logger.info("execResult after final attempt: $execResult")
-				execResult shouldContainExactly listOf(mapOf("id" to 155L))
+					// Wait long enough for the timeout to fire and the batch to be flushed
+					val maxAttempts = insertTimeoutSec + 10
+					var attempt = 0
+					var recordInserted = false
+					while (attempt < maxAttempts && !recordInserted) {
+						delay(1000)
+						val execResult = jdbcTemplate.queryForList("select id from ${initialConnInfo.database}.tickets")
+						logger.info("execResult after ${attempt + 1} attempts: $execResult")
+						recordInserted = execResult.any { it["id"] == 155L }
+						attempt++
+					}
+
+					val execResult = jdbcTemplate.queryForList("select id from ${initialConnInfo.database}.tickets")
+					execResult shouldContainExactly listOf(mapOf("id" to 155L))
+				} finally {
+					runCatching { targetContainer.stop() }
+					job.cancel()
+				}
 			}
 		}
 
@@ -677,11 +704,11 @@ class ProcessStreamTest : DescribeSpec({
 			val execResult3 =
 				jdbcTemplate.queryForList("select databases, `Settings.Names` from ${initialConnInfo.database}.query_log").map { row ->
 					val databases = when (val db = row["databases"]) {
-						is ClickHouseArray -> (db.array as Array<*>).joinToString(prefix = "[", postfix = "]") { "'$it'" }
+						is java.sql.Array -> (db.array as Array<*>).joinToString(prefix = "[", postfix = "]") { "'$it'" }
 						else -> db.toString()
 					}
 					val settings = when (val st = row["Settings.Names"]) {
-						is ClickHouseArray -> (st.array as Array<*>).joinToString(prefix = "[", postfix = "]") { "'$it'" }
+						is java.sql.Array -> (st.array as Array<*>).joinToString(prefix = "[", postfix = "]") { "'$it'" }
 						else -> st.toString()
 					}
 					"$databases\t$settings"
@@ -702,8 +729,6 @@ class ProcessStreamTest : DescribeSpec({
 
 			val otherDb = "otherDB"
 			jdbcTemplate.execute("CREATE DATABASE IF NOT EXISTS $otherDb;")
-			jdbcTemplate.execute("CREATE USER IF NOT EXISTS ${initialConnInfo.username} IDENTIFIED WITH plaintext_password BY '${initialConnInfo.password}';")
-			jdbcTemplate.execute("GRANT ALL ON $otherDb.* TO ${initialConnInfo.username};")
 
 			val configFile2 = configFile(initialConnInfo.copy(translate_values = true, database = otherDb))
 			runDockerCommand(

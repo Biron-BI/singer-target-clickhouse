@@ -5,7 +5,8 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="d22bfa54-76f4-49b1-a427-a423bfc34df4" name="Changes" comment="update gradle config">
-      <change beforePath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/MainTest.kt" beforeDir="false" afterPath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/MainTest.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/misc.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/misc.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/utilsTest/kotest/ProcessStream.kt" beforeDir="false" afterPath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/utilsTest/kotest/ProcessStream.kt" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -18,6 +19,10 @@
   </component>
   <component name="ComposerSettings">
     <execution />
+  </component>
+  <component name="EmbeddingIndexingInfo">
+    <option name="cachedIndexableFilesCount" value="77" />
+    <option name="fileBasedEmbeddingIndicesEnabled" value="true" />
   </component>
   <component name="ExternalProjectsData">
     <projectState path="$PROJECT_DIR$">
@@ -32,7 +37,12 @@
         </task>
         <projects_view>
           <tree_state>
-            <expand />
+            <expand>
+              <path>
+                <item name="" type="6a2764b6:ExternalProjectsStructure$RootNode" />
+                <item name="singer-target-clickhouse" type="f1a62948:ProjectNode" />
+              </path>
+            </expand>
             <select />
           </tree_state>
         </projects_view>
@@ -156,8 +166,8 @@
     "npm.test.executor": "Run",
     "org.rust.cargo.project.model.impl.CargoExternalSystemProjectAware.subscribe.first.balloon": "",
     "project.structure.last.edited": "Project",
-    "project.structure.proportion": "0.15",
-    "project.structure.side.proportion": "0.24217314",
+    "project.structure.proportion": "0.0",
+    "project.structure.side.proportion": "0.0",
     "settings.editor.selected.configurable": "reference.settingsdialog.project.gradle",
     "ts.external.directory.path": "/home/sestienney/idea-project/biron/singer-target-clickhouse/node_modules/typescript/lib",
     "vcs.patch.to.clipboard": "true"
@@ -178,7 +188,7 @@
       <recent name="com.biron.singerTargetClickhouse.utilsTest.lifecycle" />
     </key>
   </component>
-  <component name="RunManager">
+  <component name="RunManager" selected="Gradle.ProcessStreamTest (1)">
     <configuration name="MainTest (1)" type="GradleRunConfiguration" factoryName="Gradle" temporary="true">
       <ExternalSystemSettings>
         <option name="executionName" />
@@ -294,6 +304,9 @@
         <item itemvalue="Kotest.ProcessStreamTest: should insert record after some time even if stream isn't ended nor state message were received (1)" />
       </list>
     </recent_temporary>
+  </component>
+  <component name="RustProjectSettings">
+    <option name="toolchainHomeDirectory" value="$USER_HOME$/.cargo/bin" />
   </component>
   <component name="SharedIndexes">
     <attachedChunks>
