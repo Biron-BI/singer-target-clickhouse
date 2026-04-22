@@ -1,5 +1,15 @@
+pluginManagement {
+	repositories {
+		maven {
+			name = "mavenBiron"
+			url = uri(providers.gradleProperty("mavenBironUrl"))
+			credentials(PasswordCredentials::class)
+		}
+		gradlePluginPortal()
+	}
+}
 plugins {
-	id("org.gradle.toolchains.foojay-resolver-convention") version "0.8.0"
+	id("com.biron.biron-gradle-version-catalog") version "2.13.0"
 }
 rootProject.name = "singer-target-clickhouse"
 

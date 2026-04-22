@@ -4,9 +4,8 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="d22bfa54-76f4-49b1-a427-a423bfc34df4" name="Changes" comment="version bump for singer-node">
-      <change beforePath="$PROJECT_DIR$/.idea/misc.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/misc.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+    <list default="true" id="d22bfa54-76f4-49b1-a427-a423bfc34df4" name="Changes" comment="update gradle config">
+      <change beforePath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/MainTest.kt" beforeDir="false" afterPath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/MainTest.kt" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/utilsTest/kotest/ProcessStream.kt" beforeDir="false" afterPath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/utilsTest/kotest/ProcessStream.kt" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -33,12 +32,7 @@
         </task>
         <projects_view>
           <tree_state>
-            <expand>
-              <path>
-                <item name="" type="6a2764b6:ExternalProjectsStructure$RootNode" />
-                <item name="singer-target-clickhouse" type="f1a62948:ProjectNode" />
-              </path>
-            </expand>
+            <expand />
             <select />
           </tree_state>
         </projects_view>
@@ -57,7 +51,7 @@
   <component name="Git.Settings">
     <option name="RECENT_BRANCH_BY_REPOSITORY">
       <map>
-        <entry key="$PROJECT_DIR$" value="master" />
+        <entry key="$PROJECT_DIR$" value="dev" />
       </map>
     </option>
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
@@ -83,6 +77,7 @@
     &quot;accountId&quot;: &quot;a5507dd4-7a9e-401a-8d69-83265464724b&quot;
   }
 }</component>
+  <component name="GradleScriptDefinitionsStorage" workingDir="$PROJECT_DIR$" gradleHome="$USER_HOME$/.gradle/wrapper/dists/gradle-8.14.3-bin/cv11ve7ro1n3o1j4so8xd9n66/gradle-8.14.3" javaHome="$USER_HOME$/.jdks/jbr-21.0.8" gradleVersion="8.14.3" />
   <component name="KotlinMultiplatform">
     <allAvailableExecutables />
   </component>
@@ -116,6 +111,9 @@
     "ASKED_SHARE_PROJECT_CONFIGURATION_FILES": "true",
     "Gradle.Build singer-target-clickhouse.executor": "Run",
     "Gradle.Download Sources.executor": "Run",
+    "Gradle.MainTest (1).executor": "Run",
+    "Gradle.MainTest.executor": "Run",
+    "Gradle.ProcessStreamTest (1).executor": "Run",
     "Gradle.ProcessStreamTest.executor": "Run",
     "Kotest.All tests in '' (1).executor": "Run",
     "Kotest.All tests in ''.executor": "Run",
@@ -168,6 +166,7 @@
   <component name="RecentsManager">
     <key name="CopyFile.RECENT_KEYS">
       <recent name="$PROJECT_DIR$/gradle" />
+      <recent name="$PROJECT_DIR$" />
     </key>
     <key name="MoveFile.RECENT_KEYS">
       <recent name="$PROJECT_DIR$/src/main/kotlin/com/biron/singerTargetClickhouse" />
@@ -179,8 +178,8 @@
       <recent name="com.biron.singerTargetClickhouse.utilsTest.lifecycle" />
     </key>
   </component>
-  <component name="RunManager" selected="Kotest.ProcessStreamTest: should insert record after some time even if stream isn't ended nor state message were received (2)">
-    <configuration name="ProcessStreamTest" type="GradleRunConfiguration" factoryName="Gradle" temporary="true">
+  <component name="RunManager">
+    <configuration name="MainTest (1)" type="GradleRunConfiguration" factoryName="Gradle" temporary="true">
       <ExternalSystemSettings>
         <option name="executionName" />
         <option name="externalProjectPath" value="$PROJECT_DIR$" />
@@ -193,15 +192,45 @@
           <list>
             <option value=":test" />
             <option value="--tests" />
-            <option value="&quot;ProcessStreamTest&quot;" />
+            <option value="&quot;com.biron.singerTargetClickhouse.MainTest&quot;" />
           </list>
         </option>
         <option name="vmOptions" />
       </ExternalSystemSettings>
       <ExternalSystemDebugServerProcess>false</ExternalSystemDebugServerProcess>
       <ExternalSystemReattachDebugProcess>true</ExternalSystemReattachDebugProcess>
+      <ExternalSystemDebugDisabled>false</ExternalSystemDebugDisabled>
       <DebugAllEnabled>false</DebugAllEnabled>
       <RunAsTest>true</RunAsTest>
+      <GradleProfilingDisabled>false</GradleProfilingDisabled>
+      <GradleCoverageDisabled>false</GradleCoverageDisabled>
+      <method v="2" />
+    </configuration>
+    <configuration name="ProcessStreamTest (1)" type="GradleRunConfiguration" factoryName="Gradle" temporary="true">
+      <ExternalSystemSettings>
+        <option name="executionName" />
+        <option name="externalProjectPath" value="$PROJECT_DIR$" />
+        <option name="externalSystemIdString" value="GRADLE" />
+        <option name="scriptParameters" value="" />
+        <option name="taskDescriptions">
+          <list />
+        </option>
+        <option name="taskNames">
+          <list>
+            <option value=":test" />
+            <option value="--tests" />
+            <option value="&quot;com.biron.singerTargetClickhouse.utilsTest.kotest.ProcessStreamTest&quot;" />
+          </list>
+        </option>
+        <option name="vmOptions" />
+      </ExternalSystemSettings>
+      <ExternalSystemDebugServerProcess>false</ExternalSystemDebugServerProcess>
+      <ExternalSystemReattachDebugProcess>true</ExternalSystemReattachDebugProcess>
+      <ExternalSystemDebugDisabled>false</ExternalSystemDebugDisabled>
+      <DebugAllEnabled>false</DebugAllEnabled>
+      <RunAsTest>true</RunAsTest>
+      <GradleProfilingDisabled>false</GradleProfilingDisabled>
+      <GradleCoverageDisabled>false</GradleCoverageDisabled>
       <method v="2" />
     </configuration>
     <configuration name="ProcessStreamTest: should insert record after some time even if stream isn't ended nor state message were received (1)" type="ioKotest" factoryName="Kotest" temporary="true" defaultName="singleModule">
@@ -234,21 +263,6 @@
         <option name="Make" enabled="true" />
       </method>
     </configuration>
-    <configuration name="ProcessStreamTest: should insert record after some time even if stream isn't ended nor state message were received" type="ioKotest" factoryName="Kotest" temporary="true" defaultName="singleModule">
-      <module name="singer-target-clickhouse.test" />
-      <option name="jrePath" value="" />
-      <option name="jrePathEnabled" value="false" />
-      <option name="passParentEnvs" value="true" />
-      <option name="workingDirectory" value="$MODULE_WORKING_DIR$" />
-      <option name="programParameters" value="" />
-      <option name="specName" value="ProcessStreamTest" />
-      <option name="testPath" value="Records -- should insert record after some time even if stream isn't ended nor state message were received" />
-      <option name="packageName" value="" />
-      <option name="vmparams" value="" />
-      <method v="2">
-        <option name="Make" enabled="true" />
-      </method>
-    </configuration>
     <configuration name="ProcessStreamTest: should write state to passed outputStream (1)" type="ioKotest" factoryName="Kotest" temporary="true" defaultName="singleModule">
       <module name="singer-target-clickhouse.test" />
       <option name="jrePath" value="" />
@@ -265,19 +279,19 @@
       </method>
     </configuration>
     <list>
-      <item itemvalue="Gradle.ProcessStreamTest" />
-      <item itemvalue="Kotest.ProcessStreamTest: should insert record after some time even if stream isn't ended nor state message were received" />
+      <item itemvalue="Gradle.ProcessStreamTest (1)" />
+      <item itemvalue="Gradle.MainTest (1)" />
       <item itemvalue="Kotest.ProcessStreamTest: should insert record after some time even if stream isn't ended nor state message were received (1)" />
       <item itemvalue="Kotest.ProcessStreamTest: should insert record after some time even if stream isn't ended nor state message were received (2)" />
       <item itemvalue="Kotest.ProcessStreamTest: should write state to passed outputStream (1)" />
     </list>
     <recent_temporary>
       <list>
+        <item itemvalue="Gradle.ProcessStreamTest (1)" />
+        <item itemvalue="Gradle.MainTest (1)" />
+        <item itemvalue="Kotest.ProcessStreamTest: should write state to passed outputStream (1)" />
         <item itemvalue="Kotest.ProcessStreamTest: should insert record after some time even if stream isn't ended nor state message were received (2)" />
         <item itemvalue="Kotest.ProcessStreamTest: should insert record after some time even if stream isn't ended nor state message were received (1)" />
-        <item itemvalue="Kotest.ProcessStreamTest: should insert record after some time even if stream isn't ended nor state message were received" />
-        <item itemvalue="Gradle.ProcessStreamTest" />
-        <item itemvalue="Kotest.ProcessStreamTest: should write state to passed outputStream (1)" />
       </list>
     </recent_temporary>
   </component>
@@ -526,7 +540,15 @@
       <option name="project" value="LOCAL" />
       <updated>1731593992725</updated>
     </task>
-    <option name="localTasksCounter" value="22" />
+    <task id="LOCAL-00022" summary="update gradle config">
+      <option name="closed" value="true" />
+      <created>1776861024571</created>
+      <option name="number" value="00022" />
+      <option name="presentableId" value="LOCAL-00022" />
+      <option name="project" value="LOCAL" />
+      <updated>1776861024571</updated>
+    </task>
+    <option name="localTasksCounter" value="23" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -576,7 +598,8 @@
     <MESSAGE value="close output at end" />
     <MESSAGE value="version bump for singer-node" />
     <MESSAGE value="en" />
-    <option name="LAST_COMMIT_MESSAGE" value="en" />
+    <MESSAGE value="update gradle config" />
+    <option name="LAST_COMMIT_MESSAGE" value="update gradle config" />
   </component>
   <component name="XSLT-Support.FileAssociations.UIState">
     <expand />
