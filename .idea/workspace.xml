@@ -4,9 +4,7 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="d22bfa54-76f4-49b1-a427-a423bfc34df4" name="Changes" comment="update gradle config">
-      <change beforePath="$PROJECT_DIR$/.idea/misc.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/misc.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+    <list default="true" id="d22bfa54-76f4-49b1-a427-a423bfc34df4" name="Changes" comment="all test fixed">
       <change beforePath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/utilsTest/kotest/ProcessStream.kt" beforeDir="false" afterPath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/utilsTest/kotest/ProcessStream.kt" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -561,7 +559,15 @@
       <option name="project" value="LOCAL" />
       <updated>1776861024571</updated>
     </task>
-    <option name="localTasksCounter" value="23" />
+    <task id="LOCAL-00023" summary="all test fixed">
+      <option name="closed" value="true" />
+      <created>1776864546983</created>
+      <option name="number" value="00023" />
+      <option name="presentableId" value="LOCAL-00023" />
+      <option name="project" value="LOCAL" />
+      <updated>1776864546983</updated>
+    </task>
+    <option name="localTasksCounter" value="24" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -612,7 +618,8 @@
     <MESSAGE value="version bump for singer-node" />
     <MESSAGE value="en" />
     <MESSAGE value="update gradle config" />
-    <option name="LAST_COMMIT_MESSAGE" value="update gradle config" />
+    <MESSAGE value="all test fixed" />
+    <option name="LAST_COMMIT_MESSAGE" value="all test fixed" />
   </component>
   <component name="XSLT-Support.FileAssociations.UIState">
     <expand />

@@ -36,7 +36,6 @@ data class Config(
 	val port: Int,
 	val database: String,
 	val extra_active_tables: List<String> = emptyList(),
-	val tablesToRecreate: List<String> = emptyList(),
 	val batch_size: Int? = 100,
 	val insert_stream_timeout_sec: Int? = 180,
 	val translate_values: Boolean = false
@@ -94,14 +93,23 @@ class ProcessStreamTest : DescribeSpec({
 		jdbcTemplate.execute("CREATE DATABASE ${initialConnInfo.database};")
 	}
 
-	fun runDockerCommand(configFilePath: String, filePath: String): GenericContainer<Nothing> {
+	fun runDockerCommand(
+		configFilePath: String,
+		filePath: String,
+		updateStreams: List<String> = emptyList()
+	): GenericContainer<Nothing> {
 		try {
+			val baseArgs = arrayOf("--config", "/config.json", "--input", "/input.jsonl", "--output", "/state.jsonl")
+			val updateArgs =
+				if (updateStreams.isNotEmpty()) arrayOf("--update-streams", *updateStreams.toTypedArray())
+				else emptyArray()
+
 			val targetContainer = GenericContainer<Nothing>("ghcr.io/biron-bi/target-clickhouse:2.11.0").apply {
 				withNetwork(network)
 				withNetworkAliases("clickhouse-client")
 				withCopyFileToContainer(MountableFile.forHostPath(configFilePath), "/config.json")
 				withCopyFileToContainer(MountableFile.forHostPath(filePath), "/input.jsonl")
-				withCommand("--config", "/config.json", "--input", "/input.jsonl", "--output", "/state.jsonl")
+				withCommand(*(baseArgs + updateArgs))
 				withStartupCheckStrategy(IndefiniteWaitOneShotStartupCheckStrategy())
 				withLogConsumer { logger.info("[target-clickhouse] ${it.utf8String}") }
 			}
@@ -128,7 +136,6 @@ class ProcessStreamTest : DescribeSpec({
             "username": "${initialConnInfo.username}",
             "password": "${initialConnInfo.password}",
             "extra_active_tables": ${initialConnInfo.extra_active_tables.joinToString(prefix = "[", postfix = "]") { "\"$it\"" }},
-            "tablesToRecreate": ${initialConnInfo.tablesToRecreate.joinToString(prefix = "[", postfix = "]") { "\"$it\"" }},
             "batch_size": ${initialConnInfo.batch_size},
             "insert_stream_timeout_sec": ${initialConnInfo.insert_stream_timeout_sec},
             "translate_values": ${initialConnInfo.translate_values}
@@ -148,23 +155,20 @@ class ProcessStreamTest : DescribeSpec({
 				configFile.absolutePath,
 				"./src/test/kotlin/com/biron/singerTargetClickhouse/utilsTest/kotest/data/stream_with_state.jsonl"
 			)
-			targetContainer.copyFileFromContainer("/state.jsonl", "/tmp/state.jsonl")
+			val localStateFile = File.createTempFile("state", ".jsonl").also { it.deleteOnExit() }
+			targetContainer.copyFileFromContainer("/state.jsonl", localStateFile.absolutePath)
 
-			val stateFilePath = Paths.get("/tmp/state.jsonl")
-			if (Files.exists(stateFilePath)) {
-				val stateContent = Files.readAllLines(stateFilePath, Charset.forName("UTF-8"))
-					.map { it.trimStart('\uFEFF') }
+			val stateFilePath = Paths.get(localStateFile.absolutePath)
+			Files.exists(stateFilePath) shouldBe true
 
-				stateContent.size shouldBe 2
+			val stateContent = Files.readAllLines(stateFilePath, Charset.forName("UTF-8"))
+				.map { it.trimStart('\uFEFF') }
 
-				val expectedContent = listOf(
-					"""{"bookmarks":{"toto":"tata"},",currently_syncing":"tickets"}""",
-					"""{"bookmarks":{},"currently_syncing":null}"""
-				)
-				stateContent shouldBe expectedContent
-			} else {
-				logger.info("Le fichier state.jsonl n'existe pas")
-			}
+			val expectedContent = listOf(
+				"""{"bookmarks":{"toto":"tata"},",currently_syncing":"tickets"}""",
+				"""{"bookmarks":{},"currently_syncing":null}"""
+			)
+			stateContent shouldBe expectedContent
 		}
 	}
 	describe("Schemas") {
@@ -205,6 +209,10 @@ class ProcessStreamTest : DescribeSpec({
 
 		it("should create schema with nullable scalar array as ClickHouse array") {
 			val configFile = configFile(initialConnInfo)
+			runDockerCommand(
+				configFile.absolutePath,
+				"./src/test/kotlin/com/biron/singerTargetClickhouse/utilsTest/kotest/data/stream_schema_with_array.jsonl"
+			)
 			runDockerCommand(
 				configFile.absolutePath,
 				"./src/test/kotlin/com/biron/singerTargetClickhouse/utilsTest/kotest/data/stream_schema_with_array.jsonl"
@@ -492,23 +500,27 @@ class ProcessStreamTest : DescribeSpec({
 			}
 		}
 
-		it("should ignore second schema definition") {
+		it("should handle second schema definition by commiting pending changes") {
 			val configFile = configFile(initialConnInfo)
 			runDockerCommand(
 				configFile.absolutePath,
 				"./src/test/kotlin/com/biron/singerTargetClickhouse/utilsTest/kotest/data/stream_multiple_schema.jsonl"
 			)
+			val count = jdbcTemplate.queryForObject(
+				"select count(*) from ${initialConnInfo.database}.tickets",
+				Int::class.java
+			)
+			count shouldBe 1
 		}
 
 		it("should recreate if schemas already exists, new is different but specified to be recreated") {
 			val configFile = configFile(initialConnInfo)
 			runDockerCommand(configFile.absolutePath, "./src/test/kotlin/com/biron/singerTargetClickhouse/utilsTest/kotest/data/stream_1.jsonl")
 
-			val newConfigFile = configFile(initialConnInfo.copy(tablesToRecreate = listOf("tickets")))
-			println("newConfigFile : ${newConfigFile.readText(Charsets.UTF_8)}")
 			runDockerCommand(
-				newConfigFile.absolutePath,
-				"./src/test/kotlin/com/biron/singerTargetClickhouse/utilsTest/kotest/data/stream_1_modified.jsonl"
+				configFile.absolutePath,
+				"./src/test/kotlin/com/biron/singerTargetClickhouse/utilsTest/kotest/data/stream_1_modified.jsonl",
+				updateStreams = listOf("tickets")
 			)
 
 			val tables = jdbcTemplate.queryForList("show tables from ${initialConnInfo.database}")
@@ -741,6 +753,23 @@ class ProcessStreamTest : DescribeSpec({
 		}
 
 		it("should handle cleanFirst") {
+			val configFile = configFile(initialConnInfo)
+			runDockerCommand(
+				configFile.absolutePath,
+				"./src/test/kotlin/com/biron/singerTargetClickhouse/utilsTest/kotest/data/stream_vanilla.jsonl"
+			)
+			val execResult = jdbcTemplate.queryForObject("select count(*) from ${initialConnInfo.database}.users", Int::class.java)
+			execResult shouldBe 4
+
+			runDockerCommand(
+				configFile.absolutePath,
+				"./src/test/kotlin/com/biron/singerTargetClickhouse/utilsTest/kotest/data/stream_cleanFirst.jsonl"
+			)
+			val execResult2 = jdbcTemplate.queryForObject("select count(*) from ${initialConnInfo.database}.users", Int::class.java)
+			execResult2 shouldBe 2
+		}
+
+		it("should update schema by creating sub table") {
 			val configFile = configFile(initialConnInfo)
 			runDockerCommand(
 				configFile.absolutePath,
