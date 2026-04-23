@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.module.kotlin.jsonMapper
 import com.fasterxml.jackson.module.kotlin.kotlinModule
 import io.github.oshai.kotlinlogging.KotlinLogging
+import java.io.ByteArrayOutputStream
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.ScheduledFuture
@@ -154,13 +155,20 @@ class RecordProcessor(
 	private fun flushBuffered() {
 		if (buffered.isEmpty()) return
 		val ctx = ingestion ?: throw IllegalStateException("ingestion not started but buffered data present")
-		val payload = buildString {
+		// Write rows through a UTF-8 JsonGenerator directly into a byte buffer — avoids the
+		// per-row StringWriter+StringBuilder round-trip and the final String.getBytes encode
+		// that together dominated flushBuffered in the profile.
+		val baos = ByteArrayOutputStream(8 * 1024)
+		jsonMapper.factory.createGenerator(baos).use { gen ->
+			// Jackson's default inserts " " between successive root-level values; disable that
+			// so consecutive rows are separated only by the '\n' we write below.
+			gen.setRootValueSeparator(null)
 			buffered.forEach { row ->
-				append(jsonMapper.writeValueAsString(row))
-				append('\n')
+				jsonMapper.writeValue(gen, row)
+				gen.writeRaw('\n')
 			}
-		}.toByteArray(Charsets.UTF_8)
-		ctx.writer.write(payload)
+		}
+		ctx.writer.write(baos.toByteArray())
 		buffered.clear()
 	}
 
