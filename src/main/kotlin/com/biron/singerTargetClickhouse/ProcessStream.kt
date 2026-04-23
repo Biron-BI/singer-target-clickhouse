@@ -6,6 +6,7 @@ import com.fasterxml.jackson.module.kotlin.kotlinModule
 import io.github.oshai.kotlinlogging.KotlinLogging
 import java.io.InputStream
 import java.io.Writer
+import java.util.concurrent.ArrayBlockingQueue
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -17,6 +18,19 @@ import kotlinx.coroutines.withContext
 
 private val logger = KotlinLogging.logger {}
 private val outMapper: ObjectMapper = jsonMapper { addModule(kotlinModule()) }
+
+/**
+ * Queue capacity between the parser thread and the main consumer. Large enough to absorb
+ * normal bursts and bridge STATE-barrier / HTTP-close waits on the consumer side; small
+ * enough to bound peak memory if the consumer stalls.
+ */
+private const val PARSE_QUEUE_CAPACITY = 1024
+
+private sealed class ParseSignal {
+	class Msg(val message: TargetMessage) : ParseSignal()
+	class Err(val cause: Throwable) : ParseSignal()
+	object Eof : ParseSignal()
+}
 
 /**
  * Read the Singer-formatted message stream from [input] and write state messages (and
@@ -50,23 +64,55 @@ internal fun processStream(
 		logger.error { err.message }
 	}
 
-	// Jackson parses UTF-8 bytes + tokenizes in one pass — no BufferedReader, no per-line String.
-	TargetMessageParser.createParser(input).use { parser ->
-		var lineCount = 0
-		while (encounteredErr == null) {
-			val message = try {
-				TargetMessageParser.readNext(parser) ?: break
-			} catch (e: Throwable) {
-				abort(e)
-				break
+	// Run the Jackson parser on a dedicated producer thread: while we're blocked synchronously
+	// on flushes / STATE commits on the main thread, the producer keeps parsing and filling
+	// the queue. Bounded capacity gives backpressure so the producer can't outrun the consumer
+	// unboundedly.
+	val queue = ArrayBlockingQueue<ParseSignal>(PARSE_QUEUE_CAPACITY)
+	val producerThread = Thread({
+		try {
+			TargetMessageParser.createParser(input).use { parser ->
+				while (!Thread.currentThread().isInterrupted) {
+					val msg = TargetMessageParser.readNext(parser)
+					if (msg == null) {
+						queue.put(ParseSignal.Eof)
+						return@use
+					}
+					queue.put(ParseSignal.Msg(msg))
+				}
 			}
+		} catch (_: InterruptedException) {
+			// Consumer asked us to stop — drop out cleanly.
+		} catch (e: Throwable) {
 			try {
-				processLine(message, config, ch, streamProcessors, state, lineCount, output, abort)
-			} catch (e: Throwable) {
-				abort(e)
+				queue.put(ParseSignal.Err(e))
+			} catch (_: InterruptedException) {
+				// Consumer is gone — nothing to do.
 			}
-			lineCount++
 		}
+	}, "singer-parser").apply { isDaemon = true }
+	producerThread.start()
+
+	var lineCount = 0
+	try {
+		loop@ while (encounteredErr == null) {
+			when (val sig = queue.take()) {
+				is ParseSignal.Msg -> {
+					try {
+						processLine(sig.message, config, ch, streamProcessors, state, lineCount, output, abort)
+					} catch (e: Throwable) {
+						abort(e)
+					}
+					lineCount++
+				}
+
+				is ParseSignal.Err -> abort(sig.cause)
+				ParseSignal.Eof -> break@loop
+			}
+		}
+	} finally {
+		producerThread.interrupt()
+		producerThread.join(5000)
 	}
 	output.flush()
 	logger.info { "done reading lines" }
