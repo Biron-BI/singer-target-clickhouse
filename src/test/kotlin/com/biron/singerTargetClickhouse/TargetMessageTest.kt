@@ -1,6 +1,5 @@
 package com.biron.singerTargetClickhouse
 
-import com.fasterxml.jackson.databind.node.TextNode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeInstanceOf
@@ -53,12 +52,12 @@ class TargetMessageTest : StringSpec({
 		msg.record shouldBe mapOf("id" to 9)
 	}
 
-	"parses STATE message preserving JsonNode" {
+	"parses STATE message preserving value tree" {
 		val msg = TargetMessageParser.parse(
 			"""{"type":"STATE","value":{"bookmarks":{"a":"b"}}}"""
 		).shouldBeInstanceOf<TargetMessage.State>()
 
-		msg.value["bookmarks"]["a"] shouldBe TextNode("b")
+		msg.value shouldBe mapOf("bookmarks" to mapOf("a" to "b"))
 	}
 
 	"parses ACTIVE_STREAMS message" {

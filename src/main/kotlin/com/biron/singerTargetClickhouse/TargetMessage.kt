@@ -2,8 +2,8 @@ package com.biron.singerTargetClickhouse
 
 import com.biron.singer.core.domain.JsonSchema
 import com.fasterxml.jackson.databind.DeserializationFeature
-import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.fasterxml.jackson.databind.type.MapType
 import com.fasterxml.jackson.module.kotlin.jsonMapper
 import com.fasterxml.jackson.module.kotlin.kotlinModule
 
@@ -36,7 +36,8 @@ sealed interface TargetMessage {
 	}
 
 	data class State(
-		val value: JsonNode,
+		/** Generic Jackson tree (Map / List / primitive / null). Re-serialized verbatim on output. */
+		val value: Any?,
 	) : TargetMessage {
 		override val type = "STATE"
 	}
@@ -72,50 +73,60 @@ object TargetMessageParser {
 		disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
 	}
 
+	// Deserializing straight into a Map on the hot path avoids the JsonNode→TokenBuffer→Map
+	// round-trip that dominated the profile (readTree + convertValue together were ~50% of CPU).
+	private val mapType: MapType = objectMapper.typeFactory.constructMapType(
+		LinkedHashMap::class.java, String::class.java, Any::class.java,
+	)
+
 	fun parse(line: String): TargetMessage? {
 		val trimmed = line.trim()
 		if (trimmed.isEmpty()) return null
-		val node = runCatching { objectMapper.readTree(trimmed) }.getOrNull() ?: return TargetMessage.Unknown(line)
-		if (!node.isObject) return TargetMessage.Unknown(line)
-		return when (node["type"]?.asText()) {
-			"SCHEMA" -> parseSchema(node)
+		val map = runCatching { readMap(trimmed) }.getOrNull() ?: return TargetMessage.Unknown(line)
+
+		return when (map["type"] as? String) {
+			"SCHEMA" -> parseSchema(map)
 			"RECORD" -> TargetMessage.Record(
-				stream = node["stream"].asText(),
-				record = asMap(node["record"]),
+				stream = (map["stream"] as? String).orEmpty(),
+				record = asMap(map["record"]),
 			)
 
 			"DELETED_RECORD" -> TargetMessage.DeletedRecord(
-				stream = node["stream"].asText(),
-				record = asMap(node["record"]),
+				stream = (map["stream"] as? String).orEmpty(),
+				record = asMap(map["record"]),
 			)
 
-			"STATE" -> TargetMessage.State(value = node["value"] ?: objectMapper.nullNode())
+			"STATE" -> TargetMessage.State(value = map["value"])
 			"ACTIVE_STREAMS" -> TargetMessage.ActiveStreams(
-				streams = node["streams"]?.map { it.asText() }.orEmpty(),
+				streams = (map["streams"] as? List<*>)?.map { it.toString() }.orEmpty(),
 			)
 
 			else -> TargetMessage.Unknown(line)
 		}
 	}
 
-	private fun parseSchema(node: JsonNode): TargetMessage.Schema = TargetMessage.Schema(
-		stream = node["stream"].asText(),
-		schema = objectMapper.treeToValue(node["schema"], JsonSchema::class.java),
-		keyProperties = node["key_properties"]?.map { it.asText() }.orEmpty(),
-		cleanFirst = node["clean_first"]?.asBoolean(false) ?: false,
-		cleaningColumn = node["cleaning_column"]?.takeIf { !it.isNull }?.asText(),
-		allKeyProperties = node["all_key_properties"]?.let(::parseKeyProperties) ?: SchemaKeyProperties.empty,
+	@Suppress("UNCHECKED_CAST")
+	private fun readMap(s: String): Map<String, Any?>? =
+		objectMapper.readValue(s, mapType) as Map<String, Any?>?
+
+	private fun parseSchema(map: Map<String, Any?>): TargetMessage.Schema = TargetMessage.Schema(
+		stream = (map["stream"] as? String).orEmpty(),
+		schema = objectMapper.convertValue(map["schema"], JsonSchema::class.java),
+		keyProperties = (map["key_properties"] as? List<*>)?.map { it.toString() }.orEmpty(),
+		cleanFirst = (map["clean_first"] as? Boolean) ?: false,
+		cleaningColumn = map["cleaning_column"] as? String,
+		allKeyProperties = (map["all_key_properties"] as? Map<*, *>)
+			?.let(::parseKeyProperties) ?: SchemaKeyProperties.empty,
 	)
 
-	private fun parseKeyProperties(node: JsonNode): SchemaKeyProperties = SchemaKeyProperties(
-		props = node["props"]?.map { it.asText() }.orEmpty(),
-		children = node["children"]?.fields()?.asSequence()
-			?.associate { (key, value) -> key to parseKeyProperties(value) }
-			.orEmpty(),
+	private fun parseKeyProperties(node: Map<*, *>): SchemaKeyProperties = SchemaKeyProperties(
+		props = (node["props"] as? List<*>)?.map { it.toString() }.orEmpty(),
+		children = (node["children"] as? Map<*, *>)?.entries?.associate { (key, value) ->
+			key.toString() to parseKeyProperties(value as Map<*, *>)
+		}.orEmpty(),
 	)
 
 	@Suppress("UNCHECKED_CAST")
-	private fun asMap(node: JsonNode?): Map<String, Any?> =
-		if (node == null || node.isNull) emptyMap()
-		else objectMapper.convertValue(node, Map::class.java) as Map<String, Any?>
+	private fun asMap(value: Any?): Map<String, Any?> =
+		if (value == null) emptyMap() else value as Map<String, Any?>
 }
