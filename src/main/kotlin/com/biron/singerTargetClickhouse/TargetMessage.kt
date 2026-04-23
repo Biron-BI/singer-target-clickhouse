@@ -1,11 +1,14 @@
 package com.biron.singerTargetClickhouse
 
 import com.biron.singer.core.domain.JsonSchema
+import com.fasterxml.jackson.core.JsonParser
+import com.fasterxml.jackson.core.JsonToken
 import com.fasterxml.jackson.databind.DeserializationFeature
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.databind.type.MapType
 import com.fasterxml.jackson.module.kotlin.jsonMapper
 import com.fasterxml.jackson.module.kotlin.kotlinModule
+import java.io.InputStream
 
 sealed interface TargetMessage {
 	val type: String
@@ -74,17 +77,50 @@ object TargetMessageParser {
 	}
 
 	// Deserializing straight into a Map on the hot path avoids the JsonNode→TokenBuffer→Map
-	// round-trip that dominated the profile (readTree + convertValue together were ~50% of CPU).
+	// round-trip that dominated an earlier profile.
 	private val mapType: MapType = objectMapper.typeFactory.constructMapType(
 		LinkedHashMap::class.java, String::class.java, Any::class.java,
 	)
 
+	/**
+	 * Open a reusable [JsonParser] over a JSONL stream — Jackson decodes UTF-8 bytes and
+	 * tokenizes in a single pass, avoiding the `InputStreamReader` + `BufferedReader.readLine`
+	 * overhead and the per-line `String` allocation.
+	 *
+	 * Whitespace (including newlines) between top-level values is consumed automatically.
+	 */
+	fun createParser(input: InputStream): JsonParser = objectMapper.factory.createParser(input)
+
+	/**
+	 * Read the next message from [parser], advancing it past the value. Returns null on EOF.
+	 *
+	 * Unlike [parse], this does not recover from malformed JSON mid-stream — a parse error
+	 * surfaces as a Jackson exception. Singer taps are expected to emit well-formed JSONL.
+	 */
+	fun readNext(parser: JsonParser): TargetMessage? {
+		val token = parser.nextToken() ?: return null
+		if (token != JsonToken.START_OBJECT) {
+			if (token == JsonToken.START_ARRAY) parser.skipChildren()
+			return TargetMessage.Unknown("<non-object top-level token: $token>")
+		}
+		@Suppress("UNCHECKED_CAST")
+		val map = objectMapper.readValue(parser, mapType) as Map<String, Any?>
+		return dispatch(map, rawFallback = null)
+	}
+
+	/**
+	 * Parse a single JSONL line. Kept for unit-test ergonomics and as a safe fallback: on
+	 * malformed JSON it returns [TargetMessage.Unknown] rather than throwing.
+	 */
 	fun parse(line: String): TargetMessage? {
 		val trimmed = line.trim()
 		if (trimmed.isEmpty()) return null
 		val map = runCatching { readMap(trimmed) }.getOrNull() ?: return TargetMessage.Unknown(line)
+		return dispatch(map, rawFallback = line)
+	}
 
-		return when (map["type"] as? String) {
+	private fun dispatch(map: Map<String, Any?>, rawFallback: String?): TargetMessage =
+		when (map["type"] as? String) {
 			"SCHEMA" -> parseSchema(map)
 			"RECORD" -> TargetMessage.Record(
 				stream = (map["stream"] as? String).orEmpty(),
@@ -101,9 +137,8 @@ object TargetMessageParser {
 				streams = (map["streams"] as? List<*>)?.map { it.toString() }.orEmpty(),
 			)
 
-			else -> TargetMessage.Unknown(line)
+			else -> TargetMessage.Unknown(rawFallback ?: map.toString())
 		}
-	}
 
 	@Suppress("UNCHECKED_CAST")
 	private fun readMap(s: String): Map<String, Any?>? =

@@ -11,9 +11,7 @@ import com.github.ajalt.clikt.parameters.types.inputStream
 import com.github.ajalt.clikt.parameters.types.outputStream
 import com.github.ajalt.clikt.parameters.types.path
 import io.github.oshai.kotlinlogging.KotlinLogging
-import java.io.BufferedReader
 import java.io.BufferedWriter
-import java.io.InputStreamReader
 import java.io.OutputStreamWriter
 import java.nio.charset.StandardCharsets
 import kotlin.io.path.reader
@@ -47,13 +45,12 @@ class RootCommand : CliktCommand(name = "target-clickhouse") {
 		val stdin = inputStream ?: System.`in`
 		val stdout = outputStream ?: System.out
 
-		val reader = BufferedReader(InputStreamReader(stdin, StandardCharsets.UTF_8))
 		val writer = BufferedWriter(OutputStreamWriter(stdout, StandardCharsets.UTF_8))
 
 		try {
-			reader.use {
+			stdin.use {
 				writer.use {
-					processStream(reader, config, writer, updateStreams)
+					processStream(stdin, config, writer, updateStreams)
 				}
 			}
 			logger.info { "Stream processing done" }

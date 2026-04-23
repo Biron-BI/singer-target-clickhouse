@@ -18,10 +18,8 @@ import io.kotest.matchers.file.shouldExist
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldInclude
-import java.io.BufferedReader
 import java.io.BufferedWriter
 import java.io.File
-import java.io.InputStreamReader
 import java.io.OutputStreamWriter
 import java.io.PipedInputStream
 import java.io.PipedOutputStream
@@ -115,9 +113,9 @@ class ProcessStreamTest : DescribeSpec({
 		val cfg = toTargetConfig(configFile)
 		val stateFile = File.createTempFile("state", ".jsonl").apply { deleteOnExit() }
 		val inputPath = File("$DATA_DIR/$inputFile")
-		BufferedReader(InputStreamReader(inputPath.inputStream(), StandardCharsets.UTF_8)).use { reader ->
+		inputPath.inputStream().use { input ->
 			BufferedWriter(OutputStreamWriter(stateFile.outputStream(), StandardCharsets.UTF_8)).use { writer ->
-				processStream(reader, cfg, writer, updateStreams)
+				processStream(input, cfg, writer, updateStreams)
 			}
 		}
 		return RunResult(stateFile)
@@ -406,7 +404,7 @@ class ProcessStreamTest : DescribeSpec({
 			runBlocking {
 				val job = launch(Dispatchers.IO) {
 					try {
-						processStream(InputStreamReader(pipedIn, StandardCharsets.UTF_8), cfg, output)
+						processStream(pipedIn, cfg, output)
 					} catch (e: Exception) {
 						logger.info(e) { "processStream terminated" }
 					}

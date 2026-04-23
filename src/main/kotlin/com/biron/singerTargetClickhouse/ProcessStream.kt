@@ -4,8 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.module.kotlin.jsonMapper
 import com.fasterxml.jackson.module.kotlin.kotlinModule
 import io.github.oshai.kotlinlogging.KotlinLogging
-import java.io.BufferedReader
-import java.io.Reader
+import java.io.InputStream
 import java.io.Writer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -27,7 +26,7 @@ private val outMapper: ObjectMapper = jsonMapper { addModule(kotlinModule()) }
  * Mirrors the TS `processStream` entry point.
  */
 fun processStream(
-	input: Reader,
+	input: InputStream,
 	config: TargetConfig,
 	output: Writer,
 	streamsToReplace: List<String> = emptyList(),
@@ -37,7 +36,7 @@ fun processStream(
 }
 
 internal fun processStream(
-	input: Reader,
+	input: InputStream,
 	config: TargetConfig,
 	output: Writer,
 	streamsToReplace: List<String>,
@@ -51,15 +50,22 @@ internal fun processStream(
 		logger.error { err.message }
 	}
 
-	BufferedReader(input).useLines { lines ->
-		lines.withIndex().forEach { (index, line) ->
-			if (encounteredErr != null) return@forEach
-			val message = TargetMessageParser.parse(line) ?: return@forEach
+	// Jackson parses UTF-8 bytes + tokenizes in one pass — no BufferedReader, no per-line String.
+	TargetMessageParser.createParser(input).use { parser ->
+		var lineCount = 0
+		while (encounteredErr == null) {
+			val message = try {
+				TargetMessageParser.readNext(parser) ?: break
+			} catch (e: Throwable) {
+				abort(e)
+				break
+			}
 			try {
-				processLine(message, config, ch, streamProcessors, state, index, output, abort)
+				processLine(message, config, ch, streamProcessors, state, lineCount, output, abort)
 			} catch (e: Throwable) {
 				abort(e)
 			}
+			lineCount++
 		}
 	}
 	output.flush()
