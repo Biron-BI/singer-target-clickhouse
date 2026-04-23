@@ -1,0 +1,8 @@
+[versions]
+biron-singer-kotlin = "1.6.3"
+
+
+[libraries]
+biron-singer-kotlin-core = { group = "com.biron.singer", name = "core", version.ref = "biron-singer-kotlin" }
+biron-singer-kotlin-config = { group = "com.biron.singer", name = "config", version.ref = "biron-singer-kotlin" }
+biron-singer-kotlin-models = { group = "com.biron.singer", name = "models", version.ref = "biron-singer-kotlin" }

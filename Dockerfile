@@ -1,11 +1,7 @@
-FROM node:16.13.1-stretch
+FROM eclipse-temurin:21-jre-noble
 
-# should be filled by the result of command:  npm pkg get version | sed 's/"//g'
-ARG TAG="0.0.0"
-
-# Install from npm registry to ensure both versions are identical
-RUN npm install -g target-clickhouse@${TAG}
+COPY build/libs/singer-target-clickhouse.jar /opt/target-clickhouse/target-clickhouse.jar
 
 LABEL org.opencontainers.image.source=https://github.com/biron-bi/singer-target-clickhouse
 
-ENTRYPOINT ["node", "/usr/local/lib/node_modules/target-clickhouse/dist/index.js"]
+ENTRYPOINT ["java", "-jar", "/opt/target-clickhouse/target-clickhouse.jar"]

@@ -2,6 +2,8 @@
 
 package com.biron.singerTargetClickhouse.utilsTest.kotest
 
+import com.biron.singerTargetClickhouse.TargetConfig
+import com.biron.singerTargetClickhouse.processStream
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.kotest.assertions.nondeterministic.eventually
@@ -16,6 +18,15 @@ import io.kotest.matchers.file.shouldExist
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldInclude
+import java.io.BufferedReader
+import java.io.BufferedWriter
+import java.io.File
+import java.io.InputStreamReader
+import java.io.OutputStreamWriter
+import java.io.PipedInputStream
+import java.io.PipedOutputStream
+import java.nio.charset.StandardCharsets
+import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -24,21 +35,14 @@ import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.jdbc.core.queryForObject
 import org.springframework.jdbc.datasource.DriverManagerDataSource
 import org.testcontainers.clickhouse.ClickHouseContainer
-import org.testcontainers.containers.GenericContainer
-import org.testcontainers.containers.Network
-import org.testcontainers.containers.startupcheck.IndefiniteWaitOneShotStartupCheckStrategy
-import org.testcontainers.utility.MountableFile
-import java.io.File
-import kotlin.time.Duration.Companion.seconds
 
 
-private const val TARGET_IMAGE = "ghcr.io/biron-bi/target-clickhouse:2.11.0"
 private const val CLICKHOUSE_IMAGE = "clickhouse/clickhouse-server:24.12.3.47"
 
 private val DATA_DIR: String =
 	"./src/test/kotlin/${ProcessStreamTest::class.java.packageName.replace('.', '/')}/data"
 
-data class Config(
+private data class TestTargetConfig(
 	val host: String,
 	val username: String,
 	val password: String,
@@ -54,8 +58,8 @@ class ProcessStreamTest : DescribeSpec({
 
 	val logger = KotlinLogging.logger {}
 
-	val initialConnInfo = Config(
-		host = "clickhouse-server",
+	val baseConfig = TestTargetConfig(
+		host = "placeholder",
 		port = 8123,
 		database = "datayse",
 		username = "user",
@@ -64,69 +68,62 @@ class ProcessStreamTest : DescribeSpec({
 
 	lateinit var container: ClickHouseContainer
 	lateinit var jdbcTemplate: JdbcTemplate
-	lateinit var network: Network
 
 	beforeSpec {
-		network = Network.newNetwork()
-		container = ClickHouseContainer(CLICKHOUSE_IMAGE)
-			.withNetwork(network)
-			.withNetworkAliases("clickhouse-server")
-			.apply {
-				withUsername(initialConnInfo.username)
-				withPassword(initialConnInfo.password)
-				withDatabaseName(initialConnInfo.database)
-				start()
-			}
+		container = ClickHouseContainer(CLICKHOUSE_IMAGE).apply {
+			withUsername(baseConfig.username)
+			withPassword(baseConfig.password)
+			withDatabaseName(baseConfig.database)
+			start()
+		}
 
-		jdbcTemplate = DriverManagerDataSource(
-			"jdbc:clickhouse://${container.host}:${container.getMappedPort(initialConnInfo.port)}",
-			container.username,
-			container.password,
-		).let(::JdbcTemplate)
+		jdbcTemplate = JdbcTemplate(
+			DriverManagerDataSource(
+				"jdbc:clickhouse://${container.host}:${container.getMappedPort(baseConfig.port)}",
+				container.username,
+				container.password,
+			),
+		)
 	}
 
-	afterSpec {
-		container.stop()
-	}
+	afterSpec { container.stop() }
 
 	beforeEach {
-		jdbcTemplate.execute("DROP DATABASE IF EXISTS ${initialConnInfo.database};")
-		jdbcTemplate.execute("CREATE DATABASE ${initialConnInfo.database};")
+		jdbcTemplate.execute("DROP DATABASE IF EXISTS ${baseConfig.database};")
+		jdbcTemplate.execute("CREATE DATABASE ${baseConfig.database};")
 	}
 
 	val jsonMapper = jacksonObjectMapper()
 
-	fun writeConfig(config: Config): File = File.createTempFile("test-config", ".json").apply {
+	fun writeConfig(config: TestTargetConfig): File = File.createTempFile("test-config", ".json").apply {
 		writeText(jsonMapper.writeValueAsString(config))
+		deleteOnExit()
 	}
 
-	fun targetContainer(configFile: File): GenericContainer<Nothing> =
-		GenericContainer<Nothing>(TARGET_IMAGE).apply {
-			withNetwork(network)
-			withCopyFileToContainer(MountableFile.forHostPath(configFile.absolutePath), "/config.json")
-			withStartupCheckStrategy(IndefiniteWaitOneShotStartupCheckStrategy())
-			withLogConsumer { frame -> logger.info { "[target-clickhouse] ${frame.utf8String}" } }
-		}
+	/** Parse the JSON config written by tests then override host/port with the live testcontainer. */
+	fun toTargetConfig(jsonFile: File): TargetConfig =
+		jsonFile.reader(StandardCharsets.UTF_8).use { TargetConfig.fromJson(it) }
+			.copy(host = container.host, port = container.getMappedPort(baseConfig.port))
+
+	data class RunResult(val stateFile: File)
 
 	fun runTarget(
 		inputFile: String,
-		configFile: File = writeConfig(initialConnInfo),
+		configFile: File = writeConfig(baseConfig),
 		updateStreams: List<String> = emptyList(),
-	): GenericContainer<Nothing> {
-		val args = arrayOf("--config", "/config.json", "--input", "/input.jsonl", "--output", "/state.jsonl") +
-			if (updateStreams.isEmpty()) emptyArray() else arrayOf("--update-streams", *updateStreams.toTypedArray())
-
-		return targetContainer(configFile).apply {
-			withNetworkAliases("clickhouse-client")
-			withCopyFileToContainer(MountableFile.forHostPath("$DATA_DIR/$inputFile"), "/input.jsonl")
-			withCommand(*args)
-			start()
-			currentContainerInfo!!.state!!.takeIf { it.exitCodeLong != 0L }
-				?.let { state -> logger.info { "Target container exited non-zero: ${state.error}" } }
+	): RunResult {
+		val cfg = toTargetConfig(configFile)
+		val stateFile = File.createTempFile("state", ".jsonl").apply { deleteOnExit() }
+		val inputPath = File("$DATA_DIR/$inputFile")
+		BufferedReader(InputStreamReader(inputPath.inputStream(), StandardCharsets.UTF_8)).use { reader ->
+			BufferedWriter(OutputStreamWriter(stateFile.outputStream(), StandardCharsets.UTF_8)).use { writer ->
+				processStream(reader, cfg, writer, updateStreams)
+			}
 		}
+		return RunResult(stateFile)
 	}
 
-	val db = initialConnInfo.database
+	val db = baseConfig.database
 
 	fun showTables(): List<String> = jdbcTemplate.queryForList("SHOW TABLES FROM $db", String::class.java)
 
@@ -143,11 +140,10 @@ class ProcessStreamTest : DescribeSpec({
 
 	describe("outputStream") {
 		it("should write state to passed outputStream") {
-			val stateFile = File.createTempFile("state", ".jsonl").also { it.deleteOnExit() }
-			runTarget("stream_with_state.jsonl").copyFileFromContainer("/state.jsonl", stateFile.absolutePath)
+			val result = runTarget("stream_with_state.jsonl")
 
-			stateFile.shouldExist()
-			stateFile.readLines(Charsets.UTF_8).map { it.trimStart('\uFEFF') } shouldBe listOf(
+			result.stateFile.shouldExist()
+			result.stateFile.readLines(Charsets.UTF_8).map { it.trimStart('\uFEFF') } shouldBe listOf(
 				"""{"bookmarks":{"toto":"tata"},",currently_syncing":"tickets"}""",
 				"""{"bookmarks":{},"currently_syncing":null}""",
 			)
@@ -174,12 +170,12 @@ class ProcessStreamTest : DescribeSpec({
 
 			queryRows(
 				"""
-                SELECT name, type
-                FROM system.columns
-                WHERE table LIKE 'return_requests_%'
-                  AND database = '$db'
-                  AND name = 'value'
-				""".trimIndent()
+				SELECT name, type
+				FROM system.columns
+				WHERE table LIKE 'return_requests_%'
+				  AND database = '$db'
+				  AND name = 'value'
+				""".trimIndent(),
 			).joinToString("\n") shouldBe "value\tNullable(String)"
 		}
 
@@ -189,11 +185,11 @@ class ProcessStreamTest : DescribeSpec({
 
 			queryRows(
 				"""
-                SELECT name, type
-                FROM system.columns
-                WHERE database = '$db'
-                  AND table = 'query_log'
-				""".trimIndent()
+				SELECT name, type
+				FROM system.columns
+				WHERE database = '$db'
+				  AND table = 'query_log'
+				""".trimIndent(),
 			).take(2) shouldContainExactly listOf(
 				"databases\tArray(String)",
 				"event_time\tDateTime",
@@ -231,7 +227,6 @@ class ProcessStreamTest : DescribeSpec({
 	}
 
 	describe("columns update") {
-
 		it("should create / update / delete columns if schema already exists and new has different columns") {
 			runTarget("stream_1.jsonl")
 			runTarget("stream_1_modified.jsonl")
@@ -240,11 +235,11 @@ class ProcessStreamTest : DescribeSpec({
 
 			queryRows(
 				"""
-                select name, type
-                from system.columns
-                where table = 'tickets'
-                and database = '$db'
-                order by name
+				select name, type
+				from system.columns
+				where table = 'tickets'
+				and database = '$db'
+				order by name
 				""".trimIndent(),
 				separator = " ",
 			).also {
@@ -259,11 +254,11 @@ class ProcessStreamTest : DescribeSpec({
 
 			queryRows(
 				"""
-                select name, type
-                from system.columns
-                where table = 'users'
-                and database = '$db'
-                order by name
+				select name, type
+				from system.columns
+				where table = 'users'
+				and database = '$db'
+				order by name
 				""".trimIndent(),
 				separator = " ",
 			) shouldContainExactly listOf("id Int64")
@@ -312,10 +307,12 @@ class ProcessStreamTest : DescribeSpec({
 							table.startsWith("_archived_") shouldBe false
 							table.startsWith("_dropped_") shouldBe false
 						}
+
 						table.contains("ticket_metrics") -> {
 							table.startsWith("_archived_") shouldBe true
 							table.contains("_dropped_") shouldBe false
 						}
+
 						else -> table.startsWith("_dropped_") shouldBe true
 					}
 					table.startsWith("_dropped__dropped_") shouldBe false
@@ -324,7 +321,7 @@ class ProcessStreamTest : DescribeSpec({
 		}
 
 		it("should not rename tables as dropped when they are no longer active if they are registered as extra_active") {
-			val config = writeConfig(initialConnInfo.copy(extra_active_tables = listOf("tickets")))
+			val config = writeConfig(baseConfig.copy(extra_active_tables = listOf("tickets")))
 			runTarget("stream_1.jsonl", configFile = config)
 			runTarget("stream_1_inactive.jsonl", configFile = config)
 
@@ -370,24 +367,20 @@ class ProcessStreamTest : DescribeSpec({
 	}
 
 	describe("Records") {
-
 		it("should insert simple records") {
 			runTarget("stream_short.jsonl")
 			jdbcTemplate.queryForList(
-				"select brand_id from $db.tickets where assignee_id = 11"
+				"select brand_id from $db.tickets where assignee_id = 11",
 			) shouldContainExactly listOf(mapOf("brand_id" to 22L))
 		}
 
-		// Verifies that a record is inserted after insert_stream_timeout_sec even when no
-		// end-of-stream or state message is received. The regular --input path can't be used:
-		// EOF on the input file flushes the batch immediately and defeats the timeout.
-		// Instead, override the entrypoint to pipe schema+record into node via a subshell
-		// that stays open with `sleep` so stdin does not close.
+		// Verifies that a batch is committed after insert_stream_timeout_sec when no
+		// end-of-stream or state message is received. We replace the shell-based approach
+		// of the TS test with a PipedInputStream kept open from a coroutine.
 		it("should insert record after some time even if stream isn't ended nor state message were received") {
 			val insertTimeoutSec = 8
-			val keepOpenSec = 30
-			val config = writeConfig(
-				initialConnInfo.copy(batch_size = 10, insert_stream_timeout_sec = insertTimeoutSec)
+			val cfg = toTargetConfig(
+				writeConfig(baseConfig.copy(batch_size = 10, insert_stream_timeout_sec = insertTimeoutSec)),
 			)
 
 			val schemaJson = jsonMapper.writeValueAsString(
@@ -399,51 +392,45 @@ class ProcessStreamTest : DescribeSpec({
 						"type" to listOf("null", "object"),
 					),
 					"key_properties" to listOf("id"),
-				)
+				),
 			)
 			val recordJson = jsonMapper.writeValueAsString(
-				mapOf("type" to "RECORD", "stream" to "tickets", "record" to mapOf("id" to 155))
+				mapOf("type" to "RECORD", "stream" to "tickets", "record" to mapOf("id" to 155)),
 			)
 
-			fun shellQuote(s: String) = "'" + s.replace("'", "'\\''") + "'"
-			val shellCmd =
-				"(printf '%s\\n' ${shellQuote(schemaJson)}; printf '%s\\n' ${shellQuote(recordJson)}; " +
-					"sleep $keepOpenSec) | " +
-					"node /usr/local/lib/node_modules/target-clickhouse/dist/index.js " +
-					"--config /config.json --output /state.jsonl"
-
-			val container = targetContainer(config).apply {
-				withCreateContainerCmdModifier { cmd ->
-					cmd.withEntrypoint("sh", "-c")
-					cmd.withCmd(shellCmd)
-				}
-			}
+			val pipedIn = PipedInputStream(64 * 1024)
+			val pipedOut = PipedOutputStream(pipedIn)
+			val stateFile = File.createTempFile("state", ".jsonl").also { it.deleteOnExit() }
+			val output = BufferedWriter(OutputStreamWriter(stateFile.outputStream(), StandardCharsets.UTF_8))
 
 			runBlocking {
 				val job = launch(Dispatchers.IO) {
 					try {
-						container.start()
+						processStream(InputStreamReader(pipedIn, StandardCharsets.UTF_8), cfg, output)
 					} catch (e: Exception) {
-						logger.info(e) { "target-clickhouse container terminated" }
+						logger.info(e) { "processStream terminated" }
 					}
 				}
 
 				try {
+					pipedOut.write((schemaJson + "\n").toByteArray(StandardCharsets.UTF_8))
+					pipedOut.write((recordJson + "\n").toByteArray(StandardCharsets.UTF_8))
+					pipedOut.flush()
+
 					eventually(20.seconds) {
 						jdbcTemplate.queryForMap("EXISTS $db.tickets").values.first() shouldBe 1
 					}
 
-					// Table exists but no record should be inserted yet (timeout hasn't fired)
 					delay(1000)
 					jdbcTemplate.queryForList("select id from $db.tickets").shouldBeEmpty()
 
-					// Eventually the batch is flushed by insert_stream_timeout_sec
 					eventually((insertTimeoutSec + 10).seconds) {
 						jdbcTemplate.queryForList("select id from $db.tickets") shouldContainExactly
 							listOf(mapOf("id" to 155L))
 					}
 				} finally {
-					runCatching { container.stop() }
+					runCatching { pipedOut.close() }
+					runCatching { output.close() }
 					job.cancel()
 				}
 			}
@@ -454,21 +441,21 @@ class ProcessStreamTest : DescribeSpec({
 			runTarget("stream_short_reordered.jsonl")
 
 			jdbcTemplate.queryForList(
-				"select brand_id from $db.tickets where assignee_id = 11"
+				"select brand_id from $db.tickets where assignee_id = 11",
 			) shouldContainExactly listOf(mapOf("brand_id" to 22L))
 		}
 
 		it("should flatten nested object") {
 			runTarget("stream_nested_object.jsonl")
 			jdbcTemplate.queryForList(
-				"select follower_ids__name from $db.tickets"
+				"select follower_ids__name from $db.tickets",
 			) shouldContainExactly listOf(mapOf("follower_ids__name" to "jack"))
 		}
 
 		it("should ingest stream from real data: covidtracker") {
 			runTarget("covidtracker.jsonl")
 			jdbcTemplate.queryForObject(
-				"select sum(total_rows), sum(tables.total_bytes) from system.tables where database = '$db'"
+				"select sum(total_rows), sum(tables.total_bytes) from system.tables where database = '$db'",
 			) { rs, _ -> "${rs.getInt(1)}\t${rs.getInt(2)}" } shouldBe "5789\t1334466"
 
 			runTarget("covidtracker.jsonl")
@@ -495,7 +482,7 @@ class ProcessStreamTest : DescribeSpec({
 		}
 
 		it("should produce same result from real data whether translate value is effective or not") {
-			runTarget("covidtracker.jsonl", configFile = writeConfig(initialConnInfo.copy(translate_values = false)))
+			runTarget("covidtracker.jsonl", configFile = writeConfig(baseConfig.copy(translate_values = false)))
 			val sumQuery = "select sum(total_rows), sum(total_bytes) from system.tables where database = '$db'"
 			val baseline = jdbcTemplate.queryForList(sumQuery)
 
@@ -504,7 +491,7 @@ class ProcessStreamTest : DescribeSpec({
 
 			runTarget(
 				"covidtracker.jsonl",
-				configFile = writeConfig(initialConnInfo.copy(translate_values = true, database = otherDb)),
+				configFile = writeConfig(baseConfig.copy(translate_values = true, database = otherDb)),
 			)
 			jdbcTemplate.queryForList(sumQuery.replace(db, otherDb)) shouldBe baseline
 		}
