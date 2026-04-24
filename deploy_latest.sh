@@ -3,16 +3,11 @@
 set -o errexit
 set -o pipefail
 
-TAG=$(npm pkg get version | sed 's/"//g')
+KOTLIN_IMAGE="ghcr.io/biron-bi/target-clickhouse:kotlin"
 
-# requires a previous call to `npm publish`
-docker build --build-arg TAG="$TAG" -t ghcr.io/biron-bi/target-clickhouse:"$TAG" .
+docker build -t "$KOTLIN_IMAGE" .
 
 # requires login
 # https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry#authenticating-with-a-personal-access-token-classic
 # minimal scope for PAT is "write:packages"
-docker push ghcr.io/biron-bi/target-clickhouse:"$TAG"
-
-docker build --build-arg TAG="$TAG" -t ghcr.io/biron-bi/target-clickhouse:latest .
-
-docker push ghcr.io/biron-bi/target-clickhouse:latest
+docker push "$KOTLIN_IMAGE"
