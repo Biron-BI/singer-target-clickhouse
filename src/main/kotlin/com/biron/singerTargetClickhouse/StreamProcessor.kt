@@ -13,21 +13,21 @@ class StreamProcessor private constructor(
 	private val startedClean: Boolean,
 	private val recordProcessor: RecordProcessor,
 	private val deletedRecordProcessor: DeletedRecordProcessor,
+	val streamReader: StreamReader,
 ) {
 	private var maxVer: Long = 0
 	private var noPendingRows: Int = 0
 	private val cleaningValues: MutableSet<String> = mutableSetOf()
 
-	fun processRecord(record: Map<String, Any?>, messageCount: Int, abort: (Throwable) -> Unit) {
-		if (!startedClean) {
-			val cleaningColumn = meta.cleaningColumn
-			val cleaningValue = cleaningColumn?.let { record[it] }?.toString()
+	fun processRecord(row: RecordRow, messageCount: Int, abort: (Throwable) -> Unit) {
+		if (!startedClean && streamReader.cleaningColumnSlot >= 0) {
+			val cleaningValue = row[streamReader.cleaningColumnSlot]?.toString()
 			if (!cleaningValue.isNullOrEmpty() && cleaningValue !in cleaningValues) {
 				deleteCleaningValue(cleaningValue)
 				cleaningValues += cleaningValue
 			}
 		}
-		recordProcessor.pushRecord(record, abort, maxVer, messageCount = messageCount)
+		recordProcessor.pushRecord(row, abort, maxVer, messageCount = messageCount)
 		maxVer++
 		noPendingRows++
 	}
@@ -79,17 +79,17 @@ class StreamProcessor private constructor(
 			logger.warn { "[${meta.prop}]: unexpected request to clean values: cleaning column undefined" }
 			return
 		}
-		val cleaningColumnMeta = (meta.simpleColumnMappings.map { it.prop to it.valueTranslator } +
-			meta.pkMappings.map { it.prop to it.valueTranslator })
+		val cleaningColumnMeta = (meta.simpleColumnMappings.map { it.prop to it.schemaType } +
+			meta.pkMappings.map { it.prop to it.schemaType })
 			.firstOrNull { (prop, _) -> prop == cleaningColumn }
 			?: throw IllegalStateException(
 				"[${meta.prop}] could not resolve cleaning column meta (looking for $cleaningColumn)",
 			)
-		val translator = cleaningColumnMeta.second
+		val schemaType = cleaningColumnMeta.second
 			?: throw IllegalStateException(
 				"[${meta.prop}] could not be used as cleaning column as it do not have a translator",
 			)
-		val resolvedValue = translator(value)
+		val resolvedValue = translateValue(schemaType, value)
 		logger.info { "[${meta.prop}]: cleaning column: deleting based on $resolvedValue" }
 
 		clickhouse.runQuery(
@@ -158,6 +158,7 @@ class StreamProcessor private constructor(
 						translateValues = config.translateValues,
 					),
 				),
+				streamReader = buildStreamReader(meta, config.translateValues),
 			)
 
 			val rootAlreadyExists: Boolean = if (cleanFirst) {

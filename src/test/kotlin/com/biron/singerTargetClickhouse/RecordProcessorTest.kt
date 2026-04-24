@@ -11,26 +11,33 @@ class RecordProcessorTest : DescribeSpec({
 		batchSize: Int = 1,
 		translateValues: Boolean = false,
 		autoEndTimeoutMs: Long = 10_000,
-	): Pair<FakeTargetConnection, RecordProcessor> {
+	): Triple<FakeTargetConnection, RecordProcessor, SourceMeta> {
 		val conn = FakeTargetConnection()
 		val proc = RecordProcessor(meta, conn, RecordProcessorConfig(batchSize, translateValues, autoEndTimeoutMs))
-		return conn to proc
+		return Triple(conn, proc, meta)
 	}
+
+	fun RecordProcessor.push(
+		meta: SourceMeta,
+		data: Any?,
+		translateValues: Boolean = false,
+		maxVer: Long = 0,
+	) = pushRecord(mapToRow(meta, data, translateValues), abort, maxVer)
 
 	describe("pushRecord") {
 		it("handles simple schema and data") {
-			val (conn, proc) = processor(batchSize = 1)
-			proc.pushRecord(mapOf("id" to 1, "name" to "a"), abort, 0)
-			proc.pushRecord(mapOf("id" to 2, "name" to "b"), abort, 0)
+			val (conn, proc, meta) = processor(batchSize = 1)
+			proc.push(meta, mapOf("id" to 1, "name" to "a"))
+			proc.push(meta, mapOf("id" to 2, "name" to "b"))
 
 			conn.streams[0].data shouldBe "[1,\"a\"]\n[2,\"b\"]\n"
 			proc.buildSQLInsertField() shouldContainExactly listOf("`id`", "`name`")
 		}
 
 		it("auto-ends ingestion after inactivity") {
-			val (conn, proc) = processor(batchSize = 5, autoEndTimeoutMs = 200)
-			proc.pushRecord(mapOf("id" to 1, "name" to "a"), abort, 0)
-			proc.pushRecord(mapOf("id" to 2, "name" to "b"), abort, 0)
+			val (conn, proc, meta) = processor(batchSize = 5, autoEndTimeoutMs = 200)
+			proc.push(meta, mapOf("id" to 1, "name" to "a"))
+			proc.push(meta, mapOf("id" to 2, "name" to "b"))
 			Thread.sleep(500)
 
 			conn.streams[0].data shouldBe "[1,\"a\"]\n[2,\"b\"]\n"
@@ -38,10 +45,10 @@ class RecordProcessorTest : DescribeSpec({
 		}
 
 		it("flushes at batch size and finishes on endIngestion") {
-			val (conn, proc) = processor(batchSize = 2, autoEndTimeoutMs = 2_000)
-			proc.pushRecord(mapOf("id" to 1, "name" to "a"), abort, 0)
-			proc.pushRecord(mapOf("id" to 2, "name" to "b"), abort, 0)
-			proc.pushRecord(mapOf("id" to 3, "name" to "c"), abort, 0)
+			val (conn, proc, meta) = processor(batchSize = 2, autoEndTimeoutMs = 2_000)
+			proc.push(meta, mapOf("id" to 1, "name" to "a"))
+			proc.push(meta, mapOf("id" to 2, "name" to "b"))
+			proc.push(meta, mapOf("id" to 3, "name" to "c"))
 
 			conn.streams[0].data shouldBe "[1,\"a\"]\n[2,\"b\"]\n"
 
@@ -50,30 +57,31 @@ class RecordProcessorTest : DescribeSpec({
 		}
 
 		it("applies value translation when configured") {
-			val (conn, proc) = processor(
+			val (conn, proc, meta) = processor(
 				meta = simpleMeta.copy(simpleColumnMappings = listOf(idAsColumn, validColumn)),
 				batchSize = 1,
 				translateValues = true,
 			)
-			proc.pushRecord(mapOf("id" to 1, "valid" to "true"), abort, 0)
+			proc.push(meta, mapOf("id" to 1, "valid" to "true"), translateValues = true)
 
 			conn.streams[0].data shouldBe "[1,1]\n"
 		}
 
 		it("does not translate when translateValues=false") {
-			val (conn, proc) = processor(
+			val (conn, proc, meta) = processor(
 				meta = simpleMeta.copy(simpleColumnMappings = listOf(idAsColumn, validColumn)),
 				batchSize = 1,
 				translateValues = false,
 			)
-			proc.pushRecord(mapOf("id" to 1, "valid" to "true"), abort, 0)
+			proc.push(meta, mapOf("id" to 1, "valid" to "true"))
 
 			conn.streams[0].data shouldBe "[1,\"true\"]\n"
 		}
 
 		it("feeds deep nested children with propagated root version") {
-			val (conn, proc) = processor(meta = metaWithPKAndChildren, batchSize = 1, autoEndTimeoutMs = 2_000)
-			proc.pushRecord(
+			val (conn, proc, meta) = processor(meta = metaWithPKAndChildren, batchSize = 1, autoEndTimeoutMs = 2_000)
+			proc.push(
+				meta = meta,
 				data = mapOf(
 					"id" to 1234,
 					"name" to "a",
@@ -95,7 +103,6 @@ class RecordProcessorTest : DescribeSpec({
 						),
 					),
 				),
-				abort = abort,
 				maxVer = 50,
 			)
 
@@ -109,11 +116,10 @@ class RecordProcessorTest : DescribeSpec({
 		}
 
 		it("handles nested value array (scalar item)") {
-			val (conn, proc) = processor(meta = metaWithNestedValueArray, batchSize = 1)
-			proc.pushRecord(
+			val (conn, proc, meta) = processor(meta = metaWithNestedValueArray, batchSize = 1)
+			proc.push(
+				meta = meta,
 				data = mapOf("events" to listOf(mapOf("previous_value" to "Test"))),
-				abort = abort,
-				maxVer = 0,
 			)
 			proc.endIngestion()
 
@@ -126,14 +132,14 @@ class RecordProcessorTest : DescribeSpec({
 
 	describe("buildSQLInsertField") {
 		it("appends _ver for root with current PKs") {
-			val (_, proc) = processor(
+			val (_, proc, _) = processor(
 				meta = simpleMeta.copy(
 					pkMappings = listOf(id),
 					simpleColumnMappings = listOf(
 						ColumnMap(
 							prop = "name", sqlIdentifier = "`name`", chType = "String",
 							valueExtractor = { (it as? Map<*, *>)?.get("name") },
-							valueTranslator = null, typeFormat = null,
+							schemaType = null, typeFormat = null,
 							nullable = true, lowCardinality = false, nestedArray = false,
 						),
 					),
@@ -143,7 +149,7 @@ class RecordProcessorTest : DescribeSpec({
 		}
 
 		it("omits _ver for root without PKs") {
-			val (_, proc) = processor()
+			val (_, proc, _) = processor()
 			proc.buildSQLInsertField() shouldContainExactly listOf("`id`", "`name`")
 		}
 	}

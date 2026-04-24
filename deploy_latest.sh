@@ -3,7 +3,7 @@
 set -o errexit
 set -o pipefail
 
-KOTLIN_IMAGE="ghcr.io/biron-bi/target-clickhouse:kotlin"
+KOTLIN_IMAGE="ghcr.io/biron-bi/target-clickhouse:kotlin2"
 
 docker build -t "$KOTLIN_IMAGE" .
 

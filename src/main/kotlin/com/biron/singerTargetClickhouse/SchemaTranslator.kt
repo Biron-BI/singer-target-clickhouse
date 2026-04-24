@@ -1,25 +1,23 @@
 package com.biron.singerTargetClickhouse
 
-typealias ValueTranslator = (Any?) -> Any?
-
-object SchemaTranslator {
-	fun buildTranslator(type: String?): ValueTranslator {
-		val inner = translatorFor(type)
-		return { v ->
-			if (v == null || inner == null) v else inner(v)
-		}
-	}
-
-	private fun translatorFor(type: String?): ((Any) -> Any?)? = when (type) {
-		"string" -> ::toStringValue
-		"boolean" -> ::toBooleanFlag
-		"integer" -> ::toInteger
-		"number" -> ::toNumber
-		else -> null
+/**
+ * Coerce a raw value into the Kotlin shape expected for [schemaType]. Null stays null.
+ * Unknown types pass through unchanged.
+ *
+ * The hot ingestion path reads values straight from the JSON token stream in specialized
+ * readers (see [StreamReader]) — this function stays on the cold paths (DeletedRecord,
+ * cleaningColumn handling) where values arrive pre-materialized as [Any?].
+ */
+fun translateValue(schemaType: String?, v: Any?): Any? {
+	if (v == null) return null
+	return when (schemaType) {
+		"string" -> v.toString()
+		"boolean" -> toBooleanFlag(v)
+		"integer" -> toInteger(v)
+		"number" -> toNumber(v)
+		else -> v
 	}
 }
-
-private fun toStringValue(v: Any): String = v.toString()
 
 private fun toBooleanFlag(v: Any): Int = when {
 	v == true || v == "true" -> 1

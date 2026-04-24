@@ -27,6 +27,10 @@ data class RecordProcessorConfig(
  *
  * All mutations of [buffered]/[ingestion] take [lock], so the scheduler-thread-driven
  * auto-end cannot race with the caller thread.
+ *
+ * Rows arrive as [RecordRow]s — slot layout `[currentPks..., simpleColumns..., subtables...]`
+ * determined by the matching [StreamReader]. The processor reads its data from the row by
+ * slot index; translation (config.translateValues) already happened inside the reader.
  */
 class RecordProcessor(
 	private val meta: SourceMeta,
@@ -39,6 +43,8 @@ class RecordProcessor(
 	private val isWithParentPK: Boolean = !isRoot && meta.pkMappings.any { it.pkType == PKType.PARENT }
 	val hasChildren: Boolean = meta.children.isNotEmpty()
 	private val currentPkMappings: List<PkMap> = meta.pkMappings.filter { it.pkType == PKType.CURRENT }
+	private val pkCount: Int = currentPkMappings.size
+	private val columnCount: Int = meta.simpleColumnMappings.size
 	private val children: Map<String, RecordProcessor> = meta.children
 		.associateBy { it.sqlTableName }
 		.mapValues { RecordProcessor(it.value, clickhouse, config, level + 1, scheduler) }
@@ -60,7 +66,7 @@ class RecordProcessor(
 	)
 
 	fun pushRecord(
-		data: Any?,
+		row: RecordRow,
 		abort: (Throwable) -> Unit,
 		maxVer: Long,
 		parentMeta: SourceMetaPK? = null,
@@ -73,7 +79,7 @@ class RecordProcessor(
 
 			val rootVersion = if (isRoot && meta.pkMappings.isNotEmpty()) maxVer + 1 else rootVer
 
-			val currentPkValues = currentPkMappings.map { extractValue(data, it, config.translateValues) }
+			val currentPkValues: List<Any?> = List(pkCount) { row[it] }
 			val srcPk = SourceMetaPK(
 				values = currentPkValues,
 				rootValues = if (isRoot) null else parentMeta?.rootValues ?: parentMeta?.values,
@@ -88,7 +94,7 @@ class RecordProcessor(
 				addAll(srcPk.levelValues!!)
 			}
 
-			buffered.add(buildInsertValues(data, pkValues, rootVersion))
+			buffered.add(buildInsertValues(row, pkValues, rootVersion))
 			if (buffered.size >= config.batchSize) {
 				refreshTimeout(abort)
 				flushBuffered()
@@ -98,17 +104,13 @@ class RecordProcessor(
 		}
 
 		if (hasChildren) {
-			for (child in meta.children) {
+			meta.children.forEachIndexed { i, child ->
 				val processor = children.getValue(child.sqlTableName)
-				val childDataRaw = extractChildData(data, child.prop)
-				val childArray: List<Any?> = when (childDataRaw) {
-					null -> emptyList()
-					is List<*> -> childDataRaw
-					else -> listOf(childDataRaw)
-				}
-				childArray.forEachIndexed { idx, childData ->
+				@Suppress("UNCHECKED_CAST")
+				val childRows = row[pkCount + columnCount + i] as? List<RecordRow> ?: return@forEachIndexed
+				childRows.forEachIndexed { idx, childRow ->
 					processor.pushRecord(
-						data = childData,
+						row = childRow,
 						abort = abort,
 						maxVer = maxVer,
 						parentMeta = sourcePk,
@@ -119,11 +121,6 @@ class RecordProcessor(
 				}
 			}
 		}
-	}
-
-	private fun extractChildData(data: Any?, prop: String): Any? {
-		val parts = prop.split(NESTED_SUB_OBJECT_SEPARATOR)
-		return parts.fold(data) { acc, part -> (acc as? Map<*, *>)?.get(part) }
 	}
 
 	fun endIngestion() {
@@ -225,12 +222,12 @@ class RecordProcessor(
 	}
 
 	private fun buildInsertValues(
-		data: Any?,
+		row: RecordRow,
 		pkValues: List<Any?>,
 		version: Long?,
-	): List<Any?> = buildList(pkValues.size + meta.simpleColumnMappings.size + (if (version != null) 1 else 0)) {
+	): List<Any?> = buildList(pkValues.size + columnCount + (if (version != null) 1 else 0)) {
 		addAll(pkValues)
-		meta.simpleColumnMappings.forEach { add(extractValue(data, it, config.translateValues)) }
+		for (i in 0 until columnCount) add(row[pkCount + i])
 		if (version != null) add(version)
 	}
 

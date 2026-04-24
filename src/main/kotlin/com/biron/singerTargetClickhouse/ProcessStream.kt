@@ -69,11 +69,15 @@ internal fun processStream(
 	// the queue. Bounded capacity gives backpressure so the producer can't outrun the consumer
 	// unboundedly.
 	val queue = ArrayBlockingQueue<ParseSignal>(PARSE_QUEUE_CAPACITY)
+	val streamingParser = StreamingMessageParser(
+		subtableSeparator = config.subtableSeparator,
+		translateValues = config.translateValues,
+	)
 	val producerThread = Thread({
 		try {
-			TargetMessageParser.createParser(input).use { parser ->
+			streamingParser.createParser(input).use { parser ->
 				while (!Thread.currentThread().isInterrupted) {
-					val msg = TargetMessageParser.readNext(parser)
+					val msg = streamingParser.readNext(parser)
 					if (msg == null) {
 						queue.put(ParseSignal.Eof)
 						return@use
@@ -151,10 +155,16 @@ private fun processLine(
 			streamProcessors[msg.stream] = processSchemaMessage(msg, config, ch, state)
 		}
 
-		is TargetMessage.Record -> {
+		is TargetMessage.TypedRecord -> {
 			val processor = streamProcessors[msg.stream]
 				?: throw IllegalStateException("Record message received before Schema is defined")
-			processor.processRecord(msg.record, lineCount, abort)
+			processor.processRecord(msg.row, lineCount, abort)
+		}
+
+		is TargetMessage.Record -> {
+			// Only the legacy line-based parser produces this variant (not the streaming path).
+			// In production we always get TypedRecord from StreamingMessageParser.
+			throw IllegalStateException("Unexpected map-based Record on production path for stream=${msg.stream}")
 		}
 
 		is TargetMessage.DeletedRecord -> {

@@ -7,12 +7,12 @@ private val logger = KotlinLogging.logger {}
 
 fun extractValue(data: Any?, mapping: ColumnMap, translateValue: Boolean): Any? {
 	val raw = mapping.valueExtractor(data) ?: return null
-	return if (translateValue) (mapping.valueTranslator?.invoke(raw) ?: raw) else raw
+	return if (translateValue) translateValue(mapping.schemaType, raw) else raw
 }
 
 fun extractValue(data: Any?, mapping: PkMap, translateValue: Boolean): Any? {
 	val raw = mapping.valueExtractor(data) ?: return null
-	return if (translateValue) (mapping.valueTranslator?.invoke(raw) ?: raw) else raw
+	return if (translateValue) translateValue(mapping.schemaType, raw) else raw
 }
 
 private fun resolveVersionColumn(isRoot: Boolean, hasPkMappings: Boolean, withType: Boolean = true): String {
