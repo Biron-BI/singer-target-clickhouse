@@ -26,6 +26,13 @@
 #   many CPU cores the implementation uses on average — useful to plan how many
 #   targets you can run in parallel on a given host. Requires cgroups v2 with the
 #   systemd driver (Docker default on recent Ubuntu/Debian/Fedora).
+# - Background MergeTree merges are disabled on the ClickHouse server for the
+#   duration of the run (`SYSTEM STOP MERGES`) and re-enabled on exit. This
+#   keeps CH's CPU isolated from the target's CPU budget, matching the
+#   production topology where CH runs on a separate host. Side effects: this
+#   flag is *server-global* (it affects every DB on that server), and with
+#   merges frozen parts accumulate — CH delays inserts at ~150 parts/partition
+#   and refuses at ~300. Fine for fixture-sized inputs, watch out on large ones.
 
 set -euo pipefail
 export LC_ALL=C
@@ -143,6 +150,20 @@ table_count() {
   ch_curl "SELECT count() FROM system.tables WHERE database = '${db}'" | tr -d '\n'
 }
 
+# Mean CPU frequency in MHz across all online cores (from cpufreq sysfs).
+# Prints empty string if cpufreq isn't exposed (containers, some VMs/WSL).
+avg_cpu_mhz() {
+  awk '{s+=$1; n++} END { if (n>0) printf "%d", s/n/1000 }' \
+    /sys/devices/system/cpu/cpu*/cpufreq/scaling_cur_freq 2>/dev/null
+}
+
+# Max temperature in °C across all thermal zones. Filters out obvious junk
+# values (ACPI chassis zones sometimes pin at 127°C). Prints empty if unreadable.
+max_temp_c() {
+  awk '{v=$1+0; if (v>0 && v<150000 && v>m) m=v} END { if (m>0) printf "%d", m/1000 }' \
+    /sys/class/thermal/thermal_zone*/temp 2>/dev/null
+}
+
 # Locate a container's cgroup-v2 cpu.stat file given its ID (systemd driver is the
 # Docker default on recent distros). Falls back to the legacy `docker/<id>` path
 # used by the cgroupfs driver. Returns nothing (and exit 0) if neither exists —
@@ -161,25 +182,31 @@ cpu_stat_path_for() {
   return 0
 }
 
-# Runs one ingestion. Prints `<wall_ms> <cpu_ms>` on stdout.
+# Runs one ingestion. Prints `<wall_ms> <cpu_ms> <mhz_avg> <mhz_min> <temp_C>` on stdout.
 #
 # CPU time is read from the container's cgroup cpu.stat `usage_usec` (cumulative
 # across all threads/cores). A background poller tails the counter at ~50 Hz
-# because the cgroup scope disappears shortly after the container exits.
+# because the cgroup scope disappears shortly after the container exits. The
+# same poller also samples cpufreq + thermal sysfs at ~5 Hz to detect throttling
+# across iterations — cheap enough not to perturb the measurement.
 # $1 = image, $2 = database, $3 = config file path on host
 run_once() {
   local image="$1" db="$2" config="$3"
-  local cidfile cpufile start end rc
+  local cidfile cpufile freqfile start end rc
   reset_db "$db"
   : >/tmp/bench.log
 
   cidfile=$(mktemp -u "${TMPDIR:-/tmp}/bench-cid.XXXXXX")
   cpufile=$(mktemp "${TMPDIR:-/tmp}/bench-cpu.XXXXXX")
+  freqfile=$(mktemp "${TMPDIR:-/tmp}/bench-freq.XXXXXX")
   : >"$cpufile"
+  : >"$freqfile"
 
   # Background poller: waits for the cidfile, then samples cgroup cpu.stat until
   # the scope disappears. Each sample overwrites `$cpufile`, so on exit it holds
-  # the last observed `usage_usec`.
+  # the last observed `usage_usec`. Every 10th tick (~200 ms) it also samples
+  # cpufreq + thermal and accumulates running avg/min MHz and max °C; those are
+  # written to `$freqfile` as a single line once the scope disappears.
   # NB: `local` is not valid inside a ( … ) subshell — declare vars plainly.
   (
     while [[ ! -s "$cidfile" ]]; do sleep 0.01; done
@@ -192,11 +219,27 @@ run_once() {
       sleep 0.02
     done
     [[ -z "$poller_scope" ]] && exit 0
+    mhz_sum=0; mhz_n=0; mhz_min=9999999; temp_max=0; tick=0
     while [[ -r "$poller_scope" ]]; do
       poller_v=$(awk '$1=="usage_usec"{print $2; exit}' "$poller_scope" 2>/dev/null) || break
       [[ -n "$poller_v" ]] && printf '%s' "$poller_v" >"$cpufile"
+      if (( tick % 10 == 0 )); then
+        mhz=$(avg_cpu_mhz)
+        if [[ -n "$mhz" && "$mhz" -gt 0 ]]; then
+          mhz_sum=$(( mhz_sum + mhz ))
+          mhz_n=$(( mhz_n + 1 ))
+          (( mhz < mhz_min )) && mhz_min=$mhz
+        fi
+        tc=$(max_temp_c)
+        if [[ -n "$tc" && "$tc" -gt "$temp_max" ]]; then temp_max=$tc; fi
+      fi
+      tick=$(( tick + 1 ))
       sleep 0.02
     done
+    mhz_avg=0
+    (( mhz_n > 0 )) && mhz_avg=$(( mhz_sum / mhz_n ))
+    (( mhz_min == 9999999 )) && mhz_min=0
+    echo "$mhz_avg $mhz_min $temp_max" >"$freqfile"
   ) &
   local poller=$!
 
@@ -216,7 +259,7 @@ run_once() {
   if [[ "$rc" != "0" ]]; then
     echo "container exited non-zero ($rc). see /tmp/bench.log:" >&2
     tail -n 20 /tmp/bench.log >&2
-    rm -f "$cidfile" "$cpufile"
+    rm -f "$cidfile" "$cpufile" "$freqfile"
     return 1
   fi
 
@@ -227,8 +270,14 @@ run_once() {
   [[ -z "$cpu_usec" ]] && cpu_usec=0
   cpu_ms=$(( cpu_usec / 1000 ))
 
-  rm -f "$cidfile" "$cpufile"
-  echo "$wall_ms $cpu_ms"
+  local mhz_avg mhz_min temp_c
+  read -r mhz_avg mhz_min temp_c <"$freqfile" 2>/dev/null || true
+  [[ -z "${mhz_avg:-}" ]] && mhz_avg=0
+  [[ -z "${mhz_min:-}" ]] && mhz_min=0
+  [[ -z "${temp_c:-}" ]] && temp_c=0
+
+  rm -f "$cidfile" "$cpufile" "$freqfile"
+  echo "$wall_ms $cpu_ms $mhz_avg $mhz_min $temp_c"
 }
 
 # Divide CPU ms by wall ms → "effective cores" used on average across the run.
@@ -237,12 +286,9 @@ eff_cores() {
   awk -v c="$cpu" -v w="$wall" 'BEGIN { if (w>0) printf "%.2f\n", c/w; else print "n/a" }'
 }
 
-median() {
-  # Print the median of the stdin numbers.
-  sort -n | awk '{a[NR]=$1} END {
-    if (NR % 2) print a[(NR+1)/2];
-    else printf "%.1f\n", (a[NR/2] + a[NR/2+1]) / 2;
-  }'
+average() {
+  # Print the average of the stdin numbers.
+  awk '{s+=$1; n++} END { if (n>0) printf "%.1f\n", s/n; else print 0 }'
 }
 
 check_ch
@@ -256,33 +302,42 @@ fi
 
 KOTLIN_CFG=$(write_config "$DB_KOTLIN")
 TS_CFG=$(write_config "$DB_TS")
-trap 'rm -f "$KOTLIN_CFG" "$TS_CFG"' EXIT
+
+# Freeze background merges so CH's CPU doesn't compete with the target for
+# cores on this host. Re-enabled unconditionally on exit. This matches the
+# production topology where CH runs on a separate host and merges don't steal
+# target CPU.
+ch_curl "SYSTEM STOP MERGES" >/dev/null
+trap 'ch_curl "SYSTEM START MERGES" >/dev/null 2>&1 || true; rm -f "$KOTLIN_CFG" "$TS_CFG"' EXIT
 
 declare -a KOTLIN_WALL=() KOTLIN_CPU=()
 declare -a TS_WALL=() TS_CPU=()
 
-printf "\n%-12s %-6s %-10s %-10s %-10s %-10s %-10s\n" \
-  "impl" "iter" "wall_ms" "cpu_ms" "eff_cores" "rows" "tables"
-printf '%s\n' "---------------------------------------------------------------------------"
+printf "\n%-12s %-6s %-10s %-10s %-10s %-9s %-9s %-7s %-10s %-10s\n" \
+  "impl" "iter" "wall_ms" "cpu_ms" "eff_cores" "mhz_avg" "mhz_min" "temp_C" "rows" "tables"
+printf '%s\n' "---------------------------------------------------------------------------------------------------"
 
 record() {
-  # $1 = label, $2 = iter, $3 = db, $4 = wall_ms, $5 = cpu_ms
+  # $1 = label, $2 = iter, $3 = db, $4 = wall_ms, $5 = cpu_ms,
+  # $6 = mhz_avg, $7 = mhz_min, $8 = temp_C
   local label="$1" iter="$2" db="$3" wall="$4" cpu="$5"
-  printf "%-12s %-6s %-10s %-10s %-10s %-10s %-10s\n" \
+  local mhz_avg="$6" mhz_min="$7" temp_c="$8"
+  printf "%-12s %-6s %-10s %-10s %-10s %-9s %-9s %-7s %-10s %-10s\n" \
     "$label" "$iter" "$wall" "$cpu" "$(eff_cores "$cpu" "$wall")" \
+    "$mhz_avg" "$mhz_min" "$temp_c" \
     "$(total_rows "$db")" "$(table_count "$db")"
 }
 
 for i in $(seq 1 "$ITERATIONS"); do
   if [[ "$ONLY" != "ts" ]]; then
-    read -r k_wall k_cpu < <(run_once "$KOTLIN_IMAGE" "$DB_KOTLIN" "$KOTLIN_CFG")
+    read -r k_wall k_cpu k_mhz_avg k_mhz_min k_temp < <(run_once "$KOTLIN_IMAGE" "$DB_KOTLIN" "$KOTLIN_CFG")
     KOTLIN_WALL+=("$k_wall"); KOTLIN_CPU+=("$k_cpu")
-    record "kotlin" "$i" "$DB_KOTLIN" "$k_wall" "$k_cpu"
+    record "kotlin" "$i" "$DB_KOTLIN" "$k_wall" "$k_cpu" "$k_mhz_avg" "$k_mhz_min" "$k_temp"
   fi
   if [[ "$ONLY" != "kotlin" ]]; then
-    read -r t_wall t_cpu < <(run_once "$TS_IMAGE" "$DB_TS" "$TS_CFG")
+    read -r t_wall t_cpu t_mhz_avg t_mhz_min t_temp < <(run_once "$TS_IMAGE" "$DB_TS" "$TS_CFG")
     TS_WALL+=("$t_wall"); TS_CPU+=("$t_cpu")
-    record "typescript" "$i" "$DB_TS" "$t_wall" "$t_cpu"
+    record "typescript" "$i" "$DB_TS" "$t_wall" "$t_cpu" "$t_mhz_avg" "$t_mhz_min" "$t_temp"
   fi
 done
 
@@ -292,14 +347,14 @@ summarize() {
   local -n wall_arr="$2"
   local -n cpu_arr="$3"
   [[ ${#wall_arr[@]} -eq 0 ]] && return
-  local w_med c_med
-  w_med=$(printf "%s\n" "${wall_arr[@]}" | median)
-  c_med=$(printf "%s\n" "${cpu_arr[@]}" | median)
-  printf "%-12s median: wall=%s ms  cpu=%s ms  eff_cores=%s\n" \
-    "$label" "$w_med" "$c_med" "$(eff_cores "$c_med" "$w_med")"
+  local w_avg c_avg
+  w_avg=$(printf "%s\n" "${wall_arr[@]}" | average)
+  c_avg=$(printf "%s\n" "${cpu_arr[@]}" | average)
+  printf "%-12s average: wall=%s ms  cpu=%s ms  eff_cores=%s\n" \
+    "$label" "$w_avg" "$c_avg" "$(eff_cores "$c_avg" "$w_avg")"
   # echo them back for the caller via globals
-  eval "${label}_WALL_MED=\"$w_med\""
-  eval "${label}_CPU_MED=\"$c_med\""
+  eval "${label}_WALL_AVG=\"$w_avg\""
+  eval "${label}_CPU_AVG=\"$c_avg\""
 }
 
 echo
@@ -307,9 +362,9 @@ summarize "kotlin" KOTLIN_WALL KOTLIN_CPU
 summarize "typescript" TS_WALL TS_CPU
 
 if [[ ${#KOTLIN_WALL[@]} -gt 0 && ${#TS_WALL[@]} -gt 0 ]]; then
-  wall_ratio=$(awk -v k="${kotlin_WALL_MED:-0}" -v t="${typescript_WALL_MED:-0}" \
+  wall_ratio=$(awk -v k="${kotlin_WALL_AVG:-0}" -v t="${typescript_WALL_AVG:-0}" \
     'BEGIN { if (k>0) printf "%.2fx\n", t/k; else print "n/a" }')
-  cpu_ratio=$(awk -v k="${kotlin_CPU_MED:-0}" -v t="${typescript_CPU_MED:-0}" \
+  cpu_ratio=$(awk -v k="${kotlin_CPU_AVG:-0}" -v t="${typescript_CPU_AVG:-0}" \
     'BEGIN { if (k>0) printf "%.2fx\n", t/k; else print "n/a" }')
   echo "wall speedup (ts / kotlin): $wall_ratio"
   echo "cpu  ratio   (ts / kotlin): $cpu_ratio   (<1 means kotlin burns more CPU to get its wall-time win)"
