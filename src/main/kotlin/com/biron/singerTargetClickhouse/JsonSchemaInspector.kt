@@ -1,6 +1,7 @@
 package com.biron.singerTargetClickhouse
 
 import com.biron.singer.core.domain.JsonSchema
+import com.biron.singer.core.utils.letIf
 import io.github.oshai.kotlinlogging.KotlinLogging
 import java.security.MessageDigest
 
@@ -57,32 +58,26 @@ data class JsonSchemaInspectorContext(
 	val cleaningColumn: String? = null,
 	val allKeyProperties: SchemaKeyProperties = SchemaKeyProperties.empty,
 ) {
-	fun isTypeObject(): Boolean = "object" in schema.type
 	fun isRoot(): Boolean = parentCtx == null
-	fun getRootContext(): JsonSchemaInspectorContext {
-		var current: JsonSchemaInspectorContext = this
-		while (current.parentCtx != null) current = current.parentCtx!!
-		return current
-	}
+	val rootCtx: JsonSchemaInspectorContext by lazy { generateSequence(this) { it.parentCtx }.last() }
 
 	companion object {
 		fun defaultTableName(alias: String, subtableSeparator: String, parentCtx: JsonSchemaInspectorContext?): String =
-			if (parentCtx != null) "${parentCtx.tableName}$subtableSeparator$alias" else alias
+			"${parentCtx?.let { "${it.tableName}$subtableSeparator" }.orEmpty()}$alias"
 	}
 }
 
-fun formatLevelIndexColumn(level: Int): String = "_level_${level}_index"
+private fun formatLevelIndexColumn(level: Int): String = "_level_${level}_index"
 fun formatRootPKColumn(prop: String): String = "_root_$prop"
-fun formatParentPKColumn(prop: String): String = "_parent_$prop"
+private fun formatParentPKColumn(prop: String): String = "_parent_$prop"
 
-fun escapeIdentifier(id: String, subtableSeparator: String = "__"): String {
-	val replaced = id.replace(NESTED_SUB_OBJECT_SEPARATOR, subtableSeparator)
-	val truncated = if (replaced.length > 64) {
-		val uid = sha1Hex(replaced).substring(0, 10)
-		replaced.substring(0, 64 - uid.length - 27) + uid + replaced.substring(replaced.length - 27)
-	} else replaced
-	return "`$truncated`"
-}
+fun escapeIdentifier(id: String, subtableSeparator: String = "__"): String =
+	id.replace(NESTED_SUB_OBJECT_SEPARATOR, subtableSeparator)
+		.letIf({ it.length > 64 }) {
+			val uid = sha1Hex(it).substring(0, 10)
+			it.substring(0, 64 - uid.length - 27) + uid + it.substring(it.length - 27)
+		}
+		.let { "`$it`" }
 
 private fun sha1Hex(input: String): String =
 	MessageDigest.getInstance("SHA-1").digest(input.toByteArray())
@@ -107,24 +102,19 @@ private data class MetaProps(
 
 private fun buildMetaPkProps(ctx: JsonSchemaInspectorContext): List<PkMap> = buildList {
 	// _root_X (only on non-root nodes)
-	if (!ctx.isRoot()) {
-		ctx.getRootContext().keyProperties.forEach { prop ->
-			add(buildMetaPkProp(prop, ctx.getRootContext(), PKType.ROOT, ::formatRootPKColumn))
-		}
+	ctx.rootCtx.takeIf { it != ctx }?.keyProperties?.forEach { prop ->
+		add(buildMetaPkProp(prop, ctx.rootCtx, PKType.ROOT, ::formatRootPKColumn))
 	}
 	// _parent_X (if parent has all_key_properties non-empty)
-	val parent = ctx.parentCtx
-	if (parent != null && parent.allKeyProperties.props.isNotEmpty()) {
-		parent.keyProperties.forEach { prop ->
-			add(buildMetaPkProp(prop, parent, PKType.PARENT, ::formatParentPKColumn))
-		}
+	ctx.parentCtx?.keyProperties?.takeIf { ctx.parentCtx.allKeyProperties.props.isNotEmpty() }?.forEach { prop ->
+		add(buildMetaPkProp(prop, ctx.parentCtx, PKType.PARENT, ::formatParentPKColumn))
 	}
 	// Current-level key properties
 	ctx.keyProperties.forEach { prop ->
 		add(buildMetaPkProp(prop, ctx, PKType.CURRENT))
 	}
 	// level_N_index
-	for (level in 0 until ctx.level) {
+	repeat(ctx.level) { level ->
 		val prop = formatLevelIndexColumn(level)
 		add(
 			PkMap(
@@ -164,7 +154,7 @@ private fun buildMetaPkProp(
 	)
 }
 
-fun buildValueExtractor(prop: String?): ValueExtractor {
+private fun buildValueExtractor(prop: String?): ValueExtractor {
 	if (prop == null) return { data -> data }
 	val parts = prop.split(NESTED_SUB_OBJECT_SEPARATOR)
 	if (parts.size == 1) {
@@ -172,12 +162,12 @@ fun buildValueExtractor(prop: String?): ValueExtractor {
 		return { data -> (data as? Map<*, *>)?.get(onlyPart) }
 	}
 	return { data ->
-		parts.fold(data as Any?) { acc, part -> (acc as? Map<*, *>)?.get(part) }
+		parts.fold(data) { acc, part -> (acc as? Map<*, *>)?.get(part) }
 	}
 }
 
 private fun buildMetaProps(ctx: JsonSchemaInspectorContext): MetaProps =
-	if (ctx.isTypeObject()) buildObjectMetaProps(ctx)
+	if ("object" in ctx.schema.type) buildObjectMetaProps(ctx)
 	else buildScalarMetaProps(ctx)
 
 private fun buildObjectMetaProps(ctx: JsonSchemaInspectorContext): MetaProps =
@@ -202,10 +192,8 @@ private fun buildObjectMetaProps(ctx: JsonSchemaInspectorContext): MetaProps =
 				}
 
 				"array" in propDefTypes && propDef.format != "nested" -> {
-					val root = ctx.getRootContext()
-					if (root.keyProperties.isEmpty() && root.allKeyProperties.props.isEmpty()) {
+					if (ctx.rootCtx.keyProperties.isEmpty() && ctx.rootCtx.allKeyProperties.props.isEmpty())
 						throwError(ctx, "$key refused: array child with no root key properties")
-					}
 					acc.copy(children = acc.children + createSubTable(propDef, key, ctx))
 				}
 

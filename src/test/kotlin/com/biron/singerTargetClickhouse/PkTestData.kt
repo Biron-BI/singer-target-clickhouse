@@ -115,7 +115,7 @@ internal val abort: (Throwable) -> Unit = { err -> throw err }
  * so tests can't silently diverge from it.
  */
 internal fun mapToRow(meta: SourceMeta, data: Any?, translateValues: Boolean = false): RecordRow {
-	val reader = buildStreamReader(meta, translateValues)
+	val reader = StreamReader.from(meta, translateValues)
 	val mapper = com.fasterxml.jackson.module.kotlin.jsonMapper {
 		addModule(com.fasterxml.jackson.module.kotlin.kotlinModule())
 	}

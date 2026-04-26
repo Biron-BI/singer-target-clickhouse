@@ -35,7 +35,7 @@ interface TargetConnection {
 	fun addColumn(table: String, newCol: Column): Either<AddColumnError, Unit>
 	fun removeColumn(table: String, existing: Column): Either<RemoveColumnError, Unit>
 	fun updateColumn(table: String, existing: Column, newCol: Column): Either<UpdateColumnError, Unit>
-	fun renameObsoleteColumn(table: String): QueryResult
+	fun renameObsoleteTable(table: String): QueryResult
 	fun openRowWriter(query: String): RowWriter
 
 	companion object {

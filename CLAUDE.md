@@ -26,7 +26,7 @@ acceptance criteria for that port.
 Each integration test in `ProcessStreamTest.kt`:
 
 1. Boots a real ClickHouse container via Testcontainers
-   (`clickhouse/clickhouse-server:24.12.3.47`).
+   (`clickhouse/clickhouse-server:25.8.4.13`).
 2. Runs the **published** Docker image of the original TS target
    (`ghcr.io/biron-bi/target-clickhouse:2.11.0`) as a one-shot container, with
    a test config mounted at `/config.json` and a fixture JSONL at

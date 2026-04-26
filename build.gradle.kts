@@ -4,6 +4,7 @@ plugins {
 	alias(bironLibs.plugins.kotlin.jvm)
 	alias(bironLibs.plugins.kotlin.plugin.spring)
 	alias(bironLibs.plugins.spring.boot)
+	id("org.jetbrains.kotlinx.kover") version "0.9.1"
 }
 
 group = "com.biron"

@@ -4,23 +4,30 @@ package com.biron.singerTargetClickhouse
 
 import com.biron.singerTargetClickhouse.utilsTest.createFileWithContent
 import com.fasterxml.jackson.annotation.JsonInclude
+import com.fasterxml.jackson.databind.PropertyNamingStrategies
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.google.common.jimfs.Configuration
 import com.google.common.jimfs.Jimfs
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.kotest.assertions.nondeterministic.eventually
 import io.kotest.assertions.throwables.shouldThrow
-import io.kotest.core.spec.style.DescribeSpec
+import io.kotest.core.spec.style.ShouldSpec
 import io.kotest.matchers.collections.*
 import io.kotest.matchers.paths.shouldExist
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldInclude
+import io.kotest.property.Arb
+import io.kotest.property.arbitrary.Codepoint
+import io.kotest.property.arbitrary.alphanumeric
+import io.kotest.property.arbitrary.next
+import io.kotest.property.arbitrary.string
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.springframework.jdbc.core.JdbcTemplate
+import org.springframework.jdbc.core.queryForList
 import org.springframework.jdbc.core.queryForObject
 import org.springframework.jdbc.datasource.DriverManagerDataSource
 import org.testcontainers.clickhouse.ClickHouseContainer
@@ -38,22 +45,7 @@ import kotlin.io.path.readLines
 import kotlin.time.Duration.Companion.seconds
 
 
-private const val CLICKHOUSE_IMAGE = "clickhouse/clickhouse-server:24.12.3.47"
-
-private data class TestTargetConfig(
-	val host: String,
-	val username: String,
-	val password: String,
-	val port: Int,
-	val database: String,
-	val extra_active_tables: List<String> = emptyList(),
-	val batch_size: Int? = 100,
-	val insert_stream_timeout_sec: Int? = 180,
-	val translate_values: Boolean = false,
-	val subtable_separator: String? = null,
-)
-
-class ProcessStreamIntegrationTest : DescribeSpec({
+class StreamPipelineIntegrationTest : ShouldSpec({
 	val dataDir = "./src/test/kotlin/${this::class.qualifiedName!!.replace('.', '/')}Results"
 	val logger = KotlinLogging.logger {}
 
@@ -62,7 +54,7 @@ class ProcessStreamIntegrationTest : DescribeSpec({
 		port = 8123,
 		database = "datayse",
 		username = "user",
-		password = "averysecurepassword",
+		password = Arb.string(20, Codepoint.alphanumeric()).next(),
 	)
 
 	lateinit var container: ClickHouseContainer
@@ -100,7 +92,9 @@ class ProcessStreamIntegrationTest : DescribeSpec({
 		jdbcTemplate.execute("CREATE DATABASE ${baseConfig.database};")
 	}
 
-	val jsonMapper = jacksonObjectMapper().setSerializationInclusion(JsonInclude.Include.NON_NULL)
+	val jsonMapper = jacksonObjectMapper()
+		.setSerializationInclusion(JsonInclude.Include.NON_NULL)
+		.setPropertyNamingStrategy(PropertyNamingStrategies.SNAKE_CASE)
 
 	fun writeConfig(config: TestTargetConfig): Path =
 		fs.createFileWithContent("/tmp/test-config-${configCounter.incrementAndGet()}.json", jsonMapper.writeValueAsString(config))
@@ -124,7 +118,7 @@ class ProcessStreamIntegrationTest : DescribeSpec({
 		val stateFile = newStateFile()
 		Path(dataDir, inputFile).inputStream().use { input ->
 			BufferedWriter(OutputStreamWriter(Files.newOutputStream(stateFile), StandardCharsets.UTF_8)).use { writer ->
-				processStream(input, cfg, writer, updateStreams)
+				StreamPipeline.forConfig(cfg).run(input, writer, updateStreams)
 			}
 		}
 		return RunResult(stateFile)
@@ -132,7 +126,7 @@ class ProcessStreamIntegrationTest : DescribeSpec({
 
 	val db = baseConfig.database
 
-	fun showTables(): List<String> = jdbcTemplate.queryForList("SHOW TABLES FROM $db", String::class.java)
+	fun showTables(): List<String> = jdbcTemplate.queryForList<String>("SHOW TABLES FROM $db")
 
 	fun queryRows(sql: String, separator: String = "\t"): List<String> =
 		jdbcTemplate.queryForList(sql).map { it.values.joinToString(separator) }
@@ -145,8 +139,8 @@ class ProcessStreamIntegrationTest : DescribeSpec({
 		else -> toString()
 	}
 
-	describe("outputStream") {
-		it("should write state to passed outputStream") {
+	context("outputStream") {
+		should("should write state to passed outputStream") {
 			val result = runTarget("stream_with_state.jsonl")
 
 			result.stateFile.shouldExist()
@@ -156,12 +150,12 @@ class ProcessStreamIntegrationTest : DescribeSpec({
 			)
 		}
 
-		it("should commit pending records when a STATE message is received mid-stream") {
+		should("should commit pending records when a STATE message is received mid-stream") {
 			// Verifies STATE forces a mid-stream commit. With batch_size=100 and
 			// insert_stream_timeout_sec=180 (auto-end ~175s), a single buffered RECORD would not
 			// be flushed by either threshold within the test window — only STATE can land it.
 			val cfg = toTargetConfig(
-				writeConfig(baseConfig.copy(batch_size = 100, insert_stream_timeout_sec = 180)),
+				writeConfig(baseConfig.copy(batchSize = 100, insertStreamTimeoutSec = 180)),
 			)
 
 			val schemaJson = jsonMapper.writeValueAsString(
@@ -192,9 +186,9 @@ class ProcessStreamIntegrationTest : DescribeSpec({
 			runBlocking {
 				val job = launch(Dispatchers.IO) {
 					try {
-						processStream(pipedIn, cfg, output)
+						StreamPipeline.forConfig(cfg).run(pipedIn, output)
 					} catch (e: Exception) {
-						logger.info(e) { "processStream terminated" }
+						logger.info(e) { "pipeline terminated" }
 					}
 				}
 
@@ -228,8 +222,8 @@ class ProcessStreamIntegrationTest : DescribeSpec({
 		}
 	}
 
-	describe("Schemas") {
-		it("should create schemas") {
+	context("Schemas") {
+		should("should create schemas") {
 			runTarget("stream_1.jsonl")
 			showTables().also {
 				it shouldHaveSize 21
@@ -243,7 +237,7 @@ class ProcessStreamIntegrationTest : DescribeSpec({
 			}
 		}
 
-		it("should create schema with nullable scalar array") {
+		should("should create schema with nullable scalar array") {
 			runTarget("stream_schema_array_nullable.jsonl")
 
 			queryRows(
@@ -257,7 +251,7 @@ class ProcessStreamIntegrationTest : DescribeSpec({
 			).joinToString("\n") shouldBe "value\tNullable(String)"
 		}
 
-		it("should create schema with nullable scalar array as ClickHouse array") {
+		should("should create schema with nullable scalar array as ClickHouse array") {
 			runTarget("stream_schema_with_array.jsonl")
 			runTarget("stream_schema_with_array.jsonl")
 
@@ -278,7 +272,7 @@ class ProcessStreamIntegrationTest : DescribeSpec({
 				.first() shouldBe "['kento', 'nanami']"
 		}
 
-		it("should create schemas which specifies cardinality") {
+		should("should create schemas which specifies cardinality") {
 			runTarget("stream_cardinality.jsonl")
 
 			showTables() shouldContainExactly listOf("users")
@@ -287,7 +281,7 @@ class ProcessStreamIntegrationTest : DescribeSpec({
 				.joinToString("\n") shouldContain "`name` LowCardinality(Nullable(String))"
 		}
 
-		it("should create schemas which specifiesPK") {
+		should("should create schemas which specifiesPK") {
 			runTarget("stream_schema_with_all_pk.jsonl")
 
 			queryRows("describe table $db.tickets__follower_ids").also {
@@ -297,13 +291,13 @@ class ProcessStreamIntegrationTest : DescribeSpec({
 			}
 		}
 
-		it("should do nothing if schemas already exists") {
+		should("should do nothing if schemas already exists") {
 			runTarget("stream_1.jsonl")
 			runTarget("stream_1.jsonl")
 			showTables() shouldHaveSize 21
 		}
 
-		it("should create columns for UUID, Int128, Float32 and custom Decimal(p,d) formats") {
+		should("should create columns for UUID, Int128, Float32 and custom Decimal(p,d) formats") {
 			runTarget("stream_type_formats.jsonl")
 
 			queryRows(
@@ -328,16 +322,16 @@ class ProcessStreamIntegrationTest : DescribeSpec({
 			queryCount("type_zoo") shouldBe 1
 		}
 
-		it("should honor a custom subtable_separator config") {
-			val cfg = writeConfig(baseConfig.copy(subtable_separator = "_X_"))
+		should("should honor a custom subtable_separator config") {
+			val cfg = writeConfig(baseConfig.copy(subtableSeparator = "_X_"))
 			runTarget("stream_nested_array_additional.jsonl", configFile = cfg)
 
 			showTables() shouldContainExactly listOf("users", "users_X_roles", "users_X_roles_X_scopes")
 		}
 	}
 
-	describe("columns update") {
-		it("should create / update / delete columns if schema already exists and new has different columns") {
+	context("columns update") {
+		should("should create / update / delete columns if schema already exists and new has different columns") {
 			runTarget("stream_1.jsonl")
 			runTarget("stream_1_modified.jsonl")
 
@@ -358,7 +352,7 @@ class ProcessStreamIntegrationTest : DescribeSpec({
 			}
 		}
 
-		it("should start by truncating before applying schema update") {
+		should("should start by truncating before applying schema update") {
 			runTarget("stream_nullable.jsonl")
 			runTarget("stream_non_nullable.jsonl")
 
@@ -374,7 +368,7 @@ class ProcessStreamIntegrationTest : DescribeSpec({
 			) shouldContainExactly listOf("id Int64")
 		}
 
-		it("should handle state at the end of the stream + a closing state, launched several times") {
+		should("should handle state at the end of the stream + a closing state, launched several times") {
 			repeat(10) {
 				runTarget("stream_with_state.jsonl")
 				runTarget("stream_tiny.jsonl")
@@ -386,7 +380,7 @@ class ProcessStreamIntegrationTest : DescribeSpec({
 			}
 		}
 
-		it("should rename tables as dropped when they are no longer active, and exclude dropped and archived") {
+		should("should rename tables as dropped when they are no longer active, and exclude dropped and archived") {
 			runTarget("stream_1.jsonl")
 			runTarget("stream_1_inactive.jsonl")
 
@@ -430,8 +424,8 @@ class ProcessStreamIntegrationTest : DescribeSpec({
 			}
 		}
 
-		it("should not rename tables as dropped when they are no longer active if they are registered as extra_active") {
-			val config = writeConfig(baseConfig.copy(extra_active_tables = listOf("tickets")))
+		should("should not rename tables as dropped when they are no longer active if they are registered as extra_active") {
+			val config = writeConfig(baseConfig.copy(extraActiveTables = listOf("tickets")))
 			runTarget("stream_1.jsonl", configFile = config)
 			runTarget("stream_1_inactive.jsonl", configFile = config)
 
@@ -444,27 +438,29 @@ class ProcessStreamIntegrationTest : DescribeSpec({
 			}
 		}
 
-		it("should throw if schema already exists and new has different columns with incompatible type") {
+		should("should throw if schema already exists and new has different columns with incompatible type") {
 			runTarget("stream_vanilla.jsonl")
 			shouldThrow<Exception> { runTarget("stream_vanilla_with_incompatible_update.jsonl") }
 		}
 
-		it("should throw if schema has no primary key but has array children") {
-			shouldThrow<Exception> { runTarget("stream_with_nested_array_without_root_pk.jsonl") }
+		should("should throw if schema has no primary key but has array children") {
+			shouldThrow<IllegalStateException> {
+				runTarget("stream_with_nested_array_without_root_pk.jsonl")
+			}.message shouldContain "array child with no root key properties"
 		}
 
-		it("should handle second schema definition by commiting pending changes") {
+		should("should handle second schema definition by commiting pending changes") {
 			runTarget("stream_multiple_schema.jsonl")
 			queryCount("tickets") shouldBe 1
 		}
 
-		it("should recreate if schemas already exists, new is different but specified to be recreated") {
+		should("should recreate if schemas already exists, new is different but specified to be recreated") {
 			runTarget("stream_1.jsonl")
 			runTarget("stream_1_modified.jsonl", updateStreams = listOf("tickets"))
 			showTables() shouldHaveSize 21
 		}
 
-		it("should handle additional nested array") {
+		should("should handle additional nested array") {
 			runTarget("stream_nested_array.jsonl")
 			runTarget("stream_nested_array_additional.jsonl")
 
@@ -476,8 +472,8 @@ class ProcessStreamIntegrationTest : DescribeSpec({
 		}
 	}
 
-	describe("Records") {
-		it("should insert simple records") {
+	context("Records") {
+		should("should insert simple records") {
 			runTarget("stream_short.jsonl")
 			jdbcTemplate.queryForList(
 				"select brand_id from $db.tickets where assignee_id = 11",
@@ -487,10 +483,10 @@ class ProcessStreamIntegrationTest : DescribeSpec({
 		// Verifies that a batch is committed after insert_stream_timeout_sec when no
 		// end-of-stream or state message is received. We replace the shell-based approach
 		// of the TS test with a PipedInputStream kept open from a coroutine.
-		it("should insert record after some time even if stream isn't ended nor state message were received") {
+		should("should insert record after some time even if stream isn't ended nor state message were received") {
 			val insertTimeoutSec = 8
 			val cfg = toTargetConfig(
-				writeConfig(baseConfig.copy(batch_size = 10, insert_stream_timeout_sec = insertTimeoutSec)),
+				writeConfig(baseConfig.copy(batchSize = 10, insertStreamTimeoutSec = insertTimeoutSec)),
 			)
 
 			val schemaJson = jsonMapper.writeValueAsString(
@@ -516,9 +512,9 @@ class ProcessStreamIntegrationTest : DescribeSpec({
 			runBlocking {
 				val job = launch(Dispatchers.IO) {
 					try {
-						processStream(pipedIn, cfg, output)
+						StreamPipeline.forConfig(cfg).run(pipedIn, output)
 					} catch (e: Exception) {
-						logger.info(e) { "processStream terminated" }
+						logger.info(e) { "pipeline terminated" }
 					}
 				}
 
@@ -546,7 +542,7 @@ class ProcessStreamIntegrationTest : DescribeSpec({
 			}
 		}
 
-		it("should allow reordering of schema") {
+		should("should allow reordering of schema") {
 			runTarget("stream_short.jsonl")
 			runTarget("stream_short_reordered.jsonl")
 
@@ -555,34 +551,31 @@ class ProcessStreamIntegrationTest : DescribeSpec({
 			) shouldContainExactly listOf(mapOf("brand_id" to 22L))
 		}
 
-		it("should flatten nested object") {
+		should("should flatten nested object") {
 			runTarget("stream_nested_object.jsonl")
 			jdbcTemplate.queryForList(
 				"select follower_ids__name from $db.tickets",
 			) shouldContainExactly listOf(mapOf("follower_ids__name" to "jack"))
 		}
 
-		it("should ingest stream from real data: covidtracker") {
+		should("should ingest stream from real data: covidtracker") {
 			runTarget("covidtracker.jsonl")
 			jdbcTemplate.queryForObject(
 				"select sum(total_rows), sum(tables.total_bytes) from system.tables where database = '$db'",
-			) { rs, _ -> "${rs.getInt(1)}\t${rs.getInt(2)}" } shouldBe "5789\t1334466"
+			) { rs, _ -> "${rs.getInt(1)}\t${rs.getInt(2)}" } shouldBe "5789\t1334978"
 
 			runTarget("covidtracker.jsonl")
-			jdbcTemplate.queryForObject(
-				"select sum(total_rows) from system.tables where database = '$db'",
-				Int::class.java,
-			) shouldBe 5789
+			jdbcTemplate.queryForObject<Int>("select sum(total_rows) from system.tables where database = '$db'") shouldBe 5789
 		}
 
-		it("should ingest stream from real data: clickhouse query log") {
+		should("should ingest stream from real data: clickhouse query log") {
 			val totalRowsQuery = "select sum(total_rows) from system.tables where database = '$db'"
 
 			runTarget("clickhouse_query_log.jsonl")
-			jdbcTemplate.queryForObject(totalRowsQuery, Int::class.java) shouldBe 1
+			jdbcTemplate.queryForObject<Int>(totalRowsQuery) shouldBe 1
 
 			runTarget("clickhouse_query_log.jsonl")
-			jdbcTemplate.queryForObject(totalRowsQuery, Int::class.java) shouldBe 1
+			jdbcTemplate.queryForObject<Int>(totalRowsQuery) shouldBe 1
 
 			jdbcTemplate.queryForList("select databases, `Settings.Names` from $db.query_log")
 				.map { "${it["databases"].asArrayString()}\t${it["Settings.Names"].asArrayString()}" }
@@ -591,8 +584,8 @@ class ProcessStreamIntegrationTest : DescribeSpec({
 					"'max_parser_depth', 'lock_acquire_timeout']"
 		}
 
-		it("should produce same result from real data whether translate value is effective or not") {
-			runTarget("covidtracker.jsonl", configFile = writeConfig(baseConfig.copy(translate_values = false)))
+		should("should produce same result from real data whether translate value is effective or not") {
+			runTarget("covidtracker.jsonl", configFile = writeConfig(baseConfig.copy(translateValues = false)))
 			val sumQuery = "select sum(total_rows), sum(total_bytes) from system.tables where database = '$db'"
 			val baseline = jdbcTemplate.queryForList(sumQuery)
 
@@ -601,12 +594,12 @@ class ProcessStreamIntegrationTest : DescribeSpec({
 
 			runTarget(
 				"covidtracker.jsonl",
-				configFile = writeConfig(baseConfig.copy(translate_values = true, database = otherDb)),
+				configFile = writeConfig(baseConfig.copy(translateValues = true, database = otherDb)),
 			)
 			jdbcTemplate.queryForList(sumQuery.replace(db, otherDb)) shouldBe baseline
 		}
 
-		it("should handle cleanFirst") {
+		should("should handle cleanFirst") {
 			runTarget("stream_vanilla.jsonl")
 			queryCount("users") shouldBe 4
 
@@ -614,7 +607,7 @@ class ProcessStreamIntegrationTest : DescribeSpec({
 			queryCount("users") shouldBe 2
 		}
 
-		it("should update schema by creating sub table") {
+		should("should update schema by creating sub table") {
 			runTarget("stream_vanilla.jsonl")
 			queryCount("users") shouldBe 4
 
@@ -622,21 +615,25 @@ class ProcessStreamIntegrationTest : DescribeSpec({
 			queryCount("users__roles") shouldBe 5
 		}
 
-		it("should throw when new pks are added") {
+		should("should throw when new pks are added") {
 			runTarget("stream_vanilla_with_pks.jsonl")
 			queryCount("users") shouldBe 4
 
-			shouldThrow<Exception> { runTarget("stream_vanilla_with_new_pks.jsonl") }
+			shouldThrow<IllegalStateException> {
+				runTarget("stream_vanilla_with_new_pks.jsonl")
+			}.message shouldContain "Could not update table because of key properties"
 		}
 
-		it("should throw when pks are deleted") {
+		should("should throw when pks are deleted") {
 			runTarget("stream_vanilla_with_pks.jsonl")
 			queryCount("users") shouldBe 4
 
-			shouldThrow<Exception> { runTarget("stream_vanilla_with_removed_pks.jsonl") }
+			shouldThrow<IllegalStateException> {
+				runTarget("stream_vanilla_with_removed_pks.jsonl")
+			}.message shouldContain "Could not update table because of key properties"
 		}
 
-		it("should allow pk to be added if stream is in cleanFirst") {
+		should("should allow pk to be added if stream is in cleanFirst") {
 			runTarget("stream_vanilla_with_pks.jsonl")
 			queryCount("users") shouldBe 4
 
@@ -644,7 +641,7 @@ class ProcessStreamIntegrationTest : DescribeSpec({
 			queryCount("users") shouldBe 4
 		}
 
-		it("should handle cleaning column in standard columns") {
+		should("should handle cleaning column in standard columns") {
 			runTarget("stream_vanilla.jsonl")
 			queryCount("users") shouldBe 4
 
@@ -654,7 +651,7 @@ class ProcessStreamIntegrationTest : DescribeSpec({
 			jdbcTemplate.queryForObject<Int>("select id from $db.users where name = 'bill'") shouldBe 7
 		}
 
-		it("should handle cleaning column in pk") {
+		should("should handle cleaning column in pk") {
 			runTarget("stream_cleaningColumn_pk.jsonl")
 			queryRows("select id, name from $db.users") shouldContainExactly
 					listOf("5\tbob", "7\tbill", "8\tbill", "9\thelen")
@@ -664,7 +661,7 @@ class ProcessStreamIntegrationTest : DescribeSpec({
 					listOf("5\tbob", "9\thelen", "10\tbill")
 		}
 
-		it("should handle record when schema specifiesPK") {
+		should("should handle record when schema specifiesPK") {
 			runTarget("stream_short_with_all_pk.jsonl")
 
 			queryRows("describe table $db.tickets__follower_ids").also {
@@ -677,7 +674,7 @@ class ProcessStreamIntegrationTest : DescribeSpec({
 			queryCount("tickets__follower_ids") shouldBe 2
 		}
 
-		it("should handle record when schema specifies complex PK") {
+		should("should handle record when schema specifies complex PK") {
 			runTarget("stream_short_with_all_pk2.jsonl")
 
 			queryRows("describe table $db.tickets__follower_ids").also {
@@ -691,7 +688,7 @@ class ProcessStreamIntegrationTest : DescribeSpec({
 			queryCount("tickets__follower_ids") shouldBe 2
 		}
 
-		it("should handle stream which deletes existing data with one simple pk") {
+		should("should handle stream which deletes existing data with one simple pk") {
 			runTarget("stream_tiny.jsonl")
 			queryRows("select id from $db.tickets") shouldContainExactly listOf("1", "2", "3")
 
@@ -699,7 +696,7 @@ class ProcessStreamIntegrationTest : DescribeSpec({
 			queryRows("select id from $db.tickets") shouldContainExactly listOf("1", "3")
 		}
 
-		it("should handle stream which deletes existing data with multiple pk") {
+		should("should handle stream which deletes existing data with multiple pk") {
 			runTarget("stream_vanilla_with_pks.jsonl")
 			queryRows("select id, name from $db.users", separator = " ") shouldContainExactly
 					listOf("1 bill", "2 bill", "3 jack", "4 joe")
@@ -709,7 +706,7 @@ class ProcessStreamIntegrationTest : DescribeSpec({
 					listOf("1 bill", "2 bill", "4 joe")
 		}
 
-		it("should deduplicate tables when receiving only schema") {
+		should("should deduplicate tables when receiving only schema") {
 			runTarget("stream_vanilla_with_pks.jsonl")
 			queryCount("users") shouldBe 4
 
@@ -720,19 +717,36 @@ class ProcessStreamIntegrationTest : DescribeSpec({
 			queryCount("users") shouldBe 4
 		}
 
-		it("should handle DELETED_RECORD whose body contains only PK fields") {
+		should("should handle DELETED_RECORD whose body contains only PK fields") {
 			runTarget("stream_deleted_record_pk_only.jsonl")
 
 			queryRows("select id, name, age from $db.users order by id") shouldContainExactly
 					listOf("1\talice\t30", "3\tcarol\t40")
 		}
 
-		it("should throw when a RECORD arrives before its SCHEMA") {
-			shouldThrow<Exception> { runTarget("stream_record_before_schema.jsonl") }
+		should("should throw when a RECORD arrives before its SCHEMA") {
+			shouldThrow<IllegalStateException> {
+				runTarget("stream_record_before_schema.jsonl")
+			}.message shouldContain "before Schema is defined"
 		}
 
-		it("should throw when DELETED_RECORD is sent on a stream without primary keys") {
-			shouldThrow<Exception> { runTarget("stream_deleted_record_no_pk.jsonl") }
+		should("should throw when DELETED_RECORD is sent on a stream without primary keys") {
+			shouldThrow<IllegalStateException> {
+				runTarget("stream_deleted_record_no_pk.jsonl")
+			}.message shouldContain "cannot push deleted record to a stream without pk mapping"
 		}
 	}
 })
+
+private data class TestTargetConfig(
+	val host: String,
+	val username: String,
+	val password: String,
+	val port: Int,
+	val database: String,
+	val extraActiveTables: List<String> = emptyList(),
+	val batchSize: Int? = 100,
+	val insertStreamTimeoutSec: Int? = 180,
+	val translateValues: Boolean = false,
+	val subtableSeparator: String? = null,
+)

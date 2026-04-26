@@ -1,11 +1,11 @@
 package com.biron.singerTargetClickhouse
 
-import io.kotest.core.spec.style.StringSpec
+import io.kotest.core.spec.style.ShouldSpec
 import io.kotest.matchers.shouldBe
 import org.slf4j.event.Level
 
-class TargetConfigTest : StringSpec({
-	"loads minimal config with defaults" {
+class TargetConfigTest : ShouldSpec({
+	should("loads minimal config with defaults") {
 		val json = """
 			{
 				"host": "ch",
@@ -16,23 +16,16 @@ class TargetConfigTest : StringSpec({
 			}
 		""".trimIndent()
 
-		val config = TargetConfig.fromJson(json.reader())
-
-		config.host shouldBe "ch"
-		config.port shouldBe 8123
-		config.username shouldBe "u"
-		config.database shouldBe "d"
-		config.batchSize shouldBe 100
-		config.deletionBatchSize shouldBe 100
-		config.subtableSeparator shouldBe "__"
-		config.translateValues shouldBe false
-		config.insertStreamTimeoutSec shouldBe 180
-		config.finalizeConcurrency shouldBe 3
-		config.extraActiveTables shouldBe emptyList()
-		config.logLevel shouldBe Level.INFO
+		TargetConfig.fromJson(json.reader()) shouldBe TargetConfig(
+			host = "ch",
+			port = 8123,
+			username = "u",
+			password = "p",
+			database = "d",
+		)
 	}
 
-	"overrides snake_case fields when provided" {
+	should("overrides snake_case fields when provided") {
 		val json = """
 			{
 				"host": "ch", "port": 8123, "username": "u", "password": "p", "database": "d",
@@ -47,19 +40,24 @@ class TargetConfigTest : StringSpec({
 			}
 		""".trimIndent()
 
-		val config = TargetConfig.fromJson(json.reader())
-
-		config.batchSize shouldBe 2000
-		config.deletionBatchSize shouldBe 500
-		config.translateValues shouldBe true
-		config.insertStreamTimeoutSec shouldBe 45
-		config.finalizeConcurrency shouldBe 8
-		config.subtableSeparator shouldBe "::"
-		config.extraActiveTables shouldBe listOf("a", "b")
-		config.logLevel shouldBe Level.DEBUG
+		TargetConfig.fromJson(json.reader()) shouldBe TargetConfig(
+			host = "ch",
+			port = 8123,
+			username = "u",
+			password = "p",
+			database = "d",
+			logLevel = Level.DEBUG,
+			subtableSeparator = "::",
+			batchSize = 2000,
+			deletionBatchSize = 500,
+			translateValues = true,
+			insertStreamTimeoutSec = 45,
+			finalizeConcurrency = 8,
+			extraActiveTables = listOf("a", "b"),
+		)
 	}
 
-	"ignores unknown fields" {
+	should("ignores unknown fields") {
 		val json = """
 			{
 				"host": "ch", "port": 8123, "username": "u", "password": "p", "database": "d",

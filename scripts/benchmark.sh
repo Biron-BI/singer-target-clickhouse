@@ -108,7 +108,7 @@ build_kotlin_image() {
   echo "[build] gradle bootJar"
   (cd "$PROJECT_ROOT" && ./gradlew -q bootJar)
   echo "[build] docker build $KOTLIN_IMAGE"
-  docker build --quiet -t "$KOTLIN_IMAGE" "$PROJECT_ROOT" >/dev/null
+  docker build --quiet -f docker/Dockerfile -t "$KOTLIN_IMAGE" "$PROJECT_ROOT" >/dev/null
 }
 
 pull_ts_image() {

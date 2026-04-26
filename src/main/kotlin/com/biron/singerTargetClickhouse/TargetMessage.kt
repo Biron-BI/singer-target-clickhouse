@@ -5,7 +5,6 @@ import com.fasterxml.jackson.core.JsonParser
 import com.fasterxml.jackson.core.JsonToken
 import com.fasterxml.jackson.databind.DeserializationFeature
 import com.fasterxml.jackson.databind.ObjectMapper
-import com.fasterxml.jackson.databind.type.MapType
 import com.fasterxml.jackson.module.kotlin.jsonMapper
 import com.fasterxml.jackson.module.kotlin.kotlinModule
 import java.io.InputStream
@@ -13,6 +12,11 @@ import java.io.InputStream
 sealed interface TargetMessage {
 	val type: String
 
+	/**
+	 * [meta] and [reader] are derived from the schema fields and built once by
+	 * [TargetMessageParser]. Downstream consumers (DDL, [StreamProcessor]) reuse them
+	 * instead of recomputing — see the parser-thread comment on [TargetMessageParser].
+	 */
 	data class Schema(
 		val stream: String,
 		val schema: JsonSchema,
@@ -20,6 +24,8 @@ sealed interface TargetMessage {
 		val cleanFirst: Boolean = false,
 		val cleaningColumn: String? = null,
 		val allKeyProperties: SchemaKeyProperties = SchemaKeyProperties.empty,
+		val meta: SourceMeta,
+		val reader: StreamReader,
 	) : TargetMessage {
 		override val type = "SCHEMA"
 	}
@@ -83,12 +89,12 @@ data class SchemaKeyProperties(
  * straight from the JSON token stream into [RecordRow]s — no intermediate
  * `LinkedHashMap`, no per-column extractor lookup on the hot path.
  *
- * Thread-confined to its caller (the producer thread in [processStream]). Construction
+ * Thread-confined to its caller (the producer thread in [StreamPipeline]). Construction
  * is cheap; allocate one per top-level invocation.
  */
 class TargetMessageParser(
-	private val subtableSeparator: String = "__",
-	private val translateValues: Boolean = false,
+	private val subtableSeparator: String,
+	private val translateValues: Boolean,
 ) {
 	private val streamReaders: MutableMap<String, StreamReader> = HashMap()
 
@@ -97,16 +103,11 @@ class TargetMessageParser(
 		disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
 	}
 
-	private val mapType: MapType = objectMapper.typeFactory.constructMapType(
-		LinkedHashMap::class.java, String::class.java, Any::class.java,
-	)
-
 	fun createParser(input: InputStream): JsonParser = objectMapper.factory.createParser(input).apply { codec = objectMapper }
 
 	/**
 	 * Read the next message from [parser], advancing it past the value. Returns null on EOF.
-	 * Does not recover from malformed JSON mid-stream — exceptions propagate. For line-based
-	 * recovery use [parse].
+	 * Does not recover from malformed JSON mid-stream — exceptions propagate.
 	 */
 	fun readNext(parser: JsonParser): TargetMessage? {
 		val token = parser.nextToken() ?: return null
@@ -118,132 +119,106 @@ class TargetMessageParser(
 	}
 
 	/**
-	 * Parse a single JSONL line. On malformed JSON returns [TargetMessage.Unknown] rather
-	 * than throwing — mirrors the prior line-based parser's recovery semantics.
-	 */
-	fun parse(line: String): TargetMessage? {
-		val trimmed = line.trim()
-		if (trimmed.isEmpty()) return null
-		return runCatching {
-			createParser(trimmed.byteInputStream()).use { p -> readNext(p) }
-		}.getOrElse { TargetMessage.Unknown(line) }
-	}
-
-	/**
-	 * Streaming envelope reader. Walks the outer message in source order: when we reach
-	 * the `record` field AND `type`+`stream` are already known, dispatch directly to the
-	 * registered [StreamReader]. For the rare out-of-order envelope, fall back to reading
-	 * the body untyped and routing it through the reader at the end.
+	 * Streaming envelope reader. Walks the outer message in source order. Singer producers
+	 * always emit `type` (and `stream` for record-bearing messages) before `record`; we
+	 * rely on that ordering to dispatch each `record` body straight into a [StreamReader]
+	 * with no intermediate object model. Messages that violate the ordering are rejected.
 	 */
 	private fun readEnvelope(parser: JsonParser): TargetMessage {
+		val acc = EnvelopeAccumulator()
+		while (parser.nextToken() != JsonToken.END_OBJECT) {
+			val field = parser.currentName()
+			parser.nextToken()
+			readEnvelopeField(parser, field, acc)
+		}
+		return acc.toMessage()
+	}
+
+	private fun readEnvelopeField(parser: JsonParser, field: String, acc: EnvelopeAccumulator) {
+		when (field) {
+			"type" -> acc.type = parser.text
+			"stream" -> acc.stream = parser.text
+			"record" -> readRecordField(parser, acc)
+			"value" -> {
+				acc.stateSeen = true
+				acc.stateValue = parser.readValueAs(Any::class.java)
+			}
+
+			"streams" -> acc.streamsList = readStringList(parser)
+			"schema" -> acc.schemaValue = parser.readValueAs(Any::class.java)
+			"key_properties" -> acc.keyProperties = readStringList(parser)
+			"clean_first" -> acc.cleanFirst = parser.currentToken == JsonToken.VALUE_TRUE
+			"cleaning_column" -> acc.cleaningColumn =
+				if (parser.currentToken == JsonToken.VALUE_NULL) null else parser.text
+
+			"all_key_properties" -> acc.allKeyPropertiesRaw = parser.readValueAs(Any::class.java)
+			else -> parser.skipChildren()
+		}
+	}
+
+	private fun readRecordField(parser: JsonParser, acc: EnvelopeAccumulator) {
+		val type = acc.type
+		if (type != "RECORD" && type != "DELETED_RECORD") {
+			// Either ordering violation (record before type) or a non-record message that
+			// happens to carry a `record` field — skip it; toMessage() will surface the
+			// right error if the type later turns out to be RECORD/DELETED_RECORD.
+			parser.skipChildren()
+			return
+		}
+		val stream = acc.stream
+			?: error("Singer $type message must emit 'stream' before 'record'")
+		val reader = streamReaders[stream]
+			?: error("$type received before Schema is defined for stream=$stream")
+		acc.row = reader.read(parser)
+	}
+
+	/** Mutable accumulator for one Singer envelope; SRP-isolates field collection from message construction. */
+	private inner class EnvelopeAccumulator {
 		var type: String? = null
 		var stream: String? = null
 		var row: RecordRow? = null
 		var stateValue: Any? = null
-		var stateSeen = false
+		var stateSeen: Boolean = false
 		var streamsList: List<String>? = null
-
-		// SCHEMA-specific fields (rare path)
 		var schemaValue: Any? = null
 		var keyProperties: List<String>? = null
-		var cleanFirst = false
+		var cleanFirst: Boolean = false
 		var cleaningColumn: String? = null
 		var allKeyPropertiesRaw: Any? = null
 
-		// Fallback: if `record` arrives before `type`, buffer it as untyped.
-		var bufferedRecord: Map<String, Any?>? = null
+		val requiredStream: String
+			get() = stream ?: error("Singer message of type=${type ?: "?"} requires a [stream] field")
 
-		while (parser.nextToken() != JsonToken.END_OBJECT) {
-			val field = parser.currentName()
-			parser.nextToken()
-
-			when (field) {
-				"type" -> type = parser.text
-				"stream" -> stream = parser.text
-				"record" -> {
-					val st = stream
-					if ((type == "RECORD" || type == "DELETED_RECORD") && st != null) {
-						val reader = streamReaders[st]
-							?: error("$type received before Schema is defined for stream=$st")
-						row = reader.read(parser)
-					} else {
-						bufferedRecord = readUntypedMap(parser)
-					}
-				}
-
-				"value" -> {
-					stateSeen = true
-					stateValue = parser.readValueAs(Any::class.java)
-				}
-
-				"streams" -> streamsList = readStringList(parser)
-				"schema" -> schemaValue = parser.readValueAs(Any::class.java)
-				"key_properties" -> keyProperties = readStringList(parser)
-				"clean_first" -> cleanFirst = parser.currentToken == JsonToken.VALUE_TRUE
-				"cleaning_column" -> cleaningColumn = if (parser.currentToken == JsonToken.VALUE_NULL) null else parser.text
-				"all_key_properties" -> allKeyPropertiesRaw = parser.readValueAs(Any::class.java)
-				else -> parser.skipChildren()
-			}
-		}
-
-		return when (type) {
-			"RECORD" -> TargetMessage.Record(stream.orEmpty(), resolveRow(type, stream, row, bufferedRecord))
-			"DELETED_RECORD" -> TargetMessage.DeletedRecord(stream.orEmpty(), resolveRow(type, stream, row, bufferedRecord))
-			"SCHEMA" -> buildSchema(stream, schemaValue, keyProperties, cleanFirst, cleaningColumn, allKeyPropertiesRaw)
+		fun toMessage(): TargetMessage = when (type) {
+			"RECORD" -> TargetMessage.Record(requiredStream, requireRow("RECORD"))
+			"DELETED_RECORD" -> TargetMessage.DeletedRecord(requiredStream, requireRow("DELETED_RECORD"))
+			"SCHEMA" -> buildSchema()
 			"STATE" -> TargetMessage.State(value = if (stateSeen) stateValue else null)
 			"ACTIVE_STREAMS" -> TargetMessage.ActiveStreams(streams = streamsList ?: emptyList())
 			else -> TargetMessage.Unknown("type=${type ?: "null"}")
 		}
-	}
 
-	private fun resolveRow(type: String, stream: String?, row: RecordRow?, bufferedRecord: Map<String, Any?>?): RecordRow {
-		if (row != null) return row
-		val st = stream.orEmpty()
-		val map = bufferedRecord ?: error("$type for stream=$st with empty body")
-		val reader = streamReaders[st]
-			?: error("$type received before Schema is defined for stream=$st")
-		// Out-of-order envelope: we buffered the body as a map, round-trip it through the reader.
-		val json = objectMapper.writeValueAsString(map)
-		val synthesized = objectMapper.factory.createParser(json).apply { codec = objectMapper }
-		synthesized.nextToken()
-		return reader.read(synthesized)
-	}
+		private fun requireRow(messageType: String): RecordRow =
+			row ?: error("Singer $messageType message must emit 'type' and 'stream' before 'record' (stream=$requiredStream)")
 
-	private fun buildSchema(
-		stream: String?,
-		schemaValue: Any?,
-		keyProperties: List<String>?,
-		cleanFirst: Boolean,
-		cleaningColumn: String?,
-		allKeyPropertiesRaw: Any?,
-	): TargetMessage.Schema {
-		val schema = if (schemaValue != null) objectMapper.convertValue(schemaValue, JsonSchema::class.java) else JsonSchema()
-		val allKeyProperties = (allKeyPropertiesRaw as? Map<*, *>)?.let(::parseKeyProperties) ?: SchemaKeyProperties.empty
-		val msg = TargetMessage.Schema(
-			stream = stream.orEmpty(),
-			schema = schema,
-			keyProperties = keyProperties ?: emptyList(),
-			cleanFirst = cleanFirst,
-			cleaningColumn = cleaningColumn,
-			allKeyProperties = allKeyProperties,
-		)
-		registerReader(msg)
-		return msg
-	}
-
-	/** Build + register the [StreamReader] now so subsequent RECORD/DELETED_RECORDs stream-parse. */
-	private fun registerReader(msg: TargetMessage.Schema) {
-		val meta = buildMeta(
-			JsonSchemaInspectorContext(
-				alias = msg.stream,
-				schema = msg.schema,
-				keyProperties = msg.keyProperties,
-				subtableSeparator = subtableSeparator,
-				cleaningColumn = msg.cleaningColumn,
-				allKeyProperties = msg.allKeyProperties,
-			),
-		)
-		streamReaders[msg.stream] = buildStreamReader(meta, translateValues)
+		private fun buildSchema(): TargetMessage.Schema {
+			val schema = schemaValue?.let { objectMapper.convertValue(it, JsonSchema::class.java) } ?: JsonSchema()
+			val keyProperties = keyProperties.orEmpty()
+			val allKeyProperties = (allKeyPropertiesRaw as? Map<*, *>)?.let(::parseKeyProperties) ?: SchemaKeyProperties.empty
+			val meta = buildMeta(
+				JsonSchemaInspectorContext(
+					requiredStream,
+					schema,
+					keyProperties,
+					subtableSeparator,
+					cleaningColumn = cleaningColumn,
+					allKeyProperties = allKeyProperties
+				),
+			)
+			val reader = StreamReader.from(meta, translateValues)
+				.also { streamReaders[requiredStream] = it }
+			return TargetMessage.Schema(requiredStream, schema, keyProperties, cleanFirst, cleaningColumn, allKeyProperties, meta, reader)
+		}
 	}
 
 	private fun parseKeyProperties(node: Map<*, *>): SchemaKeyProperties = SchemaKeyProperties(
@@ -252,11 +227,6 @@ class TargetMessageParser(
 			key.toString() to parseKeyProperties(value as Map<*, *>)
 		}.orEmpty(),
 	)
-
-	@Suppress("UNCHECKED_CAST")
-	private fun readUntypedMap(parser: JsonParser): Map<String, Any?> =
-		if (parser.currentToken == JsonToken.VALUE_NULL) emptyMap()
-		else objectMapper.readValue<Map<String, Any?>>(parser, mapType)
 
 	private fun readStringList(parser: JsonParser): List<String> {
 		if (parser.currentToken != JsonToken.START_ARRAY) {

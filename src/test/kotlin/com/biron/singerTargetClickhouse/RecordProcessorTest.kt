@@ -1,20 +1,24 @@
 package com.biron.singerTargetClickhouse
 
-import io.kotest.core.spec.style.DescribeSpec
+import io.kotest.core.spec.style.ShouldSpec
 import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.shouldBe
+import io.mockk.mockk
 
-class RecordProcessorTest : DescribeSpec({
+class RecordProcessorTest : ShouldSpec({
+
+	afterTest { checkAndClearAllMocks() }
 
 	fun processor(
 		meta: SourceMeta = simpleMeta,
 		batchSize: Int = 1,
 		translateValues: Boolean = false,
 		autoEndTimeoutMs: Long = 10_000,
-	): Triple<FakeTargetConnection, RecordProcessor, SourceMeta> {
-		val conn = FakeTargetConnection()
-		val proc = RecordProcessor(meta, conn, RecordProcessorConfig(batchSize, translateValues, autoEndTimeoutMs))
-		return Triple(conn, proc, meta)
+	): Triple<RowWriterCapture, RecordProcessor, SourceMeta> {
+		val conn: TargetConnection = mockk()
+		val captures = conn.captureRowWriters()
+		val underTest = RecordProcessor(meta, conn, RecordProcessorConfig(batchSize, translateValues, autoEndTimeoutMs))
+		return Triple(captures, underTest, meta)
 	}
 
 	fun RecordProcessor.push(
@@ -24,63 +28,86 @@ class RecordProcessorTest : DescribeSpec({
 		maxVer: Long = 0,
 	) = pushRecord(mapToRow(meta, data, translateValues), abort, maxVer)
 
-	describe("pushRecord") {
-		it("handles simple schema and data") {
-			val (conn, proc, meta) = processor(batchSize = 1)
-			proc.push(meta, mapOf("id" to 1, "name" to "a"))
-			proc.push(meta, mapOf("id" to 2, "name" to "b"))
+	context("pushRecord") {
+		should("handles simple schema and data") {
+			val (captures, underTest, meta) = processor(batchSize = 1)
+			underTest.push(meta, mapOf("id" to 1, "name" to "a"))
+			underTest.push(meta, mapOf("id" to 2, "name" to "b"))
 
-			conn.streams[0].data shouldBe "[1,\"a\"]\n[2,\"b\"]\n"
-			proc.buildSQLInsertField() shouldContainExactly listOf("`id`", "`name`")
+			captures.streams[0].data shouldBe """
+				[1,"a"]
+				[2,"b"]
+				
+				""".trimIndent()
+			underTest.buildSQLInsertField() shouldContainExactly listOf("`id`", "`name`")
 		}
 
-		it("auto-ends ingestion after inactivity") {
-			val (conn, proc, meta) = processor(batchSize = 5, autoEndTimeoutMs = 200)
-			proc.push(meta, mapOf("id" to 1, "name" to "a"))
-			proc.push(meta, mapOf("id" to 2, "name" to "b"))
+		should("auto-ends ingestion after inactivity") {
+			val (captures, underTest, meta) = processor(batchSize = 5, autoEndTimeoutMs = 200)
+			underTest.push(meta, mapOf("id" to 1, "name" to "a"))
+			underTest.push(meta, mapOf("id" to 2, "name" to "b"))
 			Thread.sleep(500)
 
-			conn.streams[0].data shouldBe "[1,\"a\"]\n[2,\"b\"]\n"
-			conn.streams[0].closed shouldBe true
+			captures.streams[0].data shouldBe """
+				[1,"a"]
+				[2,"b"]
+				
+				""".trimIndent()
+			captures.streams[0].closed shouldBe true
 		}
 
-		it("flushes at batch size and finishes on endIngestion") {
-			val (conn, proc, meta) = processor(batchSize = 2, autoEndTimeoutMs = 2_000)
-			proc.push(meta, mapOf("id" to 1, "name" to "a"))
-			proc.push(meta, mapOf("id" to 2, "name" to "b"))
-			proc.push(meta, mapOf("id" to 3, "name" to "c"))
+		should("flushes at batch size and finishes on endIngestion") {
+			val (captures, underTest, meta) = processor(batchSize = 2, autoEndTimeoutMs = 2_000)
+			underTest.push(meta, mapOf("id" to 1, "name" to "a"))
+			underTest.push(meta, mapOf("id" to 2, "name" to "b"))
+			underTest.push(meta, mapOf("id" to 3, "name" to "c"))
 
-			conn.streams[0].data shouldBe "[1,\"a\"]\n[2,\"b\"]\n"
+			captures.streams[0].data shouldBe """
+				[1,"a"]
+				[2,"b"]
+				
+				""".trimIndent()
 
-			proc.endIngestion()
-			conn.streams[0].data shouldBe "[1,\"a\"]\n[2,\"b\"]\n[3,\"c\"]\n"
+			underTest.endIngestion()
+			captures.streams[0].data shouldBe """
+				[1,"a"]
+				[2,"b"]
+				[3,"c"]
+				
+				""".trimIndent()
 		}
 
-		it("applies value translation when configured") {
-			val (conn, proc, meta) = processor(
+		should("applies value translation when configured") {
+			val (captures, underTest, meta) = processor(
 				meta = simpleMeta.copy(simpleColumnMappings = listOf(idAsColumn, validColumn)),
 				batchSize = 1,
 				translateValues = true,
 			)
-			proc.push(meta, mapOf("id" to 1, "valid" to "true"), translateValues = true)
+			underTest.push(meta, mapOf("id" to 1, "valid" to "true"), translateValues = true)
 
-			conn.streams[0].data shouldBe "[1,1]\n"
+			captures.streams[0].data shouldBe """
+				[1,1]
+				
+				""".trimIndent()
 		}
 
-		it("does not translate when translateValues=false") {
-			val (conn, proc, meta) = processor(
+		should("does not translate when translateValues=false") {
+			val (captures, underTest, meta) = processor(
 				meta = simpleMeta.copy(simpleColumnMappings = listOf(idAsColumn, validColumn)),
 				batchSize = 1,
 				translateValues = false,
 			)
-			proc.push(meta, mapOf("id" to 1, "valid" to "true"))
+			underTest.push(meta, mapOf("id" to 1, "valid" to "true"))
 
-			conn.streams[0].data shouldBe "[1,\"true\"]\n"
+			captures.streams[0].data shouldBe """
+				[1,"true"]
+				
+				""".trimIndent()
 		}
 
-		it("feeds deep nested children with propagated root version") {
-			val (conn, proc, meta) = processor(meta = metaWithPKAndChildren, batchSize = 1, autoEndTimeoutMs = 2_000)
-			proc.push(
+		should("feeds deep nested children with propagated root version") {
+			val (captures, underTest, meta) = processor(meta = metaWithPKAndChildren, batchSize = 1, autoEndTimeoutMs = 2_000)
+			underTest.push(
 				meta = meta,
 				data = mapOf(
 					"id" to 1234,
@@ -103,37 +130,82 @@ class RecordProcessorTest : DescribeSpec({
 						),
 					),
 				),
-				maxVer = 50,
+				maxVer = 51,
 			)
 
 			// Streams are opened in the order rows are first pushed.
-			val byTable = conn.streams.associateBy { it.query.substringAfter("INSERT INTO ").substringBefore(" ") }
-			byTable["`order`"]!!.data shouldBe "[1234,\"a\",51]\n"
-			byTable["`order__tags`"]!!.data shouldBe "[1234,0,\"tag_a\",51]\n[1234,1,\"tag_b\",51]\n"
-			byTable["`order__tags__values`"]!!.data shouldBe
-				"[1234,0,0,\"value_a\",51]\n[1234,0,1,\"value_b\",51]\n[1234,0,2,\"value_c\",51]\n" +
-				"[1234,1,0,\"value_d\",51]\n[1234,1,1,\"value_e\",51]\n"
+			val byTable = captures.streams.associate {
+				it.query.substringAfter("INSERT INTO ").substringBefore(" ") to it.data
+			}
+			byTable shouldBe mapOf(
+				"`order`" to "[1234,\"a\",51]\n",
+				"`order__tags`" to "[1234,0,\"tag_a\",51]\n[1234,1,\"tag_b\",51]\n",
+				"`order__tags__values`" to
+						"[1234,0,0,\"value_a\",51]\n[1234,0,1,\"value_b\",51]\n[1234,0,2,\"value_c\",51]\n" +
+						"[1234,1,0,\"value_d\",51]\n[1234,1,1,\"value_e\",51]\n",
+			)
 		}
 
-		it("handles nested value array (scalar item)") {
-			val (conn, proc, meta) = processor(meta = metaWithNestedValueArray, batchSize = 1)
-			proc.push(
+		should("handles nested value array (scalar item)") {
+			val (captures, underTest, meta) = processor(meta = metaWithNestedValueArray, batchSize = 1)
+			underTest.push(
 				meta = meta,
 				data = mapOf("events" to listOf(mapOf("previous_value" to "Test"))),
 			)
-			proc.endIngestion()
+			underTest.endIngestion()
 
-			val byTable = conn.streams.associateBy { it.query.substringAfter("INSERT INTO ").substringBefore(" ") }
-			byTable["`audits`"]!!.data shouldBe "[]\n"
-			byTable["`audits__events`"]!!.data shouldBe "[0]\n"
-			byTable["`audits__events__previous_value`"]!!.data shouldBe "[0,0,\"Test\"]\n"
+			val byTable = captures.streams.associate {
+				it.query.substringAfter("INSERT INTO ").substringBefore(" ") to it.data
+			}
+			byTable shouldBe mapOf(
+				"`audits`" to "[]\n",
+				"`audits__events`" to "[0]\n",
+				"`audits__events__previous_value`" to "[0,0,\"Test\"]\n",
+			)
 		}
 	}
 
-	describe("buildSQLInsertField") {
-		it("appends _ver for root with current PKs") {
-			val (_, proc, _) = processor(
-				meta = simpleMeta.copy(
+	context("endIngestion / dispatchToChildren edges") {
+		should("endIngestion is a no-op when no rows have been pushed") {
+			// No openRowWriter stub: a stray writer-open would be a strict-mock failure.
+			val underTest = RecordProcessor(simpleMeta, mockk(), RecordProcessorConfig(1, false, 10_000))
+			underTest.endIngestion()
+		}
+
+		should("does not flush when subtable slot is null on the row") {
+			val (captures, underTest, meta) = processor(meta = metaWithPKAndChildren, batchSize = 1, autoEndTimeoutMs = 2_000)
+			underTest.push(meta = meta, data = mapOf("id" to 1, "name" to "a", "tags" to null), maxVer = 1)
+
+			val byTable = captures.streams.associate {
+				it.query.substringAfter("INSERT INTO ").substringBefore(" ") to it.data
+			}
+			byTable.keys shouldBe setOf("`order`")
+			byTable.getValue("`order`") shouldBe "[1,\"a\",1]\n"
+		}
+
+		should("dispatches subtable rows even when a sibling subtable is missing") {
+			val (captures, underTest, meta) = processor(meta = metaWithPKAndChildren, batchSize = 1, autoEndTimeoutMs = 2_000)
+			underTest.push(
+				meta = meta,
+				data = mapOf("id" to 1, "name" to "a", "tags" to listOf(mapOf("name" to "tag_a", "values" to null))),
+				maxVer = 5,
+			)
+
+			val byTable = captures.streams.associate {
+				it.query.substringAfter("INSERT INTO ").substringBefore(" ") to it.data
+			}
+			byTable.keys shouldBe setOf("`order`", "`order__tags`")
+			byTable.getValue("`order__tags`") shouldBe "[1,0,\"tag_a\",5]\n"
+		}
+	}
+
+	context("buildSQLInsertField") {
+		// These tests never push records, so they do not need an `openRowWriter` stub.
+		fun bareProcessor(meta: SourceMeta) = RecordProcessor(meta, mockk(), RecordProcessorConfig(1, false, 10_000))
+
+		should("appends _ver for root with current PKs") {
+			val underTest = bareProcessor(
+				simpleMeta.copy(
 					pkMappings = listOf(id),
 					simpleColumnMappings = listOf(
 						ColumnMap(
@@ -145,12 +217,12 @@ class RecordProcessorTest : DescribeSpec({
 					),
 				),
 			)
-			proc.buildSQLInsertField() shouldContainExactly listOf("`id`", "`name`", "`_ver`")
+			underTest.buildSQLInsertField() shouldContainExactly listOf("`id`", "`name`", "`_ver`")
 		}
 
-		it("omits _ver for root without PKs") {
-			val (_, proc, _) = processor()
-			proc.buildSQLInsertField() shouldContainExactly listOf("`id`", "`name`")
+		should("omits _ver for root without PKs") {
+			val underTest = bareProcessor(simpleMeta)
+			underTest.buildSQLInsertField() shouldContainExactly listOf("`id`", "`name`")
 		}
 	}
 })

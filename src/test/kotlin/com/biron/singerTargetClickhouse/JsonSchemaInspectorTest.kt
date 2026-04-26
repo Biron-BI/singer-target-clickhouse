@@ -2,12 +2,13 @@ package com.biron.singerTargetClickhouse
 
 import com.biron.singer.core.domain.JsonSchema
 import io.kotest.assertions.throwables.shouldThrow
-import io.kotest.core.spec.style.DescribeSpec
+import io.kotest.core.spec.style.ShouldSpec
 import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.string.shouldContain
 
-class JsonSchemaInspectorTest : DescribeSpec({
+class JsonSchemaInspectorTest : ShouldSpec({
 
 	val simpleSchema = JsonSchema(
 		type = listOf("null", "object"),
@@ -130,17 +131,77 @@ class JsonSchemaInspectorTest : DescribeSpec({
 		),
 	)
 
-	describe("getSimpleColumnSqlType") {
-		it("handles simple stream") {
-			getSimpleColumnSqlType(
-				JsonSchemaInspectorContext("audits", simpleSchema, emptyList()),
-				JsonSchema(type = listOf("null", "integer")),
-			) shouldBe "Int64"
+	context("getSimpleColumnSqlType") {
+		val ctx = JsonSchemaInspectorContext("audits", simpleSchema, emptyList())
+
+		should("handles simple stream") {
+			getSimpleColumnSqlType(ctx, JsonSchema(type = listOf("null", "integer"))) shouldBe "Int64"
+		}
+
+		should("maps string formats to ClickHouse types") {
+			getSimpleColumnSqlType(ctx, JsonSchema(type = listOf("string"))) shouldBe "String"
+			getSimpleColumnSqlType(ctx, JsonSchema(type = listOf("string"), format = "date")) shouldBe "Date"
+			getSimpleColumnSqlType(ctx, JsonSchema(type = listOf("string"), format = "x-excel-date")) shouldBe "Date"
+			getSimpleColumnSqlType(ctx, JsonSchema(type = listOf("string"), format = "date-time")) shouldBe "DateTime"
+			getSimpleColumnSqlType(ctx, JsonSchema(type = listOf("string"), format = "date-time64")) shouldBe "DateTime64"
+			getSimpleColumnSqlType(ctx, JsonSchema(type = listOf("string"), format = "uuid")) shouldBe "UUID"
+			getSimpleColumnSqlType(ctx, JsonSchema(type = listOf("string"), format = "unknown-format")) shouldBe "String"
+		}
+
+		should("maps integer formats to ClickHouse types") {
+			getSimpleColumnSqlType(ctx, JsonSchema(type = listOf("integer"))) shouldBe "Int64"
+			getSimpleColumnSqlType(ctx, JsonSchema(type = listOf("integer"), format = "int128")) shouldBe "Int128"
+			getSimpleColumnSqlType(ctx, JsonSchema(type = listOf("integer"), format = "int64")) shouldBe "Int64"
+			getSimpleColumnSqlType(ctx, JsonSchema(type = listOf("integer"), format = "int32")) shouldBe "Int32"
+			getSimpleColumnSqlType(ctx, JsonSchema(type = listOf("integer"), format = "int16")) shouldBe "Int16"
+			getSimpleColumnSqlType(ctx, JsonSchema(type = listOf("integer"), format = "int8")) shouldBe "Int8"
+		}
+
+		should("throws on unsupported integer format") {
+			shouldThrow<IllegalStateException> {
+				getSimpleColumnSqlType(ctx, JsonSchema(type = listOf("integer"), format = "boom"))
+			}.message shouldContain "unsupported integer format"
+		}
+
+		should("maps number formats to ClickHouse types") {
+			getSimpleColumnSqlType(ctx, JsonSchema(type = listOf("number"))) shouldBe "Decimal(16, 2)"
+			getSimpleColumnSqlType(ctx, JsonSchema(type = listOf("number"), precision = 30, decimals = 6)) shouldBe "Decimal(30, 6)"
+			getSimpleColumnSqlType(ctx, JsonSchema(type = listOf("number"), format = "float64")) shouldBe "Float64"
+			getSimpleColumnSqlType(ctx, JsonSchema(type = listOf("number"), format = "float32")) shouldBe "Float32"
+		}
+
+		should("throws on unsupported number format") {
+			shouldThrow<IllegalStateException> {
+				getSimpleColumnSqlType(ctx, JsonSchema(type = listOf("number"), format = "boom"))
+			}.message shouldContain "unsupported number format"
+		}
+
+		should("maps boolean to UInt8 and rejects unknown formats") {
+			getSimpleColumnSqlType(ctx, JsonSchema(type = listOf("boolean"))) shouldBe "UInt8"
+			shouldThrow<IllegalStateException> {
+				getSimpleColumnSqlType(ctx, JsonSchema(type = listOf("boolean"), format = "boom"))
+			}.message shouldContain "[boom]"
+		}
+
+		should("returns null on unsupported top-level type") {
+			getSimpleColumnSqlType(ctx, JsonSchema(type = listOf("array"))) shouldBe null
+			getSimpleColumnSqlType(ctx, JsonSchema(type = emptyList())) shouldBe null
+		}
+
+		should("includes nested ancestry alias in error messages") {
+			val parent = JsonSchemaInspectorContext("root", simpleSchema, listOf("id"))
+			val child = JsonSchemaInspectorContext("audits", simpleSchema, listOf("id"), parentCtx = parent, level = 1)
+			val msg = shouldThrow<IllegalStateException> {
+				getSimpleColumnSqlType(child, JsonSchema(type = listOf("integer"), format = "boom"), key = "ts")
+			}.message!!
+			msg shouldContain "root.audits"
+			msg shouldContain "ts"
+			msg shouldContain "[boom]"
 		}
 	}
 
-	describe("buildMeta") {
-		it("handles simple schema") {
+	context("buildMeta") {
+		should("handles simple schema") {
 			val meta = buildMeta(JsonSchemaInspectorContext("audits", simpleSchema, listOf("id")))
 			meta.sqlTableName shouldBe "`audits`"
 			meta.pkMappings shouldHaveSize 1
@@ -149,21 +210,20 @@ class JsonSchemaInspectorTest : DescribeSpec({
 			meta.simpleColumnMappings.find { it.prop == "created_at" }?.nullable shouldBe false
 		}
 
-		it("handles array scalar") {
+		should("handles array scalar") {
 			val meta = buildMeta(JsonSchemaInspectorContext("audits", arrayScalarSchema, listOf("id")))
 			meta.children shouldHaveSize 1
 
 			val child = meta.children[0]
 			child.sqlTableName shouldBe "`audits__collaborator_ids`"
-			child.pkMappings shouldHaveSize 2
-			child.pkMappings[0].prop shouldBe "id"
-			child.pkMappings[0].chType shouldBe "Int64"
-			child.pkMappings[1].prop shouldBe "_level_0_index"
-			child.pkMappings[1].chType shouldBe "Int32"
-			child.pkMappings[1].nullable shouldBe false
+			child.pkMappings.map { it.prop to it.chType } shouldBe listOf(
+				"id" to "Int64",
+				"_level_0_index" to "Int32",
+			)
+			child.pkMappings.last().nullable shouldBe false
 		}
 
-		it("handles nested object (flattened)") {
+		should("handles nested object (flattened)") {
 			val meta = buildMeta(JsonSchemaInspectorContext("audits", nestedObjectSchema, listOf("id")))
 			meta.children shouldHaveSize 0
 			meta.simpleColumnMappings shouldHaveSize 1
@@ -172,18 +232,15 @@ class JsonSchemaInspectorTest : DescribeSpec({
 			meta.simpleColumnMappings[0].chType shouldBe "String"
 		}
 
-		it("handles array of nested object") {
+		should("handles array of nested object") {
 			val meta = buildMeta(JsonSchemaInspectorContext("audits", arrayObjectSchema, listOf("id")))
 			val child = meta.children[0]
 			child.sqlTableName shouldBe "`audits__custom_fields`"
-			child.simpleColumnMappings shouldHaveSize 1
-			child.simpleColumnMappings[0].sqlIdentifier shouldBe "`field`"
-			child.pkMappings shouldHaveSize 2
-			child.pkMappings[0].sqlIdentifier shouldBe "`_root_id`"
-			child.pkMappings[1].sqlIdentifier shouldBe "`_level_0_index`"
+			child.simpleColumnMappings.map { it.sqlIdentifier } shouldBe listOf("`field`")
+			child.pkMappings.map { it.sqlIdentifier } shouldBe listOf("`_root_id`", "`_level_0_index`")
 		}
 
-		it("handles array of nested object with children PK") {
+		should("handles array of nested object with children PK") {
 			val allKeyProps = SchemaKeyProperties(
 				props = listOf("id"),
 				children = mapOf("custom_fields" to SchemaKeyProperties(emptyList(), emptyMap())),
@@ -199,15 +256,13 @@ class JsonSchemaInspectorTest : DescribeSpec({
 
 			val child = meta.children[0]
 			child.sqlTableName shouldBe "`audits__custom_fields`"
-			child.simpleColumnMappings shouldHaveSize 1
-			child.simpleColumnMappings[0].sqlIdentifier shouldBe "`field`"
-			child.pkMappings shouldHaveSize 3
-			child.pkMappings[0].sqlIdentifier shouldBe "`_root_id`"
-			child.pkMappings[1].sqlIdentifier shouldBe "`_parent_id`"
-			child.pkMappings[2].sqlIdentifier shouldBe "`_level_0_index`"
+			child.simpleColumnMappings.map { it.sqlIdentifier } shouldBe listOf("`field`")
+			child.pkMappings.map { it.sqlIdentifier } shouldBe listOf(
+				"`_root_id`", "`_parent_id`", "`_level_0_index`",
+			)
 		}
 
-		it("handles deep nested array of nested object with children PK") {
+		should("handles deep nested array of nested object with children PK") {
 			val allKeyProperties = SchemaKeyProperties(
 				props = listOf("id"),
 				children = mapOf(
@@ -234,18 +289,15 @@ class JsonSchemaInspectorTest : DescribeSpec({
 
 			val billFields = meta.children[0]
 			billFields.sqlTableName shouldBe "`audits__bill_fields`"
-			billFields.pkMappings[0].sqlIdentifier shouldBe "`_root_id`"
-			billFields.pkMappings[1].sqlIdentifier shouldBe "`_parent_id`"
-			billFields.pkMappings[2].sqlIdentifier shouldBe "`bill_id`"
-			billFields.pkMappings[3].sqlIdentifier shouldBe "`_level_0_index`"
+			billFields.pkMappings.map { it.sqlIdentifier } shouldBe listOf(
+				"`_root_id`", "`_parent_id`", "`bill_id`", "`_level_0_index`",
+			)
 
 			val johnFields = billFields.children[0]
 			johnFields.sqlTableName shouldBe "`audits__bill_fields__john_fields`"
-			johnFields.pkMappings[0].sqlIdentifier shouldBe "`_root_id`"
-			johnFields.pkMappings[1].sqlIdentifier shouldBe "`_parent_bill_id`"
-			johnFields.pkMappings[2].sqlIdentifier shouldBe "`john_id`"
-			johnFields.pkMappings[3].sqlIdentifier shouldBe "`_level_0_index`"
-			johnFields.pkMappings[4].sqlIdentifier shouldBe "`_level_1_index`"
+			johnFields.pkMappings.map { it.sqlIdentifier } shouldBe listOf(
+				"`_root_id`", "`_parent_bill_id`", "`john_id`", "`_level_0_index`", "`_level_1_index`",
+			)
 
 			// PK should not be in simple columns
 			johnFields.simpleColumnMappings.find { it.prop == "john_id" } shouldBe null
@@ -253,14 +305,12 @@ class JsonSchemaInspectorTest : DescribeSpec({
 
 			val jackFields = johnFields.children[0]
 			jackFields.sqlTableName shouldBe "`audits__bill_fields__john_fields__jack_fields`"
-			jackFields.pkMappings[0].sqlIdentifier shouldBe "`_root_id`"
-			jackFields.pkMappings[1].sqlIdentifier shouldBe "`_parent_john_id`"
-			jackFields.pkMappings[2].sqlIdentifier shouldBe "`_level_0_index`"
-			jackFields.pkMappings[3].sqlIdentifier shouldBe "`_level_1_index`"
-			jackFields.pkMappings[4].sqlIdentifier shouldBe "`_level_2_index`"
+			jackFields.pkMappings.map { it.sqlIdentifier } shouldBe listOf(
+				"`_root_id`", "`_parent_john_id`", "`_level_0_index`", "`_level_1_index`", "`_level_2_index`",
+			)
 		}
 
-		it("handles nested object with arrays") {
+		should("handles nested object with arrays") {
 			val meta = buildMeta(JsonSchemaInspectorContext("audits", nestedObjectWithArraysSchema, listOf("id")))
 			meta.children shouldHaveSize 1
 			meta.children[0].sqlTableName shouldBe "`audits__nested__tags`"
@@ -270,7 +320,7 @@ class JsonSchemaInspectorTest : DescribeSpec({
 			meta.children[0].simpleColumnMappings[0].valueExtractor(mapOf("value" to 10)) shouldBe 10
 		}
 
-		it("handles nested value array schema") {
+		should("handles nested value array schema") {
 			val meta = buildMeta(JsonSchemaInspectorContext("audits", nestedValueArraySchema, listOf("id")))
 
 			meta.prop shouldBe "audits"
@@ -284,18 +334,17 @@ class JsonSchemaInspectorTest : DescribeSpec({
 			val events = meta.children[0]
 			events.prop shouldBe "events"
 			events.sqlTableName shouldBe "`audits__events`"
-			events.pkMappings shouldHaveSize 2
-			events.pkMappings[0].sqlIdentifier shouldBe "`_root_id`"
-			events.pkMappings[0].pkType shouldBe PKType.ROOT
-			events.pkMappings[1].pkType shouldBe PKType.LEVEL
+			events.pkMappings.map { it.sqlIdentifier to it.pkType } shouldBe listOf(
+				"`_root_id`" to PKType.ROOT,
+				"`_level_0_index`" to PKType.LEVEL,
+			)
 
 			val prevValue = events.children[0]
 			prevValue.prop shouldBe "previous_value"
 			prevValue.sqlTableName shouldBe "`audits__events__previous_value`"
-			prevValue.pkMappings shouldHaveSize 3
-			prevValue.pkMappings[0].sqlIdentifier shouldBe "`_root_id`"
-			prevValue.pkMappings[1].sqlIdentifier shouldBe "`_level_0_index`"
-			prevValue.pkMappings[2].sqlIdentifier shouldBe "`_level_1_index`"
+			prevValue.pkMappings.map { it.sqlIdentifier } shouldBe listOf(
+				"`_root_id`", "`_level_0_index`", "`_level_1_index`",
+			)
 
 			prevValue.simpleColumnMappings shouldHaveSize 1
 			prevValue.simpleColumnMappings[0].sqlIdentifier shouldBe "`value`"
@@ -304,7 +353,7 @@ class JsonSchemaInspectorTest : DescribeSpec({
 			prevValue.simpleColumnMappings[0].valueExtractor("tartempion") shouldBe "tartempion"
 		}
 
-		it("throws when an array child is declared without a root key property") {
+		should("throws when an array child is declared without a root key property") {
 			val schema = JsonSchema(
 				type = listOf("object"),
 				properties = mapOf(
@@ -317,18 +366,209 @@ class JsonSchemaInspectorTest : DescribeSpec({
 			)
 			shouldThrow<IllegalStateException> {
 				buildMeta(JsonSchemaInspectorContext("audits", schema, emptyList()))
-			}
+			}.message shouldContain "array child with no root key properties"
+		}
+
+		should("skips properties with an empty (`{}`) definition with a warning") {
+			val schema = JsonSchema(
+				type = listOf("object"),
+				properties = mapOf(
+					"id" to JsonSchema(type = listOf("integer")),
+					"empty" to null,
+				),
+			)
+			val meta = buildMeta(JsonSchemaInspectorContext("audits", schema, listOf("id")))
+			meta.simpleColumnMappings.map { it.prop } shouldBe emptyList()
+			meta.pkMappings.single().prop shouldBe "id"
+		}
+
+		should("skips nested empty (`{}`) property definitions inside a nested object") {
+			val schema = JsonSchema(
+				type = listOf("object"),
+				properties = mapOf(
+					"id" to JsonSchema(type = listOf("integer")),
+					"meta" to JsonSchema(
+						type = listOf("object"),
+						properties = mapOf(
+							"present" to JsonSchema(type = listOf("string")),
+							"missing" to null,
+						),
+					),
+				),
+			)
+			val meta = buildMeta(JsonSchemaInspectorContext("audits", schema, listOf("id")))
+			meta.simpleColumnMappings.map { it.sqlIdentifier } shouldBe listOf("`meta__present`")
+		}
+
+		should("warns and skips columns whose type can't be resolved") {
+			val schema = JsonSchema(
+				type = listOf("object"),
+				properties = mapOf(
+					"id" to JsonSchema(type = listOf("integer")),
+					"weird" to JsonSchema(type = listOf("totally-unknown")),
+				),
+			)
+			val meta = buildMeta(JsonSchemaInspectorContext("audits", schema, listOf("id")))
+			meta.simpleColumnMappings shouldBe emptyList()
+		}
+
+		should("treats array+format='nested' as a nested-array scalar column") {
+			val schema = JsonSchema(
+				type = listOf("object"),
+				properties = mapOf(
+					"id" to JsonSchema(type = listOf("integer")),
+					"tags" to JsonSchema(
+						type = listOf("array"),
+						format = "nested",
+						items = JsonSchema(type = listOf("string")),
+					),
+				),
+			)
+			val meta = buildMeta(JsonSchemaInspectorContext("audits", schema, listOf("id")))
+			meta.children shouldBe emptyList()
+			val tags = meta.simpleColumnMappings.single { it.prop == "tags" }
+			tags.nestedArray shouldBe true
+			tags.chType shouldBe "String"
+		}
+
+		should("preserves lowCardinality flag from schema") {
+			val schema = JsonSchema(
+				type = listOf("object"),
+				properties = mapOf(
+					"id" to JsonSchema(type = listOf("integer")),
+					"status" to JsonSchema(type = listOf("string"), lowCardinality = true),
+				),
+			)
+			val meta = buildMeta(JsonSchemaInspectorContext("audits", schema, listOf("id")))
+			meta.simpleColumnMappings.single { it.prop == "status" }.lowCardinality shouldBe true
+		}
+
+		should("returns no columns for a scalar root with empty type list") {
+			val meta = buildMeta(JsonSchemaInspectorContext("audits", JsonSchema(type = emptyList()), emptyList()))
+			meta.simpleColumnMappings shouldBe emptyList()
+			meta.pkMappings shouldBe emptyList()
+		}
+
+		should("builds a single-column scalar root from a primitive schema") {
+			val meta = buildMeta(JsonSchemaInspectorContext("audits", JsonSchema(type = listOf("string")), emptyList()))
+			meta.simpleColumnMappings.single().sqlIdentifier shouldBe "`value`"
+			meta.simpleColumnMappings.single().chType shouldBe "String"
+		}
+
+		should("composes nested PARENT pk columns when allKeyProperties is set on parent only") {
+			// `_parent_X` columns are emitted only when the parent has non-empty all_key_properties.
+			val allKeyProps = SchemaKeyProperties(
+				props = listOf("id"),
+				children = mapOf("custom_fields" to SchemaKeyProperties(props = listOf("field"), children = emptyMap())),
+			)
+			val meta = buildMeta(
+				JsonSchemaInspectorContext(
+					alias = "audits",
+					schema = arrayObjectSchema,
+					keyProperties = listOf("id"),
+					allKeyProperties = allKeyProps,
+				),
+			)
+			val child = meta.children.single()
+			child.pkMappings.map { it.pkType } shouldBe listOf(
+				PKType.ROOT, PKType.PARENT, PKType.CURRENT, PKType.LEVEL,
+			)
 		}
 	}
 
-	describe("escapeIdentifier") {
-		it("wraps short identifiers in backticks") {
+	context("escapeIdentifier nested ancestry") {
+		should("makes truncated identifier deterministic for the same input") {
+			val long = "a".repeat(100)
+			escapeIdentifier(long) shouldBe escapeIdentifier(long)
+		}
+
+		should("uses the configured subtable separator when expanding nested identifiers") {
+			escapeIdentifier("x${NESTED_SUB_OBJECT_SEPARATOR}y", subtableSeparator = "::") shouldBe "`x::y`"
+		}
+	}
+
+	context("formatRootPKColumn") {
+		should("prefixes the property name with _root_") {
+			formatRootPKColumn("id") shouldBe "_root_id"
+		}
+	}
+
+	context("JsonSchemaInspectorContext") {
+		should("isRoot is true when parentCtx is null") {
+			JsonSchemaInspectorContext("audits", simpleSchema, listOf("id")).isRoot() shouldBe true
+		}
+
+		should("isRoot is false when a parent context is set") {
+			val parent = JsonSchemaInspectorContext("root", simpleSchema, listOf("id"))
+			val child = JsonSchemaInspectorContext("audits", simpleSchema, listOf("id"), parentCtx = parent)
+			child.isRoot() shouldBe false
+		}
+
+		should("rootCtx walks the parent chain") {
+			val grand = JsonSchemaInspectorContext("a", simpleSchema, emptyList())
+			val parent = JsonSchemaInspectorContext("b", simpleSchema, emptyList(), parentCtx = grand)
+			val child = JsonSchemaInspectorContext("c", simpleSchema, emptyList(), parentCtx = parent)
+			child.rootCtx shouldBe grand
+		}
+	}
+
+	context("createSubTable / nested object edges") {
+		should("falls back to a string-typed item schema when array items is missing") {
+			val schema = JsonSchema(
+				type = listOf("object"),
+				properties = mapOf(
+					"id" to JsonSchema(type = listOf("integer")),
+					"things" to JsonSchema(type = listOf("array")),
+				),
+			)
+			val meta = buildMeta(JsonSchemaInspectorContext("root", schema, listOf("id")))
+			val child = meta.children.single { it.prop == "things" }
+			val valueCol = child.simpleColumnMappings.single()
+			valueCol.sqlIdentifier shouldBe "`value`"
+			valueCol.chType shouldBe "String"
+		}
+
+		should("flattens an object whose properties map is null without crashing") {
+			val schema = JsonSchema(
+				type = listOf("object"),
+				properties = mapOf(
+					"id" to JsonSchema(type = listOf("integer")),
+					"meta" to JsonSchema(type = listOf("object")),
+				),
+			)
+			val meta = buildMeta(JsonSchemaInspectorContext("root", schema, listOf("id")))
+			meta.simpleColumnMappings.map { it.prop } shouldBe emptyList()
+		}
+	}
+
+	context("nested array+nested format combinations") {
+		should("preserves nested-array typing while traversing PK derivation") {
+			val schema = JsonSchema(
+				type = listOf("object"),
+				properties = mapOf(
+					"id" to JsonSchema(type = listOf("integer")),
+					"floats" to JsonSchema(
+						type = listOf("array"),
+						format = "nested",
+						items = JsonSchema(type = listOf("number"), format = "float64"),
+					),
+				),
+			)
+			val meta = buildMeta(JsonSchemaInspectorContext("root", schema, listOf("id")))
+			val floats = meta.simpleColumnMappings.single { it.prop == "floats" }
+			floats.nestedArray shouldBe true
+			floats.chType shouldBe "Float64"
+		}
+	}
+
+	context("escapeIdentifier") {
+		should("wraps short identifiers in backticks") {
 			escapeIdentifier("id") shouldBe "`id`"
 		}
-		it("replaces nested separator with subtable separator") {
+		should("replaces nested separator with subtable separator") {
 			escapeIdentifier("a${NESTED_SUB_OBJECT_SEPARATOR}b") shouldBe "`a__b`"
 		}
-		it("truncates and hashes long identifiers") {
+		should("truncates and hashes long identifiers") {
 			val long = "x".repeat(80)
 			val escaped = escapeIdentifier(long)
 			escaped.length shouldBe 66 // backticks + 64-char body

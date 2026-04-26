@@ -4,74 +4,102 @@ import io.github.oshai.kotlinlogging.KotlinLogging
 
 private val logger = KotlinLogging.logger {}
 
-/** @return true iff [meta] is a root whose CURRENT PKs promote the table to ReplacingMergeTree. */
-private fun metaRepresentsReplacingMergeTree(meta: SourceMeta): Boolean = meta.pkMappings.isNotEmpty()
+/**
+ * One per Singer stream. Owns the live insert path (records, deletions, batch commits) and
+ * the post-stream finalize step (ReplacingMergeTree optimize, child orphan cleanup, PK
+ * integrity check).
+ */
+interface StreamProcessor {
+	fun processRecord(row: RecordRow, messageCount: Int, abort: (Throwable) -> Unit)
+	fun processDeletedRecord(row: RecordRow)
+	fun commitPendingChanges()
+	fun finalizeProcessing()
 
-class StreamProcessor private constructor(
+	companion object {
+		fun create(
+			ch: TargetConnection,
+			meta: SourceMeta,
+			config: TargetConfig,
+			cleanFirst: Boolean,
+			existingTables: List<String>,
+			cleaningColumnSlot: Int?,
+		): StreamProcessor =
+			DefaultStreamProcessor.create(ch, meta, config, cleanFirst, existingTables, cleaningColumnSlot)
+	}
+}
+
+typealias StreamProcessorFactory = (
+	ch: TargetConnection,
+	meta: SourceMeta,
+	config: TargetConfig,
+	cleanFirst: Boolean,
+	existingTables: List<String>,
+	cleaningColumnSlot: Int?,
+) -> StreamProcessor
+
+internal class DefaultStreamProcessor private constructor(
 	private val clickhouse: TargetConnection,
 	private val meta: SourceMeta,
 	private val startedClean: Boolean,
 	private val recordProcessor: RecordProcessor,
 	private val deletedRecordProcessor: DeletedRecordProcessor,
-	val streamReader: StreamReader,
-) {
-	private var maxVer: Long = 0
-	private var noPendingRows: Int = 0
-	private val cleaningValues: MutableSet<String> = mutableSetOf()
+	private val cleaningColumnSlot: Int?,
+	initialMaxVer: Long,
+) : StreamProcessor {
+	private var maxVer: Long = initialMaxVer
+	private var pendingRowCount: Int = 0
+	private val cleaningValuesSeen: MutableSet<String> = mutableSetOf()
 
-	fun processRecord(row: RecordRow, messageCount: Int, abort: (Throwable) -> Unit) {
-		if (!startedClean && streamReader.cleaningColumnSlot >= 0) {
-			val cleaningValue = row[streamReader.cleaningColumnSlot]?.toString()
-			if (!cleaningValue.isNullOrEmpty() && cleaningValue !in cleaningValues) {
-				deleteCleaningValue(cleaningValue)
-				cleaningValues += cleaningValue
-			}
-		}
-		recordProcessor.pushRecord(row, abort, maxVer, messageCount = messageCount)
+	override fun processRecord(row: RecordRow, messageCount: Int, abort: (Throwable) -> Unit) {
+		applyCleaningColumnIfPresent(row)
 		maxVer++
-		noPendingRows++
+		recordProcessor.pushRecord(row, abort, maxVer, messageCount = messageCount)
+		pendingRowCount++
 	}
 
-	fun processDeletedRecord(row: RecordRow) {
+	override fun processDeletedRecord(row: RecordRow) {
 		deletedRecordProcessor.pushDeletedRecord(row)
 	}
 
-	fun commitPendingChanges() {
-		if (noPendingRows > 0) {
-			logger.info { "[${meta.prop}]: ending batch ingestion for $noPendingRows rows" }
+	override fun commitPendingChanges() {
+		if (pendingRowCount > 0) {
+			logger.info { "[${meta.prop}]: ending batch ingestion for $pendingRowCount rows" }
 			recordProcessor.endIngestion()
-			noPendingRows = 0
+			pendingRowCount = 0
 			maxVer++
 		}
 		deletedRecordProcessor.deleteBufferedData()
 	}
 
-	fun finalizeProcessing() {
+	override fun finalizeProcessing() {
 		try {
 			commitPendingChanges()
 		} catch (e: Throwable) {
 			throw IllegalStateException("could not save new records", e)
 		}
 		logger.info { "[${meta.prop}]: finalizing processing" }
+		if (startedClean) return
 
-		if (!startedClean) {
-			if (isReplacingMergeTree()) {
-				logger.info { "[${meta.prop}]: removing root duplicates" }
-				clickhouse.runQuery("OPTIMIZE TABLE ${meta.sqlTableName} FINAL")
-
-				if (recordProcessor.hasChildren) {
-					logger.info { "[${meta.prop}]: removing children orphans" }
-					meta.children.forEach { deleteChildDuplicates(it) }
-				}
-			}
-
-			logger.info { "[${meta.prop}]: ensuring PK integrity is maintained" }
-			assertPKIntegrity(meta)
-		}
+		if (meta.isReplacingMergeTree)
+			optimizeReplacingMergeTree()
+		logger.info { "[${meta.prop}]: ensuring PK integrity is maintained" }
+		assertPkIntegrity(meta)
 	}
 
-	private fun clearTables() {
-		buildDropTablesQueries(meta).forEach { clickhouse.runQuery(it) }
+	private fun applyCleaningColumnIfPresent(row: RecordRow) {
+		if (startedClean || cleaningColumnSlot == null) return
+		val value = row[cleaningColumnSlot]?.toString()
+		if (value.isNullOrEmpty() || value in cleaningValuesSeen) return
+		deleteCleaningValue(value)
+		cleaningValuesSeen += value
+	}
+
+	private fun optimizeReplacingMergeTree() {
+		logger.info { "[${meta.prop}]: removing root duplicates" }
+		clickhouse.runQuery("OPTIMIZE TABLE ${meta.sqlTableName} FINAL")
+		if (!recordProcessor.hasChildren) return
+		logger.info { "[${meta.prop}]: removing children orphans" }
+		meta.children.forEach { deleteChildDuplicates(it) }
 	}
 
 	private fun deleteCleaningValue(value: String) {
@@ -79,20 +107,23 @@ class StreamProcessor private constructor(
 			logger.warn { "[${meta.prop}]: unexpected request to clean values: cleaning column undefined" }
 			return
 		}
-		val resolved = (meta.simpleColumnMappings.map { it.prop to it.schemaType } +
-			meta.pkMappings.map { it.prop to it.schemaType })
-			.firstOrNull { (prop, _) -> prop == cleaningColumn }
-			?: error("[${meta.prop}] could not resolve cleaning column meta (looking for $cleaningColumn)")
-		if (resolved.second == null) {
-			error("[${meta.prop}] could not be used as cleaning column: no typed schema for '$cleaningColumn'")
-		}
+		validateCleaningColumnTyped(cleaningColumn)
 		logger.info { "[${meta.prop}]: cleaning column: deleting based on $value" }
-
 		clickhouse.runQuery(
 			"""ALTER TABLE ${meta.sqlTableName} DELETE
 			   WHERE `$cleaningColumn` = '${escapeValue(value)}'
 			   SETTINGS mutations_sync=2""".trimIndent(),
 		)
+	}
+
+	private fun validateCleaningColumnTyped(cleaningColumn: String) {
+		val resolved = (meta.simpleColumnMappings.map { it.prop to it.schemaType } +
+				meta.pkMappings.map { it.prop to it.schemaType })
+			.firstOrNull { (prop, _) -> prop == cleaningColumn }
+			?: error("[${meta.prop}] could not resolve cleaning column meta (looking for $cleaningColumn)")
+		if (resolved.second == null) {
+			error("[${meta.prop}] could not be used as cleaning column: no typed schema for [$cleaningColumn]")
+		}
 	}
 
 	private fun deleteChildDuplicates(currentNode: SourceMeta) {
@@ -107,10 +138,8 @@ class StreamProcessor private constructor(
 		currentNode.children.forEach { deleteChildDuplicates(it) }
 	}
 
-	private fun isReplacingMergeTree(): Boolean = metaRepresentsReplacingMergeTree(meta)
-
-	private fun assertPKIntegrity(current: SourceMeta) {
-		current.children.forEach { assertPKIntegrity(it) }
+	private fun assertPkIntegrity(current: SourceMeta) {
+		current.children.forEach { assertPkIntegrity(it) }
 		if (current.pkMappings.isEmpty()) return
 		val pks = current.pkMappings.joinToString(",") { it.sqlIdentifier }
 		val res = clickhouse.runQuery(
@@ -130,57 +159,69 @@ class StreamProcessor private constructor(
 			config: TargetConfig,
 			cleanFirst: Boolean,
 			existingTables: List<String>,
-		): StreamProcessor {
-			val processor = StreamProcessor(
-				clickhouse = ch,
-				meta = meta,
-				startedClean = cleanFirst,
-				recordProcessor = RecordProcessor(
-					meta = meta,
-					clickhouse = ch,
-					config = RecordProcessorConfig(
-						batchSize = config.batchSize,
-						translateValues = config.translateValues,
-						autoEndTimeoutMs = ((config.insertStreamTimeoutSec - 5).coerceAtLeast(1)) * 1000L,
-					),
-				),
-				deletedRecordProcessor = DeletedRecordProcessor(
-					meta = meta,
-					clickhouse = ch,
-					config = DeletedRecordProcessorConfig(
-						batchSize = config.deletionBatchSize,
-						translateValues = config.translateValues,
-					),
-				),
-				streamReader = buildStreamReader(meta, config.translateValues),
-			)
+			cleaningColumnSlot: Int?,
+		): DefaultStreamProcessor {
+			applySchema(ch, meta, cleanFirst, existingTables)
+			val maxVer = initialMaxVer(ch, meta, cleanFirst)
+			logger.info { "[${meta.prop}]: initial max version is [$maxVer]" }
+			return buildProcessor(ch, meta, config, cleanFirst, cleaningColumnSlot, maxVer)
+		}
 
-			val rootAlreadyExists: Boolean = if (cleanFirst) {
-				processor.clearTables()
+		private fun applySchema(ch: TargetConnection, meta: SourceMeta, cleanFirst: Boolean, existingTables: List<String>) {
+			val rootAlreadyExists = if (cleanFirst) {
+				dropStreamTablesQueries(meta).forEach { ch.runQuery(it) }
 				false
 			} else {
 				existingTables.any { meta.sqlTableName == escapeIdentifier(it) }
 			}
-
 			if (rootAlreadyExists) {
 				updateSchema(meta, ch, existingTables)
 			} else {
 				logger.info { "[${meta.prop}]: creating tables" }
 				translateCH(ch.getDatabase(), meta, recursive = true).forEach { ch.runQuery(it) }
 			}
-
-			processor.maxVer = if (cleanFirst || !metaRepresentsReplacingMergeTree(meta)) {
-				processor.maxVer
-			} else {
-				ch.runQuery("SELECT max(_ver) FROM ${meta.sqlTableName}").data
-					.firstOrNull()?.firstOrNull()?.toString()?.toLongOrNull() ?: 0L
-			}
-
-			logger.info { "[${meta.prop}]: initial max version is [${processor.maxVer}]" }
-			return processor
 		}
+
+		private fun initialMaxVer(ch: TargetConnection, meta: SourceMeta, cleanFirst: Boolean): Long {
+			if (cleanFirst || !meta.isReplacingMergeTree) return 0L
+			return ch.runQuery("SELECT max(_ver) FROM ${meta.sqlTableName}").data
+				.firstOrNull()?.firstOrNull()?.toString()?.toLongOrNull() ?: 0L
+		}
+
+		private fun buildProcessor(
+			clickhouse: TargetConnection,
+			meta: SourceMeta,
+			config: TargetConfig,
+			cleanFirst: Boolean,
+			cleaningColumnSlot: Int?,
+			initialMaxVer: Long
+		) =
+			DefaultStreamProcessor(
+				clickhouse,
+				meta,
+				cleanFirst,
+				RecordProcessor(
+					meta = meta,
+					clickhouse = clickhouse,
+					config = RecordProcessorConfig(
+						batchSize = config.batchSize,
+						translateValues = config.translateValues,
+						autoEndTimeoutMs = ((config.insertStreamTimeoutSec - 5).coerceAtLeast(1)) * 1000L,
+					),
+				),
+				DeletedRecordProcessor(
+					meta = meta,
+					clickhouse = clickhouse,
+					config = DeletedRecordProcessorConfig(
+						batchSize = config.deletionBatchSize,
+						translateValues = config.translateValues,
+					),
+				),
+				cleaningColumnSlot,
+				initialMaxVer,
+			)
+
+		/** True when this root has CURRENT-level PKs and is therefore stored as ReplacingMergeTree. */
+		private val SourceMeta.isReplacingMergeTree: Boolean get() = pkMappings.isNotEmpty()
 	}
 }
-
-private fun buildDropTablesQueries(meta: SourceMeta): List<String> =
-	listOf("DROP TABLE IF EXISTS ${meta.sqlTableName}") + meta.children.flatMap(::buildDropTablesQueries)

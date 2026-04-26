@@ -1,69 +1,78 @@
 package com.biron.singerTargetClickhouse
 
 import io.kotest.assertions.throwables.shouldThrow
-import io.kotest.core.spec.style.DescribeSpec
-import io.kotest.matchers.shouldBe
+import io.kotest.core.spec.style.ShouldSpec
+import io.kotest.matchers.collections.shouldBeEmpty
+import io.kotest.matchers.collections.shouldHaveSize
+import io.kotest.matchers.string.shouldContain
+import io.mockk.mockk
 
-class DeletedRecordProcessorTest : DescribeSpec({
+class DeletedRecordProcessorTest : ShouldSpec({
 
-	describe("pushDeletedRecord") {
-		it("throws when meta has no CURRENT pk") {
-			val proc = DeletedRecordProcessor(simpleMeta, FakeTargetConnection(), DeletedRecordProcessorConfig(10, false))
+	afterTest { checkAndClearAllMocks() }
+
+	context("pushDeletedRecord") {
+		should("throws when meta has no CURRENT pk") {
+			val underTest = DeletedRecordProcessor(simpleMeta, mockk(), DeletedRecordProcessorConfig(10, false))
 			shouldThrow<IllegalStateException> {
-				proc.pushDeletedRecord(mapToRow(simpleMeta, mapOf("id" to 1)))
-			}
+				underTest.pushDeletedRecord(mapToRow(simpleMeta, mapOf("id" to 1)))
+			}.message shouldContain "cannot push deleted record to a stream without pk mapping"
 		}
 
-		it("flushes at batch size") {
-			val conn = FakeTargetConnection()
+		should("flushes at batch size") {
+			val conn: TargetConnection = mockk()
+			val queries = conn.captureRunQueries()
 			val meta = simpleMeta.copy(pkMappings = listOf(id), simpleColumnMappings = emptyList())
-			val proc = DeletedRecordProcessor(meta, conn, DeletedRecordProcessorConfig(batchSize = 2, translateValues = false))
 
-			proc.pushDeletedRecord(mapToRow(meta, mapOf("id" to 1)))
-			conn.runQueryLog.size shouldBe 0
-			proc.pushDeletedRecord(mapToRow(meta, mapOf("id" to 2)))
+			val underTest = DeletedRecordProcessor(meta, conn, DeletedRecordProcessorConfig(batchSize = 2, translateValues = false))
+			underTest.pushDeletedRecord(mapToRow(meta, mapOf("id" to 1)))
+			queries.queries.shouldBeEmpty()
+			underTest.pushDeletedRecord(mapToRow(meta, mapOf("id" to 2)))
 
-			conn.runQueryLog.size shouldBe 1
-			conn.runQueryLog[0].contains("DELETE FROM `order`") shouldBe true
-			conn.runQueryLog[0].contains("WHERE (`id`) IN ((1),(2))") shouldBe true
+			queries.queries shouldHaveSize 1
+			queries.queries[0] shouldContain "DELETE FROM `order`"
+			queries.queries[0] shouldContain "WHERE (`id`) IN ((1),(2))"
 		}
 
-		it("deleteBufferedData flushes the leftover buffer") {
-			val conn = FakeTargetConnection()
+		should("deleteBufferedData flushes the leftover buffer") {
+			val conn: TargetConnection = mockk()
+			val queries = conn.captureRunQueries()
 			val meta = simpleMeta.copy(pkMappings = listOf(id), simpleColumnMappings = emptyList())
-			val proc = DeletedRecordProcessor(meta, conn, DeletedRecordProcessorConfig(100, false))
 
-			proc.pushDeletedRecord(mapToRow(meta, mapOf("id" to 42)))
-			proc.deleteBufferedData()
+			val underTest = DeletedRecordProcessor(meta, conn, DeletedRecordProcessorConfig(100, false))
+			underTest.pushDeletedRecord(mapToRow(meta, mapOf("id" to 42)))
+			underTest.deleteBufferedData()
 
-			conn.runQueryLog[0].contains("WHERE (`id`) IN ((42))") shouldBe true
+			queries.queries[0] shouldContain "WHERE (`id`) IN ((42))"
 		}
 
-		it("quotes string PK values") {
-			val conn = FakeTargetConnection()
+		should("quotes string PK values") {
+			val conn: TargetConnection = mockk()
+			val queries = conn.captureRunQueries()
 			val stringPk = id.copy(
 				chType = "String",
 				schemaType = "string",
 				valueExtractor = { (it as? Map<*, *>)?.get("id")?.toString() },
 			)
 			val meta = simpleMeta.copy(pkMappings = listOf(stringPk), simpleColumnMappings = emptyList())
-			val proc = DeletedRecordProcessor(meta, conn, DeletedRecordProcessorConfig(batchSize = 100, translateValues = true))
 
-			proc.pushDeletedRecord(mapToRow(meta, mapOf("id" to "abc"), translateValues = true))
-			proc.deleteBufferedData()
+			val underTest = DeletedRecordProcessor(meta, conn, DeletedRecordProcessorConfig(batchSize = 100, translateValues = true))
+			underTest.pushDeletedRecord(mapToRow(meta, mapOf("id" to "abc"), translateValues = true))
+			underTest.deleteBufferedData()
 
-			conn.runQueryLog[0].contains("WHERE (`id`) IN (('abc'))") shouldBe true
+			queries.queries[0] shouldContain "WHERE (`id`) IN (('abc'))"
 		}
 
-		it("does not quote numeric PK values") {
-			val conn = FakeTargetConnection()
+		should("does not quote numeric PK values") {
+			val conn: TargetConnection = mockk()
+			val queries = conn.captureRunQueries()
 			val meta = simpleMeta.copy(pkMappings = listOf(id), simpleColumnMappings = emptyList())
-			val proc = DeletedRecordProcessor(meta, conn, DeletedRecordProcessorConfig(100, false))
 
-			proc.pushDeletedRecord(mapToRow(meta, mapOf("id" to 123)))
-			proc.deleteBufferedData()
+			val underTest = DeletedRecordProcessor(meta, conn, DeletedRecordProcessorConfig(100, false))
+			underTest.pushDeletedRecord(mapToRow(meta, mapOf("id" to 123)))
+			underTest.deleteBufferedData()
 
-			conn.runQueryLog[0].contains("WHERE (`id`) IN ((123))") shouldBe true
+			queries.queries[0] shouldContain "WHERE (`id`) IN ((123))"
 		}
 	}
 })

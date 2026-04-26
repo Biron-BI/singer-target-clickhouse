@@ -12,13 +12,28 @@ import com.github.ajalt.clikt.parameters.types.outputStream
 import com.github.ajalt.clikt.parameters.types.path
 import io.github.oshai.kotlinlogging.KotlinLogging
 import java.io.BufferedWriter
+import java.io.InputStream
 import java.io.OutputStreamWriter
+import java.io.Writer
 import java.nio.charset.StandardCharsets
 import kotlin.io.path.reader
 
 private val logger = KotlinLogging.logger {}
 
-class RootCommand : CliktCommand(name = "target-clickhouse") {
+/**
+ * Runs a configured pipeline against the given input/output. Defaulted on [RootCommand] to the
+ * real `StreamPipeline.forConfig(...).run(...)`; tests substitute a recording fake.
+ */
+internal typealias PipelineRunner = (TargetConfig, InputStream, Writer, List<String>) -> Unit
+
+class RootCommand internal constructor(
+	private val pipelineRunner: PipelineRunner,
+) : CliktCommand(name = "target-clickhouse") {
+
+	constructor() : this({ config: TargetConfig, input: InputStream, writer: Writer, streams: List<String> ->
+		StreamPipeline.forConfig(config).run(input, writer, streams)
+	})
+
 	private val configPath by option("--config")
 		.path(mustExist = true, canBeDir = false, mustBeReadable = true)
 		.required()
@@ -50,12 +65,12 @@ class RootCommand : CliktCommand(name = "target-clickhouse") {
 		try {
 			stdin.use {
 				writer.use {
-					processStream(stdin, config, writer, updateStreams)
+					pipelineRunner(config, stdin, writer, updateStreams)
 				}
 			}
 			logger.info { "Stream processing done" }
 		} catch (e: Throwable) {
-			logger.error(e) { "${e.message}" }
+			logger.error(e) { e.message }
 			throw ProgramResult(1)
 		}
 	}

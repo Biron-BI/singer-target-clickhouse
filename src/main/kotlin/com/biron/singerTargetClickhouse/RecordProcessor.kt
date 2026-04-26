@@ -37,7 +37,6 @@ class RecordProcessor(
 	private val clickhouse: TargetConnection,
 	private val config: RecordProcessorConfig,
 	private val level: Int = 0,
-	private val scheduler: ScheduledExecutorService = defaultScheduler,
 ) {
 	private val isRoot: Boolean = level == 0
 	private val isWithParentPK: Boolean = !isRoot && meta.pkMappings.any { it.pkType == PKType.PARENT }
@@ -47,7 +46,7 @@ class RecordProcessor(
 	private val columnCount: Int = meta.simpleColumnMappings.size
 	private val children: Map<String, RecordProcessor> = meta.children
 		.associateBy { it.sqlTableName }
-		.mapValues { RecordProcessor(it.value, clickhouse, config, level + 1, scheduler) }
+		.mapValues { RecordProcessor(it.value, clickhouse, config, level + 1) }
 
 	private val lock = Any()
 	private var ingestion: Ingestion? = null
@@ -77,22 +76,9 @@ class RecordProcessor(
 		val (sourcePk, resolvedRootVer) = synchronized(lock) {
 			if (ingestion == null) startIngestion(messageCount, abort)
 
-			val rootVersion = if (isRoot && meta.pkMappings.isNotEmpty()) maxVer + 1 else rootVer
-
-			val currentPkValues: List<Any?> = List(pkCount) { row[it] }
-			val srcPk = SourceMetaPK(
-				values = currentPkValues,
-				rootValues = if (isRoot) null else parentMeta?.rootValues ?: parentMeta?.values,
-				parentValues = if (isRoot) null else parentMeta?.values,
-				levelValues = if (isRoot) null else (parentMeta?.levelValues ?: emptyList()) + indexInParent,
-			)
-
-			val pkValues: List<Any?> = if (isRoot) currentPkValues else buildList {
-				addAll(srcPk.rootValues!!)
-				if (isWithParentPK) addAll(srcPk.parentValues!!)
-				addAll(currentPkValues)
-				addAll(srcPk.levelValues!!)
-			}
+			val rootVersion = if (isRoot && meta.pkMappings.isNotEmpty()) maxVer else rootVer
+			val srcPk = buildSourcePk(row, parentMeta, indexInParent)
+			val pkValues = composePkValues(srcPk)
 
 			buffered.add(buildInsertValues(row, pkValues, rootVersion))
 			if (buffered.size >= config.batchSize) {
@@ -103,22 +89,51 @@ class RecordProcessor(
 			srcPk to rootVersion
 		}
 
-		if (hasChildren) {
-			meta.children.forEachIndexed { i, child ->
-				val processor = children.getValue(child.sqlTableName)
-				@Suppress("UNCHECKED_CAST")
-				val childRows = row[pkCount + columnCount + i] as? List<RecordRow> ?: return@forEachIndexed
-				childRows.forEachIndexed { idx, childRow ->
-					processor.pushRecord(
-						row = childRow,
-						abort = abort,
-						maxVer = maxVer,
-						parentMeta = sourcePk,
-						rootVer = resolvedRootVer,
-						indexInParent = idx,
-						messageCount = messageCount,
-					)
-				}
+		if (hasChildren) dispatchToChildren(row, sourcePk, resolvedRootVer, maxVer, messageCount, abort)
+	}
+
+	private fun buildSourcePk(row: RecordRow, parentMeta: SourceMetaPK?, indexInParent: Int): SourceMetaPK {
+		val currentPkValues: List<Any?> = List(pkCount) { row[it] }
+		return SourceMetaPK(
+			values = currentPkValues,
+			rootValues = if (isRoot) null else parentMeta?.rootValues ?: parentMeta?.values,
+			parentValues = if (isRoot) null else parentMeta?.values,
+			levelValues = if (isRoot) null else (parentMeta?.levelValues ?: emptyList()) + indexInParent,
+		)
+	}
+
+	private fun composePkValues(srcPk: SourceMetaPK): List<Any?> {
+		if (isRoot) return srcPk.values
+		return buildList {
+			addAll(srcPk.rootValues!!)
+			if (isWithParentPK) addAll(srcPk.parentValues!!)
+			addAll(srcPk.values)
+			addAll(srcPk.levelValues!!)
+		}
+	}
+
+	private fun dispatchToChildren(
+		row: RecordRow,
+		sourcePk: SourceMetaPK,
+		rootVer: Long?,
+		maxVer: Long,
+		messageCount: Int,
+		abort: (Throwable) -> Unit,
+	) {
+		meta.children.forEachIndexed { i, child ->
+			val processor = children.getValue(child.sqlTableName)
+			@Suppress("UNCHECKED_CAST")
+			val childRows = row[pkCount + columnCount + i] as? List<RecordRow> ?: return@forEachIndexed
+			childRows.forEachIndexed { idx, childRow ->
+				processor.pushRecord(
+					row = childRow,
+					abort = abort,
+					maxVer = maxVer,
+					parentMeta = sourcePk,
+					rootVer = rootVer,
+					indexInParent = idx,
+					messageCount = messageCount,
+				)
 			}
 		}
 	}
@@ -191,7 +206,7 @@ class RecordProcessor(
 	 */
 	private fun scheduleAutoEnd(ctx: Ingestion, abort: (Throwable) -> Unit): ScheduledFuture<*> {
 		val taskRef = java.util.concurrent.atomic.AtomicReference<ScheduledFuture<*>?>(null)
-		val task = scheduler.schedule(
+		val task = defaultScheduler.schedule(
 			{
 				synchronized(lock) {
 					if (ingestion !== ctx || ctx.timeoutFuture !== taskRef.get()) return@synchronized
