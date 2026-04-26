@@ -1,30 +1,21 @@
 @file:Suppress("SqlNoDataSourceInspection")
 
-package com.biron.singerTargetClickhouse.utilsTest.kotest
+package com.biron.singerTargetClickhouse
 
-import com.biron.singerTargetClickhouse.TargetConfig
-import com.biron.singerTargetClickhouse.processStream
+import com.biron.singerTargetClickhouse.utilsTest.createFileWithContent
+import com.fasterxml.jackson.annotation.JsonInclude
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import com.google.common.jimfs.Configuration
+import com.google.common.jimfs.Jimfs
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.kotest.assertions.nondeterministic.eventually
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.DescribeSpec
-import io.kotest.matchers.collections.shouldBeEmpty
-import io.kotest.matchers.collections.shouldContainAll
-import io.kotest.matchers.collections.shouldContainExactly
-import io.kotest.matchers.collections.shouldHaveSize
-import io.kotest.matchers.collections.shouldNotContain
-import io.kotest.matchers.file.shouldExist
+import io.kotest.matchers.collections.*
+import io.kotest.matchers.paths.shouldExist
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldInclude
-import java.io.BufferedWriter
-import java.io.File
-import java.io.OutputStreamWriter
-import java.io.PipedInputStream
-import java.io.PipedOutputStream
-import java.nio.charset.StandardCharsets
-import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -33,12 +24,21 @@ import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.jdbc.core.queryForObject
 import org.springframework.jdbc.datasource.DriverManagerDataSource
 import org.testcontainers.clickhouse.ClickHouseContainer
+import java.io.BufferedWriter
+import java.io.OutputStreamWriter
+import java.io.PipedInputStream
+import java.io.PipedOutputStream
+import java.nio.charset.StandardCharsets
+import java.nio.file.Files
+import java.nio.file.Path
+import java.util.concurrent.atomic.AtomicInteger
+import kotlin.io.path.Path
+import kotlin.io.path.inputStream
+import kotlin.io.path.readLines
+import kotlin.time.Duration.Companion.seconds
 
 
 private const val CLICKHOUSE_IMAGE = "clickhouse/clickhouse-server:24.12.3.47"
-
-private val DATA_DIR: String =
-	"./src/test/kotlin/${ProcessStreamTest::class.java.packageName.replace('.', '/')}/data"
 
 private data class TestTargetConfig(
 	val host: String,
@@ -50,10 +50,11 @@ private data class TestTargetConfig(
 	val batch_size: Int? = 100,
 	val insert_stream_timeout_sec: Int? = 180,
 	val translate_values: Boolean = false,
+	val subtable_separator: String? = null,
 )
 
-class ProcessStreamTest : DescribeSpec({
-
+class ProcessStreamIntegrationTest : DescribeSpec({
+	val dataDir = "./src/test/kotlin/${this::class.qualifiedName!!.replace('.', '/')}Results"
 	val logger = KotlinLogging.logger {}
 
 	val baseConfig = TestTargetConfig(
@@ -66,6 +67,11 @@ class ProcessStreamTest : DescribeSpec({
 
 	lateinit var container: ClickHouseContainer
 	lateinit var jdbcTemplate: JdbcTemplate
+
+	val fs = Jimfs.newFileSystem(Configuration.unix())
+	val tmpDir = fs.getPath("/tmp").also { Files.createDirectories(it) }
+	val configCounter = AtomicInteger()
+	val stateCounter = AtomicInteger()
 
 	beforeSpec {
 		container = ClickHouseContainer(CLICKHOUSE_IMAGE).apply {
@@ -84,37 +90,40 @@ class ProcessStreamTest : DescribeSpec({
 		)
 	}
 
-	afterSpec { container.stop() }
+	afterSpec {
+		container.stop()
+		fs.close()
+	}
 
 	beforeEach {
 		jdbcTemplate.execute("DROP DATABASE IF EXISTS ${baseConfig.database};")
 		jdbcTemplate.execute("CREATE DATABASE ${baseConfig.database};")
 	}
 
-	val jsonMapper = jacksonObjectMapper()
+	val jsonMapper = jacksonObjectMapper().setSerializationInclusion(JsonInclude.Include.NON_NULL)
 
-	fun writeConfig(config: TestTargetConfig): File = File.createTempFile("test-config", ".json").apply {
-		writeText(jsonMapper.writeValueAsString(config))
-		deleteOnExit()
-	}
+	fun writeConfig(config: TestTargetConfig): Path =
+		fs.createFileWithContent("/tmp/test-config-${configCounter.incrementAndGet()}.json", jsonMapper.writeValueAsString(config))
+
+	fun newStateFile(): Path = tmpDir.resolve("state-${stateCounter.incrementAndGet()}.jsonl")
+		.also { Files.createFile(it) }
 
 	/** Parse the JSON config written by tests then override host/port with the live testcontainer. */
-	fun toTargetConfig(jsonFile: File): TargetConfig =
-		jsonFile.reader(StandardCharsets.UTF_8).use { TargetConfig.fromJson(it) }
+	fun toTargetConfig(jsonPath: Path): TargetConfig =
+		Files.newBufferedReader(jsonPath, StandardCharsets.UTF_8).use { TargetConfig.fromJson(it) }
 			.copy(host = container.host, port = container.getMappedPort(baseConfig.port))
 
-	data class RunResult(val stateFile: File)
+	data class RunResult(val stateFile: Path)
 
 	fun runTarget(
 		inputFile: String,
-		configFile: File = writeConfig(baseConfig),
+		configFile: Path = writeConfig(baseConfig),
 		updateStreams: List<String> = emptyList(),
 	): RunResult {
 		val cfg = toTargetConfig(configFile)
-		val stateFile = File.createTempFile("state", ".jsonl").apply { deleteOnExit() }
-		val inputPath = File("$DATA_DIR/$inputFile")
-		inputPath.inputStream().use { input ->
-			BufferedWriter(OutputStreamWriter(stateFile.outputStream(), StandardCharsets.UTF_8)).use { writer ->
+		val stateFile = newStateFile()
+		Path(dataDir, inputFile).inputStream().use { input ->
+			BufferedWriter(OutputStreamWriter(Files.newOutputStream(stateFile), StandardCharsets.UTF_8)).use { writer ->
 				processStream(input, cfg, writer, updateStreams)
 			}
 		}
@@ -144,6 +153,77 @@ class ProcessStreamTest : DescribeSpec({
 			result.stateFile.readLines(Charsets.UTF_8).map { it.trimStart('\uFEFF') } shouldBe listOf(
 				"""{"bookmarks":{"toto":"tata"},",currently_syncing":"tickets"}""",
 				"""{"bookmarks":{},"currently_syncing":null}""",
+			)
+		}
+
+		it("should commit pending records when a STATE message is received mid-stream") {
+			// Verifies STATE forces a mid-stream commit. With batch_size=100 and
+			// insert_stream_timeout_sec=180 (auto-end ~175s), a single buffered RECORD would not
+			// be flushed by either threshold within the test window — only STATE can land it.
+			val cfg = toTargetConfig(
+				writeConfig(baseConfig.copy(batch_size = 100, insert_stream_timeout_sec = 180)),
+			)
+
+			val schemaJson = jsonMapper.writeValueAsString(
+				mapOf(
+					"type" to "SCHEMA",
+					"stream" to "tickets",
+					"schema" to mapOf(
+						"properties" to mapOf("id" to mapOf("type" to listOf("integer"))),
+						"type" to listOf("null", "object"),
+					),
+					"key_properties" to listOf("id"),
+				),
+			)
+
+			fun recordJson(id: Int): String = jsonMapper.writeValueAsString(
+				mapOf("type" to "RECORD", "stream" to "tickets", "record" to mapOf("id" to id)),
+			)
+
+			val stateJson = jsonMapper.writeValueAsString(
+				mapOf("type" to "STATE", "value" to mapOf("bookmark" to "checkpoint-1")),
+			)
+
+			val pipedIn = PipedInputStream(64 * 1024)
+			val pipedOut = PipedOutputStream(pipedIn)
+			val stateFile = newStateFile()
+			val output = BufferedWriter(OutputStreamWriter(Files.newOutputStream(stateFile), StandardCharsets.UTF_8))
+
+			runBlocking {
+				val job = launch(Dispatchers.IO) {
+					try {
+						processStream(pipedIn, cfg, output)
+					} catch (e: Exception) {
+						logger.info(e) { "processStream terminated" }
+					}
+				}
+
+				try {
+					pipedOut.write((schemaJson + "\n").toByteArray(StandardCharsets.UTF_8))
+					pipedOut.write((recordJson(101) + "\n").toByteArray(StandardCharsets.UTF_8))
+					pipedOut.write((stateJson + "\n").toByteArray(StandardCharsets.UTF_8))
+					pipedOut.flush()
+
+					// Row 101 must land before EOF — only the STATE-driven commit can produce this.
+					eventually(15.seconds) {
+						jdbcTemplate.queryForList("select id from $db.tickets") shouldContainExactly
+								listOf(mapOf("id" to 101L))
+					}
+
+					pipedOut.write((recordJson(202) + "\n").toByteArray(StandardCharsets.UTF_8))
+					pipedOut.flush()
+				} finally {
+					runCatching { pipedOut.close() }
+					job.join()
+					runCatching { output.close() }
+				}
+			}
+
+			jdbcTemplate.queryForList("select id from $db.tickets order by id") shouldContainExactly
+					listOf(mapOf("id" to 101L), mapOf("id" to 202L))
+
+			stateFile.readLines(Charsets.UTF_8) shouldBe listOf(
+				"""{"bookmark":"checkpoint-1"}""",
 			)
 		}
 	}
@@ -221,6 +301,38 @@ class ProcessStreamTest : DescribeSpec({
 			runTarget("stream_1.jsonl")
 			runTarget("stream_1.jsonl")
 			showTables() shouldHaveSize 21
+		}
+
+		it("should create columns for UUID, Int128, Float32 and custom Decimal(p,d) formats") {
+			runTarget("stream_type_formats.jsonl")
+
+			queryRows(
+				"""
+				SELECT name, type
+				FROM system.columns
+				WHERE database = '$db'
+				  AND table = 'type_zoo'
+				  AND name NOT LIKE '\_%'
+				ORDER BY name
+				""".trimIndent(),
+			) shouldContainExactly listOf(
+				"big_float\tNullable(Float64)",
+				"big_int\tNullable(Int128)",
+				"id\tInt64",
+				"precise_decimal\tNullable(Decimal(10, 4))",
+				"small_float\tNullable(Float32)",
+				"small_int\tNullable(Int8)",
+				"uuid_col\tNullable(UUID)",
+			)
+
+			queryCount("type_zoo") shouldBe 1
+		}
+
+		it("should honor a custom subtable_separator config") {
+			val cfg = writeConfig(baseConfig.copy(subtable_separator = "_X_"))
+			runTarget("stream_nested_array_additional.jsonl", configFile = cfg)
+
+			showTables() shouldContainExactly listOf("users", "users_X_roles", "users_X_roles_X_scopes")
 		}
 	}
 
@@ -398,8 +510,8 @@ class ProcessStreamTest : DescribeSpec({
 
 			val pipedIn = PipedInputStream(64 * 1024)
 			val pipedOut = PipedOutputStream(pipedIn)
-			val stateFile = File.createTempFile("state", ".jsonl").also { it.deleteOnExit() }
-			val output = BufferedWriter(OutputStreamWriter(stateFile.outputStream(), StandardCharsets.UTF_8))
+			val stateFile = newStateFile()
+			val output = BufferedWriter(OutputStreamWriter(Files.newOutputStream(stateFile), StandardCharsets.UTF_8))
 
 			runBlocking {
 				val job = launch(Dispatchers.IO) {
@@ -424,7 +536,7 @@ class ProcessStreamTest : DescribeSpec({
 
 					eventually((insertTimeoutSec + 10).seconds) {
 						jdbcTemplate.queryForList("select id from $db.tickets") shouldContainExactly
-							listOf(mapOf("id" to 155L))
+								listOf(mapOf("id" to 155L))
 					}
 				} finally {
 					runCatching { pipedOut.close() }
@@ -475,8 +587,8 @@ class ProcessStreamTest : DescribeSpec({
 			jdbcTemplate.queryForList("select databases, `Settings.Names` from $db.query_log")
 				.map { "${it["databases"].asArrayString()}\t${it["Settings.Names"].asArrayString()}" }
 				.first() shouldBe "['system']\t['max_block_size', 'max_query_size', 'join_use_nulls', " +
-				"'http_receive_timeout', 'max_expanded_ast_elements', 'max_memory_usage', " +
-				"'max_parser_depth', 'lock_acquire_timeout']"
+					"'http_receive_timeout', 'max_expanded_ast_elements', 'max_memory_usage', " +
+					"'max_parser_depth', 'lock_acquire_timeout']"
 		}
 
 		it("should produce same result from real data whether translate value is effective or not") {
@@ -545,11 +657,11 @@ class ProcessStreamTest : DescribeSpec({
 		it("should handle cleaning column in pk") {
 			runTarget("stream_cleaningColumn_pk.jsonl")
 			queryRows("select id, name from $db.users") shouldContainExactly
-				listOf("5\tbob", "7\tbill", "8\tbill", "9\thelen")
+					listOf("5\tbob", "7\tbill", "8\tbill", "9\thelen")
 
 			runTarget("stream_cleaningColumn_pk_2.jsonl")
 			queryRows("select id, name from $db.users") shouldContainExactly
-				listOf("5\tbob", "9\thelen", "10\tbill")
+					listOf("5\tbob", "9\thelen", "10\tbill")
 		}
 
 		it("should handle record when schema specifiesPK") {
@@ -590,11 +702,11 @@ class ProcessStreamTest : DescribeSpec({
 		it("should handle stream which deletes existing data with multiple pk") {
 			runTarget("stream_vanilla_with_pks.jsonl")
 			queryRows("select id, name from $db.users", separator = " ") shouldContainExactly
-				listOf("1 bill", "2 bill", "3 jack", "4 joe")
+					listOf("1 bill", "2 bill", "3 jack", "4 joe")
 
 			runTarget("stream_vanilla_with_pks_and_deletion.jsonl")
 			queryRows("select id, name from $db.users", separator = " ") shouldContainExactly
-				listOf("1 bill", "2 bill", "4 joe")
+					listOf("1 bill", "2 bill", "4 joe")
 		}
 
 		it("should deduplicate tables when receiving only schema") {
@@ -606,6 +718,21 @@ class ProcessStreamTest : DescribeSpec({
 
 			runTarget("stream_vanilla_with_pks_no_records.jsonl")
 			queryCount("users") shouldBe 4
+		}
+
+		it("should handle DELETED_RECORD whose body contains only PK fields") {
+			runTarget("stream_deleted_record_pk_only.jsonl")
+
+			queryRows("select id, name, age from $db.users order by id") shouldContainExactly
+					listOf("1\talice\t30", "3\tcarol\t40")
+		}
+
+		it("should throw when a RECORD arrives before its SCHEMA") {
+			shouldThrow<Exception> { runTarget("stream_record_before_schema.jsonl") }
+		}
+
+		it("should throw when DELETED_RECORD is sent on a stream without primary keys") {
+			shouldThrow<Exception> { runTarget("stream_deleted_record_no_pk.jsonl") }
 		}
 	}
 })

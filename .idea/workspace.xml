@@ -4,108 +4,55 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="d22bfa54-76f4-49b1-a427-a423bfc34df4" name="Changes" comment="refacto">
-      <change afterPath="$PROJECT_DIR$/gradle/libs.versions.toml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/scripts/benchmark.sh" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/main/kotlin/com/biron/singerTargetClickhouse/ClickhouseConnection.kt" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/main/kotlin/com/biron/singerTargetClickhouse/DeletedRecordProcessor.kt" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/main/kotlin/com/biron/singerTargetClickhouse/JsonSchemaInspector.kt" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/main/kotlin/com/biron/singerTargetClickhouse/JsonSchemaTranslator.kt" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/main/kotlin/com/biron/singerTargetClickhouse/ProcessStream.kt" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/main/kotlin/com/biron/singerTargetClickhouse/RecordProcessor.kt" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/main/kotlin/com/biron/singerTargetClickhouse/SchemaTranslator.kt" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/main/kotlin/com/biron/singerTargetClickhouse/StreamProcessor.kt" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/main/kotlin/com/biron/singerTargetClickhouse/TargetConfig.kt" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/main/kotlin/com/biron/singerTargetClickhouse/TargetConnection.kt" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/main/kotlin/com/biron/singerTargetClickhouse/TargetMessage.kt" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/main/kotlin/com/biron/singerTargetClickhouse/Utils.kt" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/ClickhouseConnectionTest.kt" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/DeletedRecordProcessorTest.kt" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/FakeTargetConnection.kt" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/JsonSchemaInspectorTest.kt" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/JsonSchemaTranslatorTest.kt" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/PkTestData.kt" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/RecordProcessorTest.kt" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/SchemaTranslatorTest.kt" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/TargetConfigTest.kt" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/TargetMessageTest.kt" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/UtilsTest.kt" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/utilsTest/kotest/data/stream_tiny.jsonl.gz" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.eslintignore" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/.eslintrc" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/misc.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/misc.xml" afterDir="false" />
+    <list default="true" id="d22bfa54-76f4-49b1-a427-a423bfc34df4" name="Changes" comment="jackson custom deserializer step1">
+      <change afterPath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/ProcessStreamIntegrationTestResults/stream_deleted_record_no_pk.jsonl" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/ProcessStreamIntegrationTestResults/stream_deleted_record_pk_only.jsonl" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/ProcessStreamIntegrationTestResults/stream_record_before_schema.jsonl" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/ProcessStreamIntegrationTestResults/stream_type_formats.jsonl" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.mocharc.json" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/CONTRIBUTING.md" beforeDir="false" afterPath="$PROJECT_DIR$/CONTRIBUTING.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Dockerfile" beforeDir="false" afterPath="$PROJECT_DIR$/Dockerfile" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/bin/execute" beforeDir="false" />
       <change beforePath="$PROJECT_DIR$/build.gradle.kts" beforeDir="false" afterPath="$PROJECT_DIR$/build.gradle.kts" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/package-lock.json" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/package.json" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/ClickhouseConnection.ts" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/Config.ts" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/DeletedRecordProcessor.ts" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/Either.ts" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/RecordProcessor.ts" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/SchemaTranslator.ts" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/StreamProcessor.ts" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/TargetConnection.ts" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/forAwaitOnMacroTaskQueue.ts" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/index.ts" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/jsonSchemaInspector.ts" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/jsonSchemaTranslator.ts" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/kotlin/com/biron/singerTargetClickhouse/Main.kt" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/kotlin/com/biron/singerTargetClickhouse/Main.kt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/processStream.ts" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/utilsTest/kotest/ProcessStreamTest.kt" beforeDir="false" afterPath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/utilsTest/kotest/ProcessStreamTest.kt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/utils.ts" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/ClickhouseConnection.spec.ts" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/DeletedRecordProcessor.spec.ts" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/RecordProcessor.spec.ts" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/TestConnection.ts" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/data/clickhouse_query_log.jsonl" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/data/covidtracker.jsonl" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/data/stream_1.jsonl" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/data/stream_1_inactive.jsonl" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/data/stream_1_modified.jsonl" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/data/stream_cardinality.jsonl" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/data/stream_cleanFirst.jsonl" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/data/stream_cleaningColumn.jsonl" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/data/stream_cleaningColumn_pk.jsonl" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/data/stream_cleaningColumn_pk_2.jsonl" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/data/stream_multiple_schema.jsonl" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/data/stream_nested_array.jsonl" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/data/stream_nested_array_additional.jsonl" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/data/stream_nested_object.jsonl" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/data/stream_non_nullable.jsonl" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/data/stream_null_key.jsonl" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/data/stream_nullable.jsonl" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/data/stream_schema_array_nullable.jsonl" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/data/stream_schema_with_all_pk.jsonl" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/data/stream_schema_with_array.jsonl" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/data/stream_short.jsonl" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/data/stream_short_reordered.jsonl" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/data/stream_short_with_all_pk.jsonl" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/data/stream_short_with_all_pk2.jsonl" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/data/stream_tiny.jsonl" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/data/stream_tiny_with_delete.jsonl" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/data/stream_vanilla.jsonl" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/data/stream_vanilla_with_incompatible_update.jsonl" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/data/stream_vanilla_with_new_pks.jsonl" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/data/stream_vanilla_with_new_pks_and_clean_first.jsonl" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/data/stream_vanilla_with_pks.jsonl" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/data/stream_vanilla_with_pks_and_deletion.jsonl" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/data/stream_vanilla_with_pks_no_records.jsonl" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/data/stream_vanilla_with_removed_pks.jsonl" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/data/stream_with_array.jsonl" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/data/stream_with_nested_array_without_root_pk.jsonl" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/data/stream_with_state.jsonl" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/helpers.ts" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/jsonSchemaInspector.spec.ts" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/jsonSchemaTranslator.spec.ts" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/pkTestData.ts" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/processStream.spec.ts" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tsconfig.json" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/yarn.lock" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/utilsTest/kotest/ProcessStreamTest.kt" beforeDir="false" afterPath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/ProcessStreamIntegrationTest.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/utilsTest/kotest/data/clickhouse_query_log.jsonl" beforeDir="false" afterPath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/ProcessStreamIntegrationTestResults/clickhouse_query_log.jsonl" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/utilsTest/kotest/data/covidtracker.jsonl" beforeDir="false" afterPath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/ProcessStreamIntegrationTestResults/covidtracker.jsonl" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/utilsTest/kotest/data/stream_1.jsonl" beforeDir="false" afterPath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/ProcessStreamIntegrationTestResults/stream_1.jsonl" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/utilsTest/kotest/data/stream_1_inactive.jsonl" beforeDir="false" afterPath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/ProcessStreamIntegrationTestResults/stream_1_inactive.jsonl" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/utilsTest/kotest/data/stream_1_modified.jsonl" beforeDir="false" afterPath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/ProcessStreamIntegrationTestResults/stream_1_modified.jsonl" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/utilsTest/kotest/data/stream_cardinality.jsonl" beforeDir="false" afterPath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/ProcessStreamIntegrationTestResults/stream_cardinality.jsonl" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/utilsTest/kotest/data/stream_cleanFirst.jsonl" beforeDir="false" afterPath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/ProcessStreamIntegrationTestResults/stream_cleanFirst.jsonl" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/utilsTest/kotest/data/stream_cleaningColumn.jsonl" beforeDir="false" afterPath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/ProcessStreamIntegrationTestResults/stream_cleaningColumn.jsonl" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/utilsTest/kotest/data/stream_cleaningColumn_pk.jsonl" beforeDir="false" afterPath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/ProcessStreamIntegrationTestResults/stream_cleaningColumn_pk.jsonl" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/utilsTest/kotest/data/stream_cleaningColumn_pk_2.jsonl" beforeDir="false" afterPath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/ProcessStreamIntegrationTestResults/stream_cleaningColumn_pk_2.jsonl" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/utilsTest/kotest/data/stream_multiple_schema.jsonl" beforeDir="false" afterPath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/ProcessStreamIntegrationTestResults/stream_multiple_schema.jsonl" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/utilsTest/kotest/data/stream_nested_array.jsonl" beforeDir="false" afterPath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/ProcessStreamIntegrationTestResults/stream_nested_array.jsonl" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/utilsTest/kotest/data/stream_nested_array_additional.jsonl" beforeDir="false" afterPath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/ProcessStreamIntegrationTestResults/stream_nested_array_additional.jsonl" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/utilsTest/kotest/data/stream_nested_object.jsonl" beforeDir="false" afterPath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/ProcessStreamIntegrationTestResults/stream_nested_object.jsonl" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/utilsTest/kotest/data/stream_non_nullable.jsonl" beforeDir="false" afterPath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/ProcessStreamIntegrationTestResults/stream_non_nullable.jsonl" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/utilsTest/kotest/data/stream_null_key.jsonl" beforeDir="false" afterPath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/ProcessStreamIntegrationTestResults/stream_null_key.jsonl" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/utilsTest/kotest/data/stream_nullable.jsonl" beforeDir="false" afterPath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/ProcessStreamIntegrationTestResults/stream_nullable.jsonl" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/utilsTest/kotest/data/stream_schema_array_nullable.jsonl" beforeDir="false" afterPath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/ProcessStreamIntegrationTestResults/stream_schema_array_nullable.jsonl" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/utilsTest/kotest/data/stream_schema_with_all_pk.jsonl" beforeDir="false" afterPath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/ProcessStreamIntegrationTestResults/stream_schema_with_all_pk.jsonl" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/utilsTest/kotest/data/stream_schema_with_array.jsonl" beforeDir="false" afterPath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/ProcessStreamIntegrationTestResults/stream_schema_with_array.jsonl" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/utilsTest/kotest/data/stream_short.jsonl" beforeDir="false" afterPath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/ProcessStreamIntegrationTestResults/stream_short.jsonl" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/utilsTest/kotest/data/stream_short_reordered.jsonl" beforeDir="false" afterPath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/ProcessStreamIntegrationTestResults/stream_short_reordered.jsonl" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/utilsTest/kotest/data/stream_short_with_all_pk.jsonl" beforeDir="false" afterPath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/ProcessStreamIntegrationTestResults/stream_short_with_all_pk.jsonl" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/utilsTest/kotest/data/stream_short_with_all_pk2.jsonl" beforeDir="false" afterPath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/ProcessStreamIntegrationTestResults/stream_short_with_all_pk2.jsonl" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/utilsTest/kotest/data/stream_tiny.jsonl" beforeDir="false" afterPath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/ProcessStreamIntegrationTestResults/stream_tiny.jsonl" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/utilsTest/kotest/data/stream_tiny.jsonl.gz" beforeDir="false" afterPath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/ProcessStreamIntegrationTestResults/stream_tiny.jsonl.gz" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/utilsTest/kotest/data/stream_tiny_with_delete.jsonl" beforeDir="false" afterPath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/ProcessStreamIntegrationTestResults/stream_tiny_with_delete.jsonl" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/utilsTest/kotest/data/stream_vanilla.jsonl" beforeDir="false" afterPath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/ProcessStreamIntegrationTestResults/stream_vanilla.jsonl" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/utilsTest/kotest/data/stream_vanilla_with_incompatible_update.jsonl" beforeDir="false" afterPath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/ProcessStreamIntegrationTestResults/stream_vanilla_with_incompatible_update.jsonl" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/utilsTest/kotest/data/stream_vanilla_with_new_pks.jsonl" beforeDir="false" afterPath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/ProcessStreamIntegrationTestResults/stream_vanilla_with_new_pks.jsonl" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/utilsTest/kotest/data/stream_vanilla_with_new_pks_and_clean_first.jsonl" beforeDir="false" afterPath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/ProcessStreamIntegrationTestResults/stream_vanilla_with_new_pks_and_clean_first.jsonl" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/utilsTest/kotest/data/stream_vanilla_with_pks.jsonl" beforeDir="false" afterPath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/ProcessStreamIntegrationTestResults/stream_vanilla_with_pks.jsonl" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/utilsTest/kotest/data/stream_vanilla_with_pks_and_deletion.jsonl" beforeDir="false" afterPath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/ProcessStreamIntegrationTestResults/stream_vanilla_with_pks_and_deletion.jsonl" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/utilsTest/kotest/data/stream_vanilla_with_pks_no_records.jsonl" beforeDir="false" afterPath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/ProcessStreamIntegrationTestResults/stream_vanilla_with_pks_no_records.jsonl" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/utilsTest/kotest/data/stream_vanilla_with_removed_pks.jsonl" beforeDir="false" afterPath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/ProcessStreamIntegrationTestResults/stream_vanilla_with_removed_pks.jsonl" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/utilsTest/kotest/data/stream_with_array.jsonl" beforeDir="false" afterPath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/ProcessStreamIntegrationTestResults/stream_with_array.jsonl" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/utilsTest/kotest/data/stream_with_nested_array_without_root_pk.jsonl" beforeDir="false" afterPath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/ProcessStreamIntegrationTestResults/stream_with_nested_array_without_root_pk.jsonl" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/utilsTest/kotest/data/stream_with_state.jsonl" beforeDir="false" afterPath="$PROJECT_DIR$/src/test/kotlin/com/biron/singerTargetClickhouse/ProcessStreamIntegrationTestResults/stream_with_state.jsonl" afterDir="false" />
+    </list>
+    <list id="2e801f6f-2f77-479a-ada1-6c9e82e48636" name="tp" comment="">
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -119,7 +66,7 @@
     <execution />
   </component>
   <component name="EmbeddingIndexingInfo">
-    <option name="cachedIndexableFilesCount" value="276" />
+    <option name="cachedIndexableFilesCount" value="253" />
     <option name="fileBasedEmbeddingIndicesEnabled" value="true" />
   </component>
   <component name="ExternalProjectsData">
@@ -189,6 +136,32 @@
   <component name="KotlinMultiplatform">
     <allAvailableExecutables />
   </component>
+  <component name="LineStatusTrackerManager">
+    <file path="$PROJECT_DIR$/.idea/workspace.xml">
+      <ranges>
+        <range start1="6" end1="36" start2="6" end2="11" changelist="d22bfa54-76f4-49b1-a427-a423bfc34df4" />
+        <range start1="37" end1="41" start2="12" end2="12" changelist="d22bfa54-76f4-49b1-a427-a423bfc34df4" />
+        <range start1="42" end1="108" start2="13" end2="17" changelist="d22bfa54-76f4-49b1-a427-a423bfc34df4" />
+        <range start1="121" end1="122" start2="30" end2="31" changelist="d22bfa54-76f4-49b1-a427-a423bfc34df4" />
+        <range start1="191" end1="191" start2="100" end2="126" changelist="d22bfa54-76f4-49b1-a427-a423bfc34df4" />
+        <range start1="216" end1="274" start2="151" end2="216" changelist="d22bfa54-76f4-49b1-a427-a423bfc34df4" />
+        <range start1="275" end1="276" start2="217" end2="218" changelist="d22bfa54-76f4-49b1-a427-a423bfc34df4" />
+        <range start1="291" end1="292" start2="233" end2="234" changelist="d22bfa54-76f4-49b1-a427-a423bfc34df4" />
+        <range start1="362" end1="373" start2="304" end2="309" changelist="d22bfa54-76f4-49b1-a427-a423bfc34df4" />
+        <range start1="377" end1="378" start2="313" end2="314" changelist="d22bfa54-76f4-49b1-a427-a423bfc34df4" />
+        <range start1="384" end1="386" start2="320" end2="322" changelist="d22bfa54-76f4-49b1-a427-a423bfc34df4" />
+        <range start1="396" end1="397" start2="332" end2="332" changelist="d22bfa54-76f4-49b1-a427-a423bfc34df4" />
+        <range start1="398" end1="398" start2="333" end2="334" changelist="d22bfa54-76f4-49b1-a427-a423bfc34df4" />
+        <range start1="401" end1="401" start2="337" end2="339" changelist="d22bfa54-76f4-49b1-a427-a423bfc34df4" />
+        <range start1="404" end1="406" start2="342" end2="342" changelist="d22bfa54-76f4-49b1-a427-a423bfc34df4" />
+        <range start1="415" end1="417" start2="351" end2="352" changelist="d22bfa54-76f4-49b1-a427-a423bfc34df4" />
+        <range start1="488" end1="488" start2="423" end2="428" changelist="d22bfa54-76f4-49b1-a427-a423bfc34df4" />
+        <range start1="705" end1="706" start2="645" end2="710" changelist="2e801f6f-2f77-479a-ada1-6c9e82e48636" />
+        <range start1="734" end1="740" start2="738" end2="738" changelist="2e801f6f-2f77-479a-ada1-6c9e82e48636" />
+        <range start1="759" end1="760" start2="757" end2="764" changelist="2e801f6f-2f77-479a-ada1-6c9e82e48636" />
+      </ranges>
+    </file>
+  </component>
   <component name="MacroExpansionManager">
     <option name="directoryName" value="jpwy4f1n" />
   </component>
@@ -222,8 +195,10 @@
     "Gradle.Download Sources.executor": "Run",
     "Gradle.MainTest (1).executor": "Run",
     "Gradle.MainTest.executor": "Run",
+    "Gradle.ProcessStreamIntegrationTest.executor": "Run",
     "Gradle.ProcessStreamTest (1).executor": "Run",
     "Gradle.ProcessStreamTest.executor": "Run",
+    "Gradle.singer-target-clickhouse-kotlin [:com.biron.singerTargetClickhouse.MainKt.main()].executor": "Run",
     "JUnit.Whole project.executor": "Run",
     "Kotest.All tests in '' (1).executor": "Run",
     "Kotest.All tests in ''.executor": "Run",
@@ -239,7 +214,7 @@
     "Kotest.ProcessStreamTest: should write state to passed outputStream (4).executor": "Debug",
     "Kotest.ProcessStreamTest: should write state to passed outputStream.executor": "Debug",
     "Kotlin.MainKt (1).executor": "Run",
-    "Kotlin.MainKt.executor": "Run",
+    "Kotlin.MainKt.executor": "Profiler#1",
     "Mocha.ClickhouseConnection.addColumn.executor": "Run",
     "Mocha.ClickhouseConnection.executor": "Run",
     "Mocha.ClickhouseConnection.should list tables.executor": "Run",
@@ -248,12 +223,17 @@
     "RunOnceActivity.Enable generate summary features in internal mode": "true",
     "RunOnceActivity.OpenProjectViewOnStart": "true",
     "RunOnceActivity.ShowReadmeOnStart": "true",
+    "RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252": "true",
     "RunOnceActivity.git.unshallow": "true",
+    "RunOnceActivity.typescript.service.memoryLimit.init": "true",
     "SHARE_PROJECT_CONFIGURATION_FILES": "true",
+    "SHELLCHECK.PATH": "/home/sestienney/.local/share/JetBrains/IntelliJIdea2025.3/Shell Script/shellcheck",
     "WebServerToolWindowFactoryState": "false",
+    "com.intellij.ml.llm.matterhorn.ej.ui.settings.DefaultModelSelectionForGA.v1": "true",
     "git-widget-placeholder": "kotlin",
     "jdk.selected.JAVA_MODULE": "graalvm-17",
     "js.last.introduce.type": "CONST",
+    "junie.onboarding.icon.badge.shown": "true",
     "kotlin-language-version-configured": "true",
     "last_directory_selection": "/home/sestienney/idea-project/biron/singer-target-clickhouse/src/test/kotlin/com/biron/singerTargetClickhouse",
     "last_opened_file_path": "/home/sestienney/idea-project/biron/singer-target-clickhouse/gradle",
@@ -270,6 +250,7 @@
     "project.structure.proportion": "0.0",
     "project.structure.side.proportion": "0.0",
     "settings.editor.selected.configurable": "preferences.pluginManager",
+    "to.speed.mode.migration.done": "true",
     "ts.external.directory.path": "/home/sestienney/idea-project/biron/singer-target-clickhouse/node_modules/typescript/lib",
     "vcs.patch.to.clipboard": "true"
   }
@@ -288,9 +269,12 @@
     <key name="CopyKotlinDeclarationDialog.RECENTS_KEY">
       <recent name="com.biron.singerTargetClickhouse.utilsTest.lifecycle" />
     </key>
+    <key name="K2MoveDeclarationsDialog.RECENT_PACKAGE_KEY">
+      <recent name="com.biron.singerTargetClickhouse" />
+    </key>
   </component>
-  <component name="RunManager" selected="JUnit.Whole project">
-    <configuration name="MainTest (1)" type="GradleRunConfiguration" factoryName="Gradle" temporary="true">
+  <component name="RunManager" selected="Gradle.ProcessStreamIntegrationTest">
+    <configuration name="ProcessStreamIntegrationTest" type="GradleRunConfiguration" factoryName="Gradle" temporary="true">
       <ExternalSystemSettings>
         <option name="executionName" />
         <option name="externalProjectPath" value="$PROJECT_DIR$" />
@@ -303,7 +287,7 @@
           <list>
             <option value=":test" />
             <option value="--tests" />
-            <option value="&quot;com.biron.singerTargetClickhouse.MainTest&quot;" />
+            <option value="&quot;com.biron.singerTargetClickhouse.ProcessStreamIntegrationTest&quot;" />
           </list>
         </option>
         <option name="vmOptions" />
@@ -344,6 +328,33 @@
       <GradleCoverageDisabled>false</GradleCoverageDisabled>
       <method v="2" />
     </configuration>
+    <configuration name="ProcessStreamTest" type="GradleRunConfiguration" factoryName="Gradle" temporary="true">
+      <ExternalSystemSettings>
+        <option name="executionName" />
+        <option name="externalProjectPath" value="$PROJECT_DIR$" />
+        <option name="externalSystemIdString" value="GRADLE" />
+        <option name="scriptParameters" value="" />
+        <option name="taskDescriptions">
+          <list />
+        </option>
+        <option name="taskNames">
+          <list>
+            <option value=":test" />
+            <option value="--tests" />
+            <option value="&quot;com.biron.singerTargetClickhouse.ProcessStreamTest&quot;" />
+          </list>
+        </option>
+        <option name="vmOptions" />
+      </ExternalSystemSettings>
+      <ExternalSystemDebugServerProcess>false</ExternalSystemDebugServerProcess>
+      <ExternalSystemReattachDebugProcess>true</ExternalSystemReattachDebugProcess>
+      <ExternalSystemDebugDisabled>false</ExternalSystemDebugDisabled>
+      <DebugAllEnabled>false</DebugAllEnabled>
+      <RunAsTest>true</RunAsTest>
+      <GradleProfilingDisabled>false</GradleProfilingDisabled>
+      <GradleCoverageDisabled>false</GradleCoverageDisabled>
+      <method v="2" />
+    </configuration>
     <configuration name="Whole project" type="JUnit" factoryName="JUnit" temporary="true" nameIsGenerated="true">
       <extension name="coverage">
         <pattern>
@@ -360,50 +371,29 @@
         <option name="Make" enabled="true" />
       </method>
     </configuration>
-    <configuration name="MainTest: failure case" type="ioKotest" factoryName="Kotest" temporary="true" defaultName="singleModule">
-      <module name="singer-target-clickhouse.test" />
-      <option name="jrePath" value="" />
-      <option name="jrePathEnabled" value="false" />
-      <option name="passParentEnvs" value="true" />
-      <option name="workingDirectory" value="$MODULE_WORKING_DIR$" />
-      <option name="programParameters" value="" />
-      <option name="specName" value="com.biron.singerTargetClickhouse.MainTest" />
-      <option name="testPath" value="updateColumn -- failure case" />
-      <option name="packageName" value="" />
-      <option name="vmparams" value="" />
-      <method v="2">
-        <option name="Make" enabled="true" />
-      </method>
-    </configuration>
-    <configuration name="ProcessStreamTest: should write state to passed outputStream (1)" type="ioKotest" factoryName="Kotest" temporary="true" defaultName="singleModule">
-      <module name="singer-target-clickhouse.test" />
-      <option name="jrePath" value="" />
-      <option name="jrePathEnabled" value="false" />
-      <option name="passParentEnvs" value="true" />
-      <option name="workingDirectory" value="$MODULE_WORKING_DIR$" />
-      <option name="programParameters" value="" />
-      <option name="specName" value="ProcessStreamTest" />
-      <option name="testPath" value="outputStream -- should write state to passed outputStream" />
-      <option name="packageName" value="" />
-      <option name="vmparams" value="" />
+    <configuration name="MainKt" type="JetRunConfigurationType" temporary="true" nameIsGenerated="true">
+      <option name="MAIN_CLASS_NAME" value="com.biron.singerTargetClickhouse.MainKt" />
+      <module name="singer-target-clickhouse.main" />
+      <option name="PROGRAM_PARAMETERS" value="--config $PROJECT_DIR$/scripts/config.json --input $USER_HOME$/biron/tap_output-birondemo-10M.jsonl" />
+      <shortenClasspath name="NONE" />
       <method v="2">
         <option name="Make" enabled="true" />
       </method>
     </configuration>
     <list>
+      <item itemvalue="Gradle.ProcessStreamIntegrationTest" />
+      <item itemvalue="Gradle.ProcessStreamTest" />
       <item itemvalue="Gradle.ProcessStreamTest (1)" />
-      <item itemvalue="Gradle.MainTest (1)" />
       <item itemvalue="JUnit.Whole project" />
-      <item itemvalue="Kotest.ProcessStreamTest: should write state to passed outputStream (1)" />
-      <item itemvalue="Kotest.MainTest: failure case" />
+      <item itemvalue="Kotlin.MainKt" />
     </list>
     <recent_temporary>
       <list>
-        <item itemvalue="JUnit.Whole project" />
-        <item itemvalue="Gradle.MainTest (1)" />
-        <item itemvalue="Kotest.MainTest: failure case" />
+        <item itemvalue="Gradle.ProcessStreamIntegrationTest" />
+        <item itemvalue="Gradle.ProcessStreamTest" />
         <item itemvalue="Gradle.ProcessStreamTest (1)" />
-        <item itemvalue="Kotest.ProcessStreamTest: should write state to passed outputStream (1)" />
+        <item itemvalue="Kotlin.MainKt" />
+        <item itemvalue="JUnit.Whole project" />
       </list>
     </recent_temporary>
   </component>
@@ -413,8 +403,7 @@
   <component name="SharedIndexes">
     <attachedChunks>
       <set>
-        <option value="bundled-jdk-9823dce3aa75-125ca727e0f0-intellij.indexing.shared.core-IU-243.23654.189" />
-        <option value="bundled-js-predefined-d6986cc7102b-822845ee3bb5-JavaScript-IU-243.23654.189" />
+        <option value="bundled-jdk-30f59d01ecdd-cffe25b9f5b3-intellij.indexing.shared.core-IU-253.28294.334" />
       </set>
     </attachedChunks>
   </component>
@@ -486,6 +475,11 @@
       <workItem from="1735981551882" duration="1800000" />
       <workItem from="1736026144610" duration="35000" />
       <workItem from="1739185467267" duration="13000" />
+      <workItem from="1776972004129" duration="8184000" />
+      <workItem from="1776997667883" duration="223000" />
+      <workItem from="1776998249200" duration="891000" />
+      <workItem from="1776999457890" duration="13809000" />
+      <workItem from="1777165757488" duration="2674000" />
     </task>
     <task id="LOCAL-00001" summary="add some missing types">
       <option name="closed" value="true" />
@@ -703,7 +697,71 @@
       <option name="project" value="LOCAL" />
       <updated>1776883758281</updated>
     </task>
-    <option name="localTasksCounter" value="28" />
+    <task id="LOCAL-00028" summary="first rewriten version">
+      <option name="closed" value="true" />
+      <created>1776954839165</created>
+      <option name="number" value="00028" />
+      <option name="presentableId" value="LOCAL-00028" />
+      <option name="project" value="LOCAL" />
+      <updated>1776954839165</updated>
+    </task>
+    <task id="LOCAL-00029" summary="first rewritten version">
+      <option name="closed" value="true" />
+      <created>1776954867632</created>
+      <option name="number" value="00029" />
+      <option name="presentableId" value="LOCAL-00029" />
+      <option name="project" value="LOCAL" />
+      <updated>1776954867632</updated>
+    </task>
+    <task id="LOCAL-00030" summary="first rewritten version">
+      <option name="closed" value="true" />
+      <created>1776958108873</created>
+      <option name="number" value="00030" />
+      <option name="presentableId" value="LOCAL-00030" />
+      <option name="project" value="LOCAL" />
+      <updated>1776958108873</updated>
+    </task>
+    <task id="LOCAL-00031" summary="add doc">
+      <option name="closed" value="true" />
+      <created>1776964122450</created>
+      <option name="number" value="00031" />
+      <option name="presentableId" value="LOCAL-00031" />
+      <option name="project" value="LOCAL" />
+      <updated>1776964122450</updated>
+    </task>
+    <task id="LOCAL-00032" summary="add doc">
+      <option name="closed" value="true" />
+      <created>1776970046958</created>
+      <option name="number" value="00032" />
+      <option name="presentableId" value="LOCAL-00032" />
+      <option name="project" value="LOCAL" />
+      <updated>1776970046958</updated>
+    </task>
+    <task id="LOCAL-00033" summary="update benchmark">
+      <option name="closed" value="true" />
+      <created>1776999758239</created>
+      <option name="number" value="00033" />
+      <option name="presentableId" value="LOCAL-00033" />
+      <option name="project" value="LOCAL" />
+      <updated>1776999758239</updated>
+    </task>
+    <task id="LOCAL-00034" summary="update doc">
+      <option name="closed" value="true" />
+      <created>1777034565629</created>
+      <option name="number" value="00034" />
+      <option name="presentableId" value="LOCAL-00034" />
+      <option name="project" value="LOCAL" />
+      <updated>1777034565629</updated>
+    </task>
+    <task id="LOCAL-00035" summary="jackson custom deserializer step1">
+      <option name="closed" value="true" />
+      <created>1777058419311</created>
+      <option name="number" value="00035" />
+      <option name="presentableId" value="LOCAL-00035" />
+      <option name="project" value="LOCAL" />
+      <updated>1777058419311</updated>
+    </task>
+    <option name="localTasksCounter" value="36" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -732,12 +790,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="first working version" />
-    <MESSAGE value="remove immutable for record processing" />
-    <MESSAGE value="remove immutability" />
-    <MESSAGE value="some others optimization" />
-    <MESSAGE value="simplify stream pipeline" />
-    <MESSAGE value="buffer data before sending tout CH stream" />
     <MESSAGE value="fixes issue with _ver in table without PK" />
     <MESSAGE value="fixes issue with batching" />
     <MESSAGE value="fixes some tests" />
@@ -757,7 +809,13 @@
     <MESSAGE value="all tests execute the same things as in TS" />
     <MESSAGE value="refacto step 1" />
     <MESSAGE value="refacto" />
-    <option name="LAST_COMMIT_MESSAGE" value="refacto" />
+    <MESSAGE value="first rewriten version" />
+    <MESSAGE value="first rewritten version" />
+    <MESSAGE value="add doc" />
+    <MESSAGE value="update benchmark" />
+    <MESSAGE value="update doc" />
+    <MESSAGE value="jackson custom deserializer step1" />
+    <option name="LAST_COMMIT_MESSAGE" value="jackson custom deserializer step1" />
   </component>
   <component name="XSLT-Support.FileAssociations.UIState">
     <expand />

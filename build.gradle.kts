@@ -43,6 +43,7 @@ dependencies {
 	testImplementation(bironLibs.testcontainers.core)
 	testImplementation(bironLibs.testcontainers.clickhouse)
 	testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test")
+	testImplementation(bironLibs.jimfs)
 }
 
 tasks.test {
