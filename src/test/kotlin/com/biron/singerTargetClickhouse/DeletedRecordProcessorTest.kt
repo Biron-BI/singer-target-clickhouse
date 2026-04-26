@@ -10,7 +10,7 @@ class DeletedRecordProcessorTest : DescribeSpec({
 		it("throws when meta has no CURRENT pk") {
 			val proc = DeletedRecordProcessor(simpleMeta, FakeTargetConnection(), DeletedRecordProcessorConfig(10, false))
 			shouldThrow<IllegalStateException> {
-				proc.pushDeletedRecord(mapOf("id" to 1))
+				proc.pushDeletedRecord(mapToRow(simpleMeta, mapOf("id" to 1)))
 			}
 		}
 
@@ -19,9 +19,9 @@ class DeletedRecordProcessorTest : DescribeSpec({
 			val meta = simpleMeta.copy(pkMappings = listOf(id), simpleColumnMappings = emptyList())
 			val proc = DeletedRecordProcessor(meta, conn, DeletedRecordProcessorConfig(batchSize = 2, translateValues = false))
 
-			proc.pushDeletedRecord(mapOf("id" to 1))
+			proc.pushDeletedRecord(mapToRow(meta, mapOf("id" to 1)))
 			conn.runQueryLog.size shouldBe 0
-			proc.pushDeletedRecord(mapOf("id" to 2))
+			proc.pushDeletedRecord(mapToRow(meta, mapOf("id" to 2)))
 
 			conn.runQueryLog.size shouldBe 1
 			conn.runQueryLog[0].contains("DELETE FROM `order`") shouldBe true
@@ -33,7 +33,7 @@ class DeletedRecordProcessorTest : DescribeSpec({
 			val meta = simpleMeta.copy(pkMappings = listOf(id), simpleColumnMappings = emptyList())
 			val proc = DeletedRecordProcessor(meta, conn, DeletedRecordProcessorConfig(100, false))
 
-			proc.pushDeletedRecord(mapOf("id" to 42))
+			proc.pushDeletedRecord(mapToRow(meta, mapOf("id" to 42)))
 			proc.deleteBufferedData()
 
 			conn.runQueryLog[0].contains("WHERE (`id`) IN ((42))") shouldBe true
@@ -43,12 +43,13 @@ class DeletedRecordProcessorTest : DescribeSpec({
 			val conn = FakeTargetConnection()
 			val stringPk = id.copy(
 				chType = "String",
+				schemaType = "string",
 				valueExtractor = { (it as? Map<*, *>)?.get("id")?.toString() },
 			)
 			val meta = simpleMeta.copy(pkMappings = listOf(stringPk), simpleColumnMappings = emptyList())
-			val proc = DeletedRecordProcessor(meta, conn, DeletedRecordProcessorConfig(100, false))
+			val proc = DeletedRecordProcessor(meta, conn, DeletedRecordProcessorConfig(batchSize = 100, translateValues = true))
 
-			proc.pushDeletedRecord(mapOf("id" to "abc"))
+			proc.pushDeletedRecord(mapToRow(meta, mapOf("id" to "abc"), translateValues = true))
 			proc.deleteBufferedData()
 
 			conn.runQueryLog[0].contains("WHERE (`id`) IN (('abc'))") shouldBe true
@@ -59,7 +60,7 @@ class DeletedRecordProcessorTest : DescribeSpec({
 			val meta = simpleMeta.copy(pkMappings = listOf(id), simpleColumnMappings = emptyList())
 			val proc = DeletedRecordProcessor(meta, conn, DeletedRecordProcessorConfig(100, false))
 
-			proc.pushDeletedRecord(mapOf("id" to 123))
+			proc.pushDeletedRecord(mapToRow(meta, mapOf("id" to 123)))
 			proc.deleteBufferedData()
 
 			conn.runQueryLog[0].contains("WHERE (`id`) IN ((123))") shouldBe true

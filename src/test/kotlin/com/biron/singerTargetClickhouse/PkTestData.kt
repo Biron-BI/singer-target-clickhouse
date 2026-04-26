@@ -110,33 +110,20 @@ internal val metaWithPKAndChildren = SourceMeta(
 internal val abort: (Throwable) -> Unit = { err -> throw err }
 
 /**
- * Mirror the pre-refactor Map-based pushRecord semantics to produce a [RecordRow] for
- * tests. Walks the meta tree — scalar cols via the existing value extractors (for
- * translate-values parity) and subtable props via the nested-separator path walk.
+ * Test helper: round-trip an in-memory [data] through the stream's real [StreamReader]
+ * (serialize to JSON, re-parse). Uses the same decoder that the production hot path uses,
+ * so tests can't silently diverge from it.
  */
 internal fun mapToRow(meta: SourceMeta, data: Any?, translateValues: Boolean = false): RecordRow {
-	val currentPks = meta.pkMappings.filter { it.pkType == PKType.CURRENT }
-	val pkCount = currentPks.size
-	val colCount = meta.simpleColumnMappings.size
-	val subCount = meta.children.size
-	val row: RecordRow = arrayOfNulls(pkCount + colCount + subCount)
-	currentPks.forEachIndexed { i, pk -> row[i] = extractValue(data, pk, translateValues) }
-	meta.simpleColumnMappings.forEachIndexed { i, col -> row[pkCount + i] = extractValue(data, col, translateValues) }
-	meta.children.forEachIndexed { i, child ->
-		val raw = extractNestedChild(data, child.prop)
-		val elements: List<Any?> = when (raw) {
-			null -> emptyList()
-			is List<*> -> raw
-			else -> listOf(raw)
-		}
-		row[pkCount + colCount + i] = elements.map { mapToRow(child, it, translateValues) }
+	val reader = buildStreamReader(meta, translateValues)
+	val mapper = com.fasterxml.jackson.module.kotlin.jsonMapper {
+		addModule(com.fasterxml.jackson.module.kotlin.kotlinModule())
 	}
-	return row
-}
-
-private fun extractNestedChild(data: Any?, prop: String): Any? {
-	val parts = prop.split(NESTED_SUB_OBJECT_SEPARATOR)
-	return parts.fold(data) { acc, part -> (acc as? Map<*, *>)?.get(part) }
+	val json = mapper.writeValueAsString(data)
+	mapper.factory.createParser(json).apply { codec = mapper }.use { p ->
+		p.nextToken()
+		return reader.read(p)
+	}
 }
 
 private val valueAsSelf = ColumnMap(

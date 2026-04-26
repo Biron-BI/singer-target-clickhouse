@@ -272,7 +272,7 @@ private class ObjectReaderBuilder {
 		val part = parts[index]
 		if (index == parts.lastIndex) {
 			if (part in into) {
-				throw IllegalStateException("column-path collision at '$part': duplicate leaf")
+				error("column-path collision at '$part': duplicate leaf")
 			}
 			into[part] = leaf
 			return
@@ -281,9 +281,7 @@ private class ObjectReaderBuilder {
 		val nested: MutableMap<String, Any> = when (existing) {
 			null -> LinkedHashMap<String, Any>().also { into[part] = it }
 			is MutableMap<*, *> -> @Suppress("UNCHECKED_CAST") (existing as MutableMap<String, Any>)
-			else -> throw IllegalStateException(
-				"column-path collision at '$part': a leaf reader already present, cannot nest below it",
-			)
+			else -> error("column-path collision at '$part': a leaf reader already present, cannot nest below it")
 		}
 		addLeafInternal(parts, index + 1, leaf, nested)
 	}
@@ -295,7 +293,7 @@ private class ObjectReaderBuilder {
 			when (v) {
 				is FieldReader -> v
 				is Map<*, *> -> @Suppress("UNCHECKED_CAST") ObjectReader(buildChildren(v as Map<String, Any>))
-				else -> throw IllegalStateException("unexpected builder node type: ${v::class}")
+				else -> error("unexpected builder node type: ${v::class}")
 			}
 		}
 }

@@ -151,7 +151,7 @@ class RecordProcessor(
 
 	private fun flushBuffered() {
 		if (buffered.isEmpty()) return
-		val ctx = ingestion ?: throw IllegalStateException("ingestion not started but buffered data present")
+		val ctx = ingestion ?: error("ingestion not started but buffered data present")
 		// Write rows through a UTF-8 JsonGenerator directly into a byte buffer — avoids the
 		// per-row StringWriter+StringBuilder round-trip and the final String.getBytes encode
 		// that together dominated flushBuffered in the profile.

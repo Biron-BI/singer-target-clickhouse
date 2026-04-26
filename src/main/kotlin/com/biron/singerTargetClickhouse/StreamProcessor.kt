@@ -32,8 +32,8 @@ class StreamProcessor private constructor(
 		noPendingRows++
 	}
 
-	fun processDeletedRecord(record: Map<String, Any?>) {
-		deletedRecordProcessor.pushDeletedRecord(record)
+	fun processDeletedRecord(row: RecordRow) {
+		deletedRecordProcessor.pushDeletedRecord(row)
 	}
 
 	fun commitPendingChanges() {
@@ -79,18 +79,14 @@ class StreamProcessor private constructor(
 			logger.warn { "[${meta.prop}]: unexpected request to clean values: cleaning column undefined" }
 			return
 		}
-		val cleaningColumnMeta = (meta.simpleColumnMappings.map { it.prop to it.schemaType } +
+		val resolved = (meta.simpleColumnMappings.map { it.prop to it.schemaType } +
 			meta.pkMappings.map { it.prop to it.schemaType })
 			.firstOrNull { (prop, _) -> prop == cleaningColumn }
-			?: throw IllegalStateException(
-				"[${meta.prop}] could not resolve cleaning column meta (looking for $cleaningColumn)",
-			)
-		val schemaType = cleaningColumnMeta.second
-			?: throw IllegalStateException(
-				"[${meta.prop}] could not be used as cleaning column as it do not have a translator",
-			)
-		val resolvedValue = translateValue(schemaType, value)
-		logger.info { "[${meta.prop}]: cleaning column: deleting based on $resolvedValue" }
+			?: error("[${meta.prop}] could not resolve cleaning column meta (looking for $cleaningColumn)")
+		if (resolved.second == null) {
+			error("[${meta.prop}] could not be used as cleaning column: no typed schema for '$cleaningColumn'")
+		}
+		logger.info { "[${meta.prop}]: cleaning column: deleting based on $value" }
 
 		clickhouse.runQuery(
 			"""ALTER TABLE ${meta.sqlTableName} DELETE
@@ -123,9 +119,7 @@ class StreamProcessor private constructor(
 			   WHERE row_number > 1 LIMIT 1""".trimIndent(),
 		)
 		if (res.rows > 0) {
-			throw IllegalStateException(
-				"Duplicate key on table ${current.sqlTableName}, data: ${res.data}, aborting process",
-			)
+			error("Duplicate key on table ${current.sqlTableName}, data: ${res.data}, aborting process")
 		}
 	}
 

@@ -383,5 +383,5 @@ private fun throwError(ctx: JsonSchemaInspectorContext, msg: String, childAlias:
 		alias = "${current.alias}.$alias"
 	}
 	logger.error { "$alias: $msg" }
-	throw IllegalStateException("$alias: $msg")
+	error("$alias: $msg")
 }

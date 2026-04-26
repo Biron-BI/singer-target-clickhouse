@@ -5,16 +5,6 @@ import io.github.oshai.kotlinlogging.KotlinLogging
 
 private val logger = KotlinLogging.logger {}
 
-fun extractValue(data: Any?, mapping: ColumnMap, translateValue: Boolean): Any? {
-	val raw = mapping.valueExtractor(data) ?: return null
-	return if (translateValue) translateValue(mapping.schemaType, raw) else raw
-}
-
-fun extractValue(data: Any?, mapping: PkMap, translateValue: Boolean): Any? {
-	val raw = mapping.valueExtractor(data) ?: return null
-	return if (translateValue) translateValue(mapping.schemaType, raw) else raw
-}
-
 private fun resolveVersionColumn(isRoot: Boolean, hasPkMappings: Boolean, withType: Boolean = true): String {
 	val type = if (withType) " UInt64" else ""
 	return when {
@@ -50,7 +40,7 @@ private fun resolveOrderBy(meta: SourceMeta, isRoot: Boolean): String {
  */
 fun translateCH(database: String, meta: SourceMeta, recursive: Boolean): List<String> {
 	if (meta.simpleColumnMappings.isEmpty() && meta.pkMappings.isEmpty()) {
-		throw IllegalStateException("Attempting to create table without columns")
+		error("Attempting to create table without columns")
 	}
 	return translateCHInternal(database, meta, recursive, isNodeRoot = true)
 }
@@ -157,7 +147,7 @@ private fun checkPrimaryKeysConsistency(existingColumns: List<Column>, meta: Sou
 	val errors = newPks + removedPks
 	errors.forEach { logger.error { it } }
 	if (errors.isNotEmpty()) {
-		throw IllegalStateException("Could not update table because of key properties")
+		error("Could not update table because of key properties")
 	}
 }
 
@@ -197,7 +187,7 @@ fun updateSchema(meta: SourceMeta, ch: TargetConnection, existingTables: List<St
 	val errors = (added + updated + removed).mapNotNull { it.leftOrNull() }
 	errors.forEach { logger.error { it } }
 	if (errors.isNotEmpty()) {
-		throw IllegalStateException("Could not update table")
+		error("Could not update table")
 	}
 }
 

@@ -5,8 +5,11 @@ import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeInstanceOf
 
 class TargetMessageTest : StringSpec({
+	val userSchemaLine = """{"type":"SCHEMA","stream":"users","schema":{"type":["null","object"],"properties":{"id":{"type":"integer"},"name":{"type":"string"}}},"key_properties":["id"]}"""
+
 	"parses SCHEMA message with minimal fields" {
-		val msg = TargetMessageParser.parse(
+		val parser = TargetMessageParser()
+		val msg = parser.parse(
 			"""{"type":"SCHEMA","stream":"users","schema":{"type":["null","object"],"properties":{"id":{"type":"integer"}}},"key_properties":["id"]}"""
 		).shouldBeInstanceOf<TargetMessage.Schema>()
 
@@ -20,8 +23,11 @@ class TargetMessageTest : StringSpec({
 	}
 
 	"parses SCHEMA message with clean_first, cleaning_column, all_key_properties" {
-		val msg = TargetMessageParser.parse(
-			"""{"type":"SCHEMA","stream":"users","schema":{"type":"object"},"key_properties":["id"],
+		val parser = TargetMessageParser()
+		val msg = parser.parse(
+			"""{"type":"SCHEMA","stream":"users",
+			   "schema":{"type":"object","properties":{"id":{"type":"integer"},"deleted_at":{"type":"string"}}},
+			   "key_properties":["id"],
 			   "clean_first":true,"cleaning_column":"deleted_at",
 			   "all_key_properties":{"props":["id"],"children":{"audits":{"props":["a"],"children":{}}}}}"""
 		).shouldBeInstanceOf<TargetMessage.Schema>()
@@ -34,26 +40,37 @@ class TargetMessageTest : StringSpec({
 		)
 	}
 
-	"parses RECORD message" {
-		val msg = TargetMessageParser.parse(
+	"parses RECORD message using the registered stream reader" {
+		val parser = TargetMessageParser(translateValues = true)
+		parser.parse(userSchemaLine)  // registers the reader for "users"
+
+		val msg = parser.parse(
 			"""{"type":"RECORD","stream":"users","record":{"id":7,"name":"bob"}}"""
 		).shouldBeInstanceOf<TargetMessage.Record>()
 
 		msg.stream shouldBe "users"
-		msg.record shouldBe mapOf("id" to 7, "name" to "bob")
+		// Layout: [id (current PK), name (simple column)]
+		msg.row[0] shouldBe 7L
+		msg.row[1] shouldBe "bob"
 	}
 
-	"parses DELETED_RECORD message" {
-		val msg = TargetMessageParser.parse(
+	"parses DELETED_RECORD message (PK-only body)" {
+		val parser = TargetMessageParser(translateValues = true)
+		parser.parse(userSchemaLine)
+
+		val msg = parser.parse(
 			"""{"type":"DELETED_RECORD","stream":"users","record":{"id":9}}"""
 		).shouldBeInstanceOf<TargetMessage.DeletedRecord>()
 
 		msg.stream shouldBe "users"
-		msg.record shouldBe mapOf("id" to 9)
+		msg.row[0] shouldBe 9L
+		// Non-PK slots are left null — see TargetMessage.DeletedRecord kdoc.
+		msg.row[1] shouldBe null
 	}
 
 	"parses STATE message preserving value tree" {
-		val msg = TargetMessageParser.parse(
+		val parser = TargetMessageParser()
+		val msg = parser.parse(
 			"""{"type":"STATE","value":{"bookmarks":{"a":"b"}}}"""
 		).shouldBeInstanceOf<TargetMessage.State>()
 
@@ -61,7 +78,8 @@ class TargetMessageTest : StringSpec({
 	}
 
 	"parses ACTIVE_STREAMS message" {
-		val msg = TargetMessageParser.parse(
+		val parser = TargetMessageParser()
+		val msg = parser.parse(
 			"""{"type":"ACTIVE_STREAMS","streams":["a","b"]}"""
 		).shouldBeInstanceOf<TargetMessage.ActiveStreams>()
 
@@ -69,15 +87,15 @@ class TargetMessageTest : StringSpec({
 	}
 
 	"returns Unknown for unrecognized type" {
-		TargetMessageParser.parse("""{"type":"MYSTERY","x":1}""")
+		TargetMessageParser().parse("""{"type":"MYSTERY","x":1}""")
 			.shouldBeInstanceOf<TargetMessage.Unknown>()
 	}
 
 	"returns Unknown for malformed json" {
-		TargetMessageParser.parse("""not-json""").shouldBeInstanceOf<TargetMessage.Unknown>()
+		TargetMessageParser().parse("""not-json""").shouldBeInstanceOf<TargetMessage.Unknown>()
 	}
 
 	"returns null for blank line" {
-		TargetMessageParser.parse("   ") shouldBe null
+		TargetMessageParser().parse("   ") shouldBe null
 	}
 })

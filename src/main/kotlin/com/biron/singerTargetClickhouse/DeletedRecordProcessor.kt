@@ -9,6 +9,13 @@ data class DeletedRecordProcessorConfig(
 	val translateValues: Boolean,
 )
 
+/**
+ * Buffers DELETED_RECORD messages and issues a single SQL DELETE per batch. A Singer
+ * DELETED_RECORD carries only the current-level PK fields in its body — so the [RecordRow]
+ * fed in has its PK slots `[0, pkCount)` populated and every other slot left null. This
+ * processor reads those PK slots directly; it does not touch simple-column or subtable
+ * slots.
+ */
 class DeletedRecordProcessor(
 	private val meta: SourceMeta,
 	private val clickhouse: TargetConnection,
@@ -17,11 +24,11 @@ class DeletedRecordProcessor(
 	private val currentPkMappings: List<PkMap> = meta.pkMappings.filter { it.pkType == PKType.CURRENT }
 	private val buffered: MutableList<List<String>> = mutableListOf()
 
-	fun pushDeletedRecord(data: Map<String, Any?>) {
+	fun pushDeletedRecord(row: RecordRow) {
 		check(currentPkMappings.isNotEmpty()) {
 			"[${meta.prop}] cannot push deleted record to a stream without pk mapping"
 		}
-		val pkValues = currentPkMappings.map { extractValue(data, it, config.translateValues) }
+		val pkValues = List(currentPkMappings.size) { row[it] }
 		buffered.add(pkValues.mapIndexed { i, v -> formatForSql(v, currentPkMappings[i]) })
 		if (buffered.size >= config.batchSize) deleteBufferedData()
 	}

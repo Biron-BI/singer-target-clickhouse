@@ -274,9 +274,7 @@ private class HttpStreamingRowWriter(
 		if (responseFuture.isDone) {
 			try {
 				val resp = responseFuture.get(0, TimeUnit.SECONDS)
-				throw IllegalStateException(
-					"ClickHouse insert completed prematurely (${resp.statusCode()}): ${resp.body()}",
-				)
+				error("ClickHouse insert completed prematurely (${resp.statusCode()}): ${resp.body()}")
 			} catch (e: ExecutionException) {
 				throw IllegalStateException("ClickHouse insert failed mid-stream", e.cause ?: e)
 			}
@@ -296,9 +294,7 @@ private class HttpStreamingRowWriter(
 			throw IllegalStateException("ClickHouse insert failed before server responded", e)
 		}
 		if (response.statusCode() !in 200..299) {
-			throw IllegalStateException(
-				"ClickHouse insert failed (${response.statusCode()}): ${response.body()}",
-			)
+			error("ClickHouse insert failed (${response.statusCode()}): ${response.body()}")
 		}
 	}
 }
