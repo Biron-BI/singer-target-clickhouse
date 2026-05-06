@@ -136,7 +136,7 @@ class StreamProcessorTest : ShouldSpec({
 			conn.captureRowWriters()
 
 			val meta = metaWithCleaningColumn()
-			val underTest = StreamProcessor.create(conn, meta, baseConfig, cleanFirst = false, existingTables = emptyList(), cleaningColumnSlot = 1)
+			val underTest = StreamProcessor.create(conn, meta, baseConfig, false, emptyList(), 1)
 
 			underTest.processRecord(mapToRow(meta, mapOf("id" to 1, "name" to "alice")), 0, abort)
 
@@ -153,7 +153,7 @@ class StreamProcessorTest : ShouldSpec({
 			conn.captureRowWriters()
 
 			val meta = metaWithCleaningColumn()
-			val underTest = StreamProcessor.create(conn, meta, baseConfig, cleanFirst = false, existingTables = emptyList(), cleaningColumnSlot = 1)
+			val underTest = StreamProcessor.create(conn, meta, baseConfig, false, emptyList(), 1)
 
 			underTest.processRecord(mapToRow(meta, mapOf("id" to 1, "name" to "alice")), 0, abort)
 			underTest.processRecord(mapToRow(meta, mapOf("id" to 2, "name" to "alice")), 1, abort)
@@ -173,7 +173,7 @@ class StreamProcessorTest : ShouldSpec({
 			conn.captureRowWriters()
 
 			val meta = metaWithCleaningColumn()
-			val underTest = StreamProcessor.create(conn, meta, baseConfig, cleanFirst = false, existingTables = emptyList(), cleaningColumnSlot = 1)
+			val underTest = StreamProcessor.create(conn, meta, baseConfig, false, emptyList(), 1)
 
 			underTest.processRecord(mapToRow(meta, mapOf("id" to 1, "name" to "o'brien")), 0, abort)
 
@@ -188,7 +188,7 @@ class StreamProcessorTest : ShouldSpec({
 			conn.captureRowWriters()
 
 			val meta = metaWithCleaningColumn()
-			val underTest = StreamProcessor.create(conn, meta, baseConfig, cleanFirst = true, existingTables = emptyList(), cleaningColumnSlot = 1)
+			val underTest = StreamProcessor.create(conn, meta, baseConfig, true, emptyList(), 1)
 
 			underTest.processRecord(mapToRow(meta, mapOf("id" to 1, "name" to "alice")), 0, abort)
 
@@ -204,7 +204,7 @@ class StreamProcessorTest : ShouldSpec({
 
 			// `cleaningColumn = "mystery"` does not match any pkMapping or simpleColumnMapping.
 			val meta = metaWithCleaningColumn().copy(cleaningColumn = "mystery")
-			val underTest = StreamProcessor.create(conn, meta, baseConfig, cleanFirst = false, existingTables = emptyList(), cleaningColumnSlot = 1)
+			val underTest = StreamProcessor.create(conn, meta, baseConfig, false, emptyList(), 1)
 
 			shouldThrow<IllegalStateException> {
 				underTest.processRecord(mapToRow(metaWithCleaningColumn(), mapOf("id" to 1, "name" to "alice")), 0, abort)
@@ -220,7 +220,7 @@ class StreamProcessorTest : ShouldSpec({
 			// Same column as before, but `schemaType = null` makes it ineligible.
 			val untypedNameColumn = typedNameColumn.copy(schemaType = null)
 			val meta = metaWithCleaningColumn().copy(simpleColumnMappings = listOf(untypedNameColumn))
-			val underTest = StreamProcessor.create(conn, meta, baseConfig, cleanFirst = false, existingTables = emptyList(), cleaningColumnSlot = 1)
+			val underTest = StreamProcessor.create(conn, meta, baseConfig, false, emptyList(), 1)
 
 			shouldThrow<IllegalStateException> {
 				underTest.processRecord(mapToRow(meta, mapOf("id" to 1, "name" to "alice")), 0, abort)
@@ -235,7 +235,7 @@ class StreamProcessorTest : ShouldSpec({
 			conn.captureRowWriters()
 
 			val meta = metaWithCleaningColumn()
-			val underTest = StreamProcessor.create(conn, meta, baseConfig, cleanFirst = false, existingTables = emptyList(), cleaningColumnSlot = 1)
+			val underTest = StreamProcessor.create(conn, meta, baseConfig, false, emptyList(), 1)
 
 			underTest.processRecord(mapToRow(meta, mapOf("id" to 1, "name" to "")), 0, abort)
 			underTest.processRecord(mapToRow(meta, mapOf("id" to 2)), 1, abort)
@@ -251,7 +251,7 @@ class StreamProcessorTest : ShouldSpec({
 			}
 			conn.captureRunQueries()
 
-			val underTest = StreamProcessor.create(conn, metaNoPk(), baseConfig, cleanFirst = false, existingTables = emptyList(), cleaningColumnSlot = null)
+			val underTest = StreamProcessor.create(conn, metaNoPk(), baseConfig, false, emptyList(), null)
 
 			// No openRowWriter stub: strict mockk fails the test if commit accidentally opens a stream.
 			underTest.commitPendingChanges()
@@ -265,7 +265,7 @@ class StreamProcessorTest : ShouldSpec({
 			val rowWriters = conn.captureRowWriters()
 
 			val meta = metaNoPk()
-			val underTest = StreamProcessor.create(conn, meta, baseConfig, cleanFirst = false, existingTables = emptyList(), cleaningColumnSlot = null)
+			val underTest = StreamProcessor.create(conn, meta, baseConfig, false, emptyList(), null)
 
 			underTest.processRecord(mapToRow(meta, mapOf("id" to 1)), 0, abort)
 			underTest.commitPendingChanges()
@@ -282,7 +282,7 @@ class StreamProcessorTest : ShouldSpec({
 			val rowWriters = conn.captureRowWriters()
 
 			val meta = metaNoPk()
-			val underTest = StreamProcessor.create(conn, meta, baseConfig, cleanFirst = false, existingTables = emptyList(), cleaningColumnSlot = null)
+			val underTest = StreamProcessor.create(conn, meta, baseConfig, false, emptyList(), null)
 
 			underTest.processRecord(mapToRow(meta, mapOf("id" to 1)), 0, abort)
 			underTest.commitPendingChanges()
@@ -300,7 +300,7 @@ class StreamProcessorTest : ShouldSpec({
 			val queries = conn.captureRunQueries()
 
 			val meta = metaWithPkOnly()
-			val underTest = StreamProcessor.create(conn, meta, baseConfig, cleanFirst = false, existingTables = emptyList(), cleaningColumnSlot = null)
+			val underTest = StreamProcessor.create(conn, meta, baseConfig, false, emptyList(), null)
 			val beforeDeleteSize = queries.queries.size
 
 			underTest.processDeletedRecord(mapToRow(meta, mapOf("id" to 7)))
@@ -321,7 +321,7 @@ class StreamProcessorTest : ShouldSpec({
 			}
 			val queries = conn.captureRunQueries()
 
-			val underTest = StreamProcessor.create(conn, metaWithPk(), baseConfig, cleanFirst = false, existingTables = emptyList(), cleaningColumnSlot = null)
+			val underTest = StreamProcessor.create(conn, metaWithPk(), baseConfig, false, emptyList(), null)
 
 			underTest.finalizeProcessing()
 
@@ -334,7 +334,7 @@ class StreamProcessorTest : ShouldSpec({
 			}
 			val queries = conn.captureRunQueries()
 
-			val underTest = StreamProcessor.create(conn, metaWithPKAndChildren, baseConfig, cleanFirst = false, existingTables = emptyList(), cleaningColumnSlot = null)
+			val underTest = StreamProcessor.create(conn, metaWithPKAndChildren, baseConfig, false, emptyList(), null)
 
 			underTest.finalizeProcessing()
 
@@ -348,7 +348,7 @@ class StreamProcessorTest : ShouldSpec({
 			}
 			val queries = conn.captureRunQueries()
 
-			val underTest = StreamProcessor.create(conn, metaWithPk(), baseConfig, cleanFirst = true, existingTables = emptyList(), cleaningColumnSlot = null)
+			val underTest = StreamProcessor.create(conn, metaWithPk(), baseConfig, true, emptyList(), null)
 
 			underTest.finalizeProcessing()
 
@@ -365,7 +365,7 @@ class StreamProcessorTest : ShouldSpec({
 				else QueryResult(emptyList(), rows = 0)
 			}
 
-			val underTest = StreamProcessor.create(conn, metaWithPk(), baseConfig, cleanFirst = false, existingTables = emptyList(), cleaningColumnSlot = null)
+			val underTest = StreamProcessor.create(conn, metaWithPk(), baseConfig, false, emptyList(), null)
 
 			shouldThrow<IllegalStateException> {
 				underTest.finalizeProcessing()
@@ -378,7 +378,7 @@ class StreamProcessorTest : ShouldSpec({
 			}
 			val queries = conn.captureRunQueries()
 
-			val underTest = StreamProcessor.create(conn, metaNoPk(), baseConfig, cleanFirst = false, existingTables = emptyList(), cleaningColumnSlot = null)
+			val underTest = StreamProcessor.create(conn, metaNoPk(), baseConfig, false, emptyList(), null)
 
 			underTest.finalizeProcessing()
 
@@ -394,7 +394,7 @@ class StreamProcessorTest : ShouldSpec({
 			val rowWriters = conn.captureRowWriters()
 
 			val meta = metaWithPk()
-			val underTest = StreamProcessor.create(conn, meta, baseConfig, cleanFirst = false, existingTables = emptyList(), cleaningColumnSlot = null)
+			val underTest = StreamProcessor.create(conn, meta, baseConfig, false, emptyList(), null)
 
 			underTest.processRecord(mapToRow(meta, mapOf("id" to 1, "name" to "a")), 0, abort)
 			underTest.finalizeProcessing()
@@ -413,7 +413,7 @@ class StreamProcessorTest : ShouldSpec({
 			}
 
 			val meta = metaWithPkOnly()
-			val underTest = StreamProcessor.create(conn, meta, baseConfig, cleanFirst = false, existingTables = emptyList(), cleaningColumnSlot = null)
+			val underTest = StreamProcessor.create(conn, meta, baseConfig, false, emptyList(), null)
 
 			underTest.processDeletedRecord(mapToRow(meta, mapOf("id" to 1)))
 

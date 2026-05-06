@@ -243,7 +243,7 @@ private fun flattenNestedObject(propDef: JsonSchema, key: String, ctx: JsonSchem
 	val mergedProperties: Map<String, JsonSchema> = (propDef.properties ?: emptyMap())
 		.map { (nestedKey, nested) ->
 			"$key$NESTED_SUB_OBJECT_SEPARATOR$nestedKey" to
-				nested.copy(type = if (nullable) makeNullable(nested.type) else nested.type)
+					nested.copy(type = if (nullable) makeNullable(nested.type) else nested.type)
 		}
 		.toMap()
 

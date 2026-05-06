@@ -122,6 +122,7 @@ class RecordProcessor(
 	) {
 		meta.children.forEachIndexed { i, child ->
 			val processor = children.getValue(child.sqlTableName)
+
 			@Suppress("UNCHECKED_CAST")
 			val childRows = row[pkCount + columnCount + i] as? List<RecordRow> ?: return@forEachIndexed
 			childRows.forEachIndexed { idx, childRow ->
@@ -156,12 +157,12 @@ class RecordProcessor(
 	internal fun buildSQLInsertField(): List<String> {
 		val noRootPk = meta.pkMappings.none { it.pkType == PKType.ROOT }
 		return meta.pkMappings.map { it.sqlIdentifier } +
-			meta.simpleColumnMappings.map { it.sqlIdentifier } +
-			when {
-				noRootPk && meta.pkMappings.isNotEmpty() -> listOf("`_ver`")
-				noRootPk -> emptyList()
-				else -> listOf("`_root_ver`")
-			}
+				meta.simpleColumnMappings.map { it.sqlIdentifier } +
+				when {
+					noRootPk && meta.pkMappings.isNotEmpty() -> listOf("`_ver`")
+					noRootPk -> emptyList()
+					else -> listOf("`_root_ver`")
+				}
 	}
 
 	private fun flushBuffered() {

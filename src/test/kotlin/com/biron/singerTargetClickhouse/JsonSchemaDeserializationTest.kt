@@ -34,40 +34,40 @@ class JsonSchemaDeserializationTest : ShouldSpec({
 	context("optional fields") {
 		should("populate format / precision / decimals / lowCardinality (camelCase preserved)") {
 			parse("""{"type":"number","precision":30,"decimals":6,"lowCardinality":true}""") shouldBe
-				JsonSchema(type = listOf("number"), precision = 30, decimals = 6, lowCardinality = true)
+					JsonSchema(type = listOf("number"), precision = 30, decimals = 6, lowCardinality = true)
 			parse("""{"type":"string","format":"uuid"}""") shouldBe
-				JsonSchema(type = listOf("string"), format = "uuid")
+					JsonSchema(type = listOf("string"), format = "uuid")
 		}
 
 		should("ignore unknown keys") {
 			parse("""{"type":"integer","title":"x","description":"y"}""") shouldBe
-				JsonSchema(type = listOf("integer"))
+					JsonSchema(type = listOf("integer"))
 		}
 	}
 
 	context("nested structures") {
 		should("recurse into properties") {
 			parse("""{"type":"object","properties":{"id":{"type":"integer"},"name":{"type":["null","string"]}}}""") shouldBe
-				JsonSchema(
-					type = listOf("object"),
-					properties = mapOf(
-						"id" to JsonSchema(type = listOf("integer")),
-						"name" to JsonSchema(type = listOf("null", "string")),
-					),
-				)
+					JsonSchema(
+						type = listOf("object"),
+						properties = mapOf(
+							"id" to JsonSchema(type = listOf("integer")),
+							"name" to JsonSchema(type = listOf("null", "string")),
+						),
+					)
 		}
 
 		should("treat empty `{}` property as default JsonSchema (no CustomMapDeserializer mapping to null)") {
 			parse("""{"type":"object","properties":{"empty":{}}}""") shouldBe
-				JsonSchema(
-					type = listOf("object"),
-					properties = mapOf("empty" to JsonSchema()),
-				)
+					JsonSchema(
+						type = listOf("object"),
+						properties = mapOf("empty" to JsonSchema()),
+					)
 		}
 
 		should("recurse into items") {
 			parse("""{"type":"array","items":{"type":"integer"}}""") shouldBe
-				JsonSchema(type = listOf("array"), items = JsonSchema(type = listOf("integer")))
+					JsonSchema(type = listOf("array"), items = JsonSchema(type = listOf("integer")))
 		}
 	}
 })

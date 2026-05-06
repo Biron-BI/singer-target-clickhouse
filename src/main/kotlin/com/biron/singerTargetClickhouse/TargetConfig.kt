@@ -6,8 +6,8 @@ import com.fasterxml.jackson.databind.PropertyNamingStrategies
 import com.fasterxml.jackson.module.kotlin.jsonMapper
 import com.fasterxml.jackson.module.kotlin.kotlinModule
 import com.fasterxml.jackson.module.kotlin.readValue
-import java.io.Reader
 import org.slf4j.event.Level
+import java.io.Reader
 
 data class TargetConfig(
 	val host: String,

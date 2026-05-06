@@ -4,6 +4,8 @@ import arrow.core.Either
 import arrow.core.left
 import arrow.core.right
 import io.github.oshai.kotlinlogging.KotlinLogging
+import org.springframework.jdbc.core.JdbcTemplate
+import org.springframework.jdbc.datasource.DriverManagerDataSource
 import java.io.InputStream
 import java.net.URI
 import java.net.URLEncoder
@@ -12,15 +14,9 @@ import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import java.nio.charset.StandardCharsets
 import java.time.Duration
-import java.util.Base64
-import java.util.concurrent.CompletableFuture
-import java.util.concurrent.ExecutionException
-import java.util.concurrent.Executors
-import java.util.concurrent.LinkedBlockingQueue
-import java.util.concurrent.TimeUnit
+import java.util.*
+import java.util.concurrent.*
 import kotlin.math.pow
-import org.springframework.jdbc.core.JdbcTemplate
-import org.springframework.jdbc.datasource.DriverManagerDataSource
 
 private val logger = KotlinLogging.logger {}
 
@@ -271,7 +267,9 @@ class ClickhouseConnection internal constructor(
 		private val queue = LinkedBlockingQueue<ByteArray>()
 		private var current: ByteArray = EMPTY
 		private var pos: Int = 0
-		@Volatile private var completed: Boolean = false
+
+		@Volatile
+		private var completed: Boolean = false
 
 		fun put(bytes: ByteArray) {
 			if (completed || bytes.isEmpty()) return

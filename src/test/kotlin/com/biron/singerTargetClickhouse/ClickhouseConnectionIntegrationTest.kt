@@ -54,7 +54,7 @@ class ClickhouseConnectionIntegrationTest : ShouldSpec({
 	context("runQuery") {
 		should("returns data for SELECT") {
 			ClickhouseConnection(config).runQuery("SELECT 1, 'foo'") shouldBe
-				QueryResult(listOf(listOf(1.toShort(), "foo")), 1)
+					QueryResult(listOf(listOf(1.toShort(), "foo")), 1)
 		}
 
 		should("returns empty data for DDL") {
