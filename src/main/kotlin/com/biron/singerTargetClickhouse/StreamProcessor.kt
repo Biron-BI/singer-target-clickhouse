@@ -206,7 +206,7 @@ internal class DefaultStreamProcessor private constructor(
 					config = RecordProcessorConfig(
 						batchSize = config.batchSize,
 						translateValues = config.translateValues,
-						autoEndTimeoutMs = ((config.insertStreamTimeoutSec - 5).coerceAtLeast(1)) * 1000L,
+						autoEndTimeoutMs = autoEndTimeoutMs(config.insertStreamTimeoutSec),
 					),
 				),
 				DeletedRecordProcessor(
@@ -223,5 +223,17 @@ internal class DefaultStreamProcessor private constructor(
 
 		/** True when this root has CURRENT-level PKs and is therefore stored as ReplacingMergeTree. */
 		private val SourceMeta.isReplacingMergeTree: Boolean get() = pkMappings.isNotEmpty()
+
+		/**
+		 * Auto-end fires before the server's `http_receive_timeout` (= `insertStreamTimeoutSec`)
+		 * cuts an idle insert connection. The 5s margin we used to apply was too tight under
+		 * load; we now leave a 30s margin whenever the timeout is large enough to afford it,
+		 * falling back to half the timeout for very small configured values so the auto-end
+		 * still has time to actually fire.
+		 */
+		internal fun autoEndTimeoutMs(insertStreamTimeoutSec: Int): Long {
+			val sec = maxOf(insertStreamTimeoutSec - 30, insertStreamTimeoutSec / 2)
+			return sec.coerceAtLeast(1) * 1000L
+		}
 	}
 }

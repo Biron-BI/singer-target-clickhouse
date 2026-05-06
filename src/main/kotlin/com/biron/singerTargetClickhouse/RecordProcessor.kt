@@ -5,10 +5,8 @@ import com.fasterxml.jackson.module.kotlin.jsonMapper
 import com.fasterxml.jackson.module.kotlin.kotlinModule
 import io.github.oshai.kotlinlogging.KotlinLogging
 import java.io.ByteArrayOutputStream
-import java.util.concurrent.Executors
-import java.util.concurrent.ScheduledExecutorService
-import java.util.concurrent.ScheduledFuture
-import java.util.concurrent.TimeUnit
+import java.util.concurrent.*
+import java.util.concurrent.atomic.AtomicLong
 
 private val logger = KotlinLogging.logger {}
 
@@ -207,15 +205,21 @@ class RecordProcessor(
 	 */
 	private fun scheduleAutoEnd(ctx: Ingestion, abort: (Throwable) -> Unit): ScheduledFuture<*> {
 		val taskRef = java.util.concurrent.atomic.AtomicReference<ScheduledFuture<*>?>(null)
-		val task = defaultScheduler.schedule(
+		// Timer thread only fires the trigger; the actual auto-end (which may block on the
+		// HTTP response while closing the writer) runs on the cached worker pool so a slow
+		// close on one stream does not delay other streams' auto-ends past the server-side
+		// http_receive_timeout.
+		val task = autoEndTimer.schedule(
 			{
-				synchronized(lock) {
-					if (ingestion !== ctx || ctx.timeoutFuture !== taskRef.get()) return@synchronized
-					logger.debug { "[${meta.prop}] auto closing stream to insert data due to inactivity" }
-					try {
-						endIngestionUnlocked()
-					} catch (e: Throwable) {
-						abort(e)
+				autoEndWorker.submit {
+					synchronized(lock) {
+						if (ingestion !== ctx || ctx.timeoutFuture !== taskRef.get()) return@synchronized
+						logger.debug { "[${meta.prop}] auto closing stream to insert data due to inactivity" }
+						try {
+							endIngestionUnlocked()
+						} catch (e: Throwable) {
+							abort(e)
+						}
 					}
 				}
 			},
@@ -248,9 +252,16 @@ class RecordProcessor(
 	}
 
 	companion object {
-		private val defaultScheduler: ScheduledExecutorService =
+		private val workerSeq = AtomicLong(0)
+
+		private val autoEndTimer: ScheduledExecutorService =
 			Executors.newSingleThreadScheduledExecutor { r ->
-				Thread(r, "record-processor-auto-end").apply { isDaemon = true }
+				Thread(r, "record-processor-timer").apply { isDaemon = true }
+			}
+
+		private val autoEndWorker: ExecutorService =
+			Executors.newCachedThreadPool { r ->
+				Thread(r, "record-processor-auto-end-${workerSeq.getAndIncrement()}").apply { isDaemon = true }
 			}
 	}
 }

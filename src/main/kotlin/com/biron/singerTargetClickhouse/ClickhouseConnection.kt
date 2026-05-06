@@ -320,6 +320,8 @@ class ClickhouseConnection internal constructor(
 		private var closed = false
 
 		companion object {
+			private const val CLOSE_RESPONSE_TIMEOUT_SEC = 30L
+
 			// No per-request timeout: one insert stream can stay open for the whole ingestion
 			// of a stream (millions of rows). Idle protection is handled on the caller side by
 			// RecordProcessor's auto-end timeout, which closes the stream after inactivity.
@@ -353,8 +355,11 @@ class ClickhouseConnection internal constructor(
 			if (closed) return
 			closed = true
 			body.complete()
+			// Once the body terminator is written, the server should commit and respond within
+			// seconds. A bounded wait here also bounds how many auto-end worker threads can be
+			// parked at once if the server ever stops responding entirely.
 			val response = try {
-				responseFuture.get(5, TimeUnit.MINUTES)
+				responseFuture.get(CLOSE_RESPONSE_TIMEOUT_SEC, TimeUnit.SECONDS)
 			} catch (e: ExecutionException) {
 				throw IllegalStateException("ClickHouse insert failed", e.cause ?: e)
 			} catch (e: Throwable) {
