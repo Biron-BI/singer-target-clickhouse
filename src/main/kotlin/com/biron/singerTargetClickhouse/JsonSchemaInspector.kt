@@ -1,7 +1,7 @@
 package com.biron.singerTargetClickhouse
 
 import com.biron.singer.core.domain.JsonSchema
-import com.biron.singer.core.utils.letIf
+import com.biron.singer.core.domain.typeNullable
 import io.github.oshai.kotlinlogging.KotlinLogging
 import java.security.MessageDigest
 
@@ -73,9 +73,11 @@ private fun formatParentPKColumn(prop: String): String = "_parent_$prop"
 
 fun escapeIdentifier(id: String, subtableSeparator: String = "__"): String =
 	id.replace(NESTED_SUB_OBJECT_SEPARATOR, subtableSeparator)
-		.letIf({ it.length > 64 }) {
-			val uid = sha1Hex(it).substring(0, 10)
-			it.substring(0, 64 - uid.length - 27) + uid + it.substring(it.length - 27)
+		.let {
+			if (it.length > 64) {
+				val uid = sha1Hex(it).substring(0, 10)
+				it.substring(0, 64 - uid.length - 27) + uid + it.substring(it.length - 27)
+			} else it
 		}
 		.let { "`$it`" }
 
@@ -174,13 +176,7 @@ private fun buildObjectMetaProps(ctx: JsonSchemaInspectorContext): MetaProps =
 	(ctx.schema.properties ?: emptyMap())
 		.filterKeys { it !in ctx.keyProperties }
 		.entries
-		.fold(MetaProps(emptyList(), emptyList())) { acc, (key, propDefOrNull) ->
-			// A `{}` property definition deserializes to null in singer-kotlin's JsonSchema map.
-			// Mirror TS semantics: treat it as "no type" and skip the column with a warning.
-			val propDef = propDefOrNull ?: run {
-				logger.warn { "'${ctx.alias}': '$key': empty property definition, skipping" }
-				return@fold acc
-			}
+		.fold(MetaProps(emptyList(), emptyList())) { acc, (key, propDef) ->
 			val propDefTypes = propDef.type
 			when {
 				"object" in propDefTypes -> {
@@ -233,7 +229,7 @@ private fun buildScalarMetaProps(ctx: JsonSchemaInspectorContext): MetaProps {
 				chType = colType.chType,
 				schemaType = colType.schemaType,
 				typeFormat = colType.typeFormat,
-				nullable = getNullable(ctx.schema),
+				nullable = ctx.schema.typeNullable,
 				lowCardinality = false,
 				nestedArray = false,
 			),
@@ -243,16 +239,11 @@ private fun buildScalarMetaProps(ctx: JsonSchemaInspectorContext): MetaProps {
 }
 
 private fun flattenNestedObject(propDef: JsonSchema, key: String, ctx: JsonSchemaInspectorContext): MetaProps {
-	val nullable = getNullable(propDef)
-	// Skip empty (`{}`) nested property definitions — same semantics as buildObjectMetaProps.
-	val mergedProperties: Map<String, JsonSchema?> = (propDef.properties ?: emptyMap())
-		.entries
-		.mapNotNull { (nestedKey, nestedPropDefOrNull) ->
-			val nested = nestedPropDefOrNull ?: return@mapNotNull null.also {
-				logger.warn { "'${ctx.alias}': '$key.$nestedKey': empty property definition, skipping" }
-			}
-			val newKey = "$key$NESTED_SUB_OBJECT_SEPARATOR$nestedKey"
-			newKey to nested.copy(type = if (nullable) makeNullable(nested.type) else nested.type)
+	val nullable = propDef.typeNullable
+	val mergedProperties: Map<String, JsonSchema> = (propDef.properties ?: emptyMap())
+		.map { (nestedKey, nested) ->
+			"$key$NESTED_SUB_OBJECT_SEPARATOR$nestedKey" to
+				nested.copy(type = if (nullable) makeNullable(nested.type) else nested.type)
 		}
 		.toMap()
 
@@ -311,7 +302,7 @@ private fun getSimpleColumnType(ctx: JsonSchemaInspectorContext, key: String?): 
 		chType = chType,
 		schemaType = type,
 		typeFormat = propDef.format,
-		nullable = getNullable(propDef),
+		nullable = propDef.typeNullable,
 		lowCardinality = propDef.lowCardinality == true,
 		nestedArray = nestedArray,
 	)
@@ -354,8 +345,6 @@ fun getSimpleColumnSqlType(ctx: JsonSchemaInspectorContext, propDef: JsonSchema,
 		else -> null
 	}
 }
-
-private fun getNullable(schema: JsonSchema): Boolean = "null" in schema.type
 
 private fun makeNullable(types: List<String>): List<String> = when {
 	types.isEmpty() -> emptyList()

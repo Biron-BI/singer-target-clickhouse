@@ -1,22 +1,18 @@
-import com.biron.gradleVersionCatalog.gitVersionProvider
-
 plugins {
-	alias(bironLibs.plugins.kotlin.jvm)
-	alias(bironLibs.plugins.kotlin.plugin.spring)
-	alias(bironLibs.plugins.spring.boot)
-	id("org.jetbrains.kotlinx.kover") version "0.9.1"
+	alias(libs.plugins.kotlin.jvm)
+	alias(libs.plugins.kotlin.plugin.spring)
+	alias(libs.plugins.spring.boot)
+	alias(libs.plugins.kover)
+	alias(libs.plugins.palantir.git.version)
 }
 
+val gitVersion: groovy.lang.Closure<String> by extra
+
 group = "com.biron"
-version = gitVersionProvider().get()
+version = gitVersion().removePrefix("v")
 
 repositories {
 	mavenCentral()
-	maven {
-		name = "mavenBiron"
-		url = uri(property("mavenBironUrl")!!)
-		credentials(PasswordCredentials::class)
-	}
 }
 
 apply(plugin = "io.spring.dependency-management")
@@ -27,24 +23,25 @@ dependencies {
 	implementation("org.springframework.data:spring-data-jdbc")
 	implementation("com.fasterxml.jackson.module:jackson-module-kotlin")
 	implementation("ch.qos.logback:logback-classic")
-	implementation(bironLibs.kotlin.logging)
-	implementation(bironLibs.arrow.core)
-	implementation(bironLibs.arrow.fx.coroutines)
-	implementation(bironLibs.clickhouse.jdbc)
-	implementation(bironLibs.clikt)
-	implementation(libs.biron.singer.kotlin.core)
-	implementation(libs.biron.singer.kotlin.models)
+	implementation(libs.kotlin.logging)
+	implementation(libs.arrow.core)
+	implementation(libs.arrow.fx.coroutines)
+	implementation(libs.clickhouse.jdbc)
+	implementation(libs.clikt)
 
-	testImplementation(bironLibs.bundles.kotest)
-	testImplementation(bironLibs.kotest.extensions.spring)
-	testImplementation(bironLibs.kotest.assertions.arrow)
-	testImplementation(bironLibs.kotest.assertions.json)
-	testImplementation(bironLibs.mockk)
+	testImplementation(libs.kotest.runner.junit5)
+	testImplementation(libs.kotest.assertions.core)
+	testImplementation(libs.kotest.property)
+	testImplementation(libs.kotest.framework.datatest)
+	testImplementation(libs.kotest.extensions.spring)
+	testImplementation(libs.kotest.assertions.arrow)
+	testImplementation(libs.kotest.assertions.json)
+	testImplementation(libs.mockk)
 	testImplementation("org.springframework.boot:spring-boot-starter-test")
-	testImplementation(bironLibs.testcontainers.core)
-	testImplementation(bironLibs.testcontainers.clickhouse)
+	testImplementation(libs.testcontainers.core)
+	testImplementation(libs.testcontainers.clickhouse)
 	testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test")
-	testImplementation(bironLibs.jimfs)
+	testImplementation(libs.jimfs)
 }
 
 tasks.test {

@@ -387,7 +387,7 @@ class JsonSchemaInspectorTest : ShouldSpec({
 				type = listOf("object"),
 				properties = mapOf(
 					"id" to JsonSchema(type = listOf("integer")),
-					"empty" to null,
+					"empty" to JsonSchema(),
 				),
 			)
 			val meta = buildMeta(JsonSchemaInspectorContext("audits", schema, listOf("id")))
@@ -404,7 +404,7 @@ class JsonSchemaInspectorTest : ShouldSpec({
 						type = listOf("object"),
 						properties = mapOf(
 							"present" to JsonSchema(type = listOf("string")),
-							"missing" to null,
+							"missing" to JsonSchema(),
 						),
 					),
 				),
