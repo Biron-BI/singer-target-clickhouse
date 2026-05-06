@@ -57,6 +57,35 @@ class TargetConfigTest : ShouldSpec({
 		)
 	}
 
+	should("falls back to defaults when optional fields are explicitly null") {
+		val json = """
+			{
+				"database": "d",
+				"logging_level": null,
+				"subtable_separator": "__",
+				"batch_size": null,
+				"translate_values": false,
+				"insert_stream_timeout_sec": 120,
+				"host": "kirbytes1",
+				"port": 8123,
+				"password": "redacted",
+				"username": "dbcopy",
+				"extra_active_tables": ["_singer_state"]
+			}
+		""".trimIndent()
+
+		TargetConfig.fromJson(json.reader()) shouldBe TargetConfig(
+			host = "kirbytes1",
+			port = 8123,
+			username = "dbcopy",
+			password = "redacted",
+			database = "d",
+			translateValues = false,
+			insertStreamTimeoutSec = 120,
+			extraActiveTables = listOf("_singer_state"),
+		)
+	}
+
 	should("ignores unknown fields") {
 		val json = """
 			{

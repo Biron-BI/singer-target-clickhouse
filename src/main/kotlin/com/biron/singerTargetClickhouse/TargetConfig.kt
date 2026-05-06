@@ -1,6 +1,8 @@
 package com.biron.singerTargetClickhouse
 
 import com.fasterxml.jackson.annotation.JsonProperty
+import com.fasterxml.jackson.annotation.JsonSetter
+import com.fasterxml.jackson.annotation.Nulls
 import com.fasterxml.jackson.databind.DeserializationFeature
 import com.fasterxml.jackson.databind.PropertyNamingStrategies
 import com.fasterxml.jackson.module.kotlin.jsonMapper
@@ -30,6 +32,7 @@ data class TargetConfig(
 			addModule(kotlinModule())
 			propertyNamingStrategy(PropertyNamingStrategies.SNAKE_CASE)
 			disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
+			defaultSetterInfo(JsonSetter.Value.forValueNulls(Nulls.SKIP))
 		}
 
 		fun fromJson(reader: Reader): TargetConfig = objectMapper.readValue(reader)
