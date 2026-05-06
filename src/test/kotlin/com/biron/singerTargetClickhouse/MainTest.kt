@@ -9,9 +9,7 @@ import io.kotest.matchers.types.shouldBeInstanceOf
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.File
-import java.io.InputStream
 import java.io.PrintStream
-import java.io.Writer
 import kotlin.io.path.createTempDirectory
 import kotlin.io.path.writeText
 
@@ -64,6 +62,19 @@ class MainTest : ShouldSpec({
 			call.config.database shouldBe "d"
 			call.input shouldBe "hello"
 			call.streams shouldContainExactly listOf("users", "orders")
+		}
+
+		should("accepts -c as a short alias for --config") {
+			val cfg = writeConfigFile()
+			val runner = RecordingRunner()
+			RootCommand(runner.asRunner).parse(
+				arrayOf(
+					"-c", cfg.absolutePath,
+					"--input", makeInputFile("").absolutePath,
+					"--output", makeOutputFile().absolutePath,
+				),
+			)
+			runner.calls.single().config.host shouldBe "h"
 		}
 
 		should("falls back to System.in / System.out when --input / --output omitted") {

@@ -34,7 +34,7 @@ class RootCommand internal constructor(
 		StreamPipeline.forConfig(config).run(input, writer, streams)
 	})
 
-	private val configPath by option("--config")
+	private val configPath by option("-c", "--config")
 		.path(mustExist = true, canBeDir = false, mustBeReadable = true)
 		.required()
 
