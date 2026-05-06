@@ -1,10 +1,10 @@
 package com.biron.singerTargetClickhouse
 
-import com.biron.singer.core.domain.JsonSchema
 import com.fasterxml.jackson.module.kotlin.jsonMapper
 import com.fasterxml.jackson.module.kotlin.kotlinModule
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.ShouldSpec
+import io.kotest.datatest.withData
 import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
@@ -175,13 +175,19 @@ class StreamReaderTest : ShouldSpec({
 		// translateValues=false → every scalar is read raw, regardless of schemaType.
 		val meta = objectMetaWithSimpleColumn("v", "string")
 
-		should("preserves raw JSON types") {
-			readJson(meta, """{"v":42}""", translateValues = false).toList() shouldBe listOf(42)
-			readJson(meta, """{"v":3.14}""", translateValues = false).toList() shouldBe listOf(3.14)
-			readJson(meta, """{"v":true}""", translateValues = false).toList() shouldBe listOf(true)
-			readJson(meta, """{"v":false}""", translateValues = false).toList() shouldBe listOf(false)
-			readJson(meta, """{"v":"abc"}""", translateValues = false).toList() shouldBe listOf("abc")
-			readJson(meta, """{"v":null}""", translateValues = false).toList() shouldBe listOf(null)
+		context("preserves raw JSON types") {
+			withData(
+				mapOf(
+					"integer" to ("""{"v":42}""" to 42),
+					"float" to ("""{"v":3.14}""" to 3.14),
+					"true" to ("""{"v":true}""" to true),
+					"false" to ("""{"v":false}""" to false),
+					"string" to ("""{"v":"abc"}""" to "abc"),
+					"null" to ("""{"v":null}""" to null),
+				),
+			) { (json, expected) ->
+				readJson(meta, json, translateValues = false).toList() shouldBe listOf(expected)
+			}
 		}
 
 		should("preserves arrays and objects as their parsed Kotlin shapes") {
@@ -274,8 +280,7 @@ class StreamReaderTest : ShouldSpec({
 
 		should("wraps a non-array subtable value into a singleton list") {
 			val row = readJson(meta, """{"id":4,"tags":{"name":"only"}}""")
-			@Suppress("UNCHECKED_CAST")
-			val sub = row[1] as List<RecordRow>
+			@Suppress("UNCHECKED_CAST") val sub = row[1] as List<RecordRow>
 			sub shouldHaveSize 1
 			sub[0].toList() shouldBe listOf("only")
 		}

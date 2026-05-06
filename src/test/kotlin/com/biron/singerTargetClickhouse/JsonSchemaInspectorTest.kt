@@ -3,6 +3,7 @@ package com.biron.singerTargetClickhouse
 import com.biron.singer.core.domain.JsonSchema
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.ShouldSpec
+import io.kotest.datatest.withData
 import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
@@ -138,23 +139,31 @@ class JsonSchemaInspectorTest : ShouldSpec({
 			getSimpleColumnSqlType(ctx, JsonSchema(type = listOf("null", "integer"))) shouldBe "Int64"
 		}
 
-		should("maps string formats to ClickHouse types") {
-			getSimpleColumnSqlType(ctx, JsonSchema(type = listOf("string"))) shouldBe "String"
-			getSimpleColumnSqlType(ctx, JsonSchema(type = listOf("string"), format = "date")) shouldBe "Date"
-			getSimpleColumnSqlType(ctx, JsonSchema(type = listOf("string"), format = "x-excel-date")) shouldBe "Date"
-			getSimpleColumnSqlType(ctx, JsonSchema(type = listOf("string"), format = "date-time")) shouldBe "DateTime"
-			getSimpleColumnSqlType(ctx, JsonSchema(type = listOf("string"), format = "date-time64")) shouldBe "DateTime64"
-			getSimpleColumnSqlType(ctx, JsonSchema(type = listOf("string"), format = "uuid")) shouldBe "UUID"
-			getSimpleColumnSqlType(ctx, JsonSchema(type = listOf("string"), format = "unknown-format")) shouldBe "String"
+		context("maps string formats to ClickHouse types") {
+			withData(
+				mapOf(
+					"no format" to (JsonSchema(type = listOf("string")) to "String"),
+					"date" to (JsonSchema(type = listOf("string"), format = "date") to "Date"),
+					"x-excel-date" to (JsonSchema(type = listOf("string"), format = "x-excel-date") to "Date"),
+					"date-time" to (JsonSchema(type = listOf("string"), format = "date-time") to "DateTime"),
+					"date-time64" to (JsonSchema(type = listOf("string"), format = "date-time64") to "DateTime64"),
+					"uuid" to (JsonSchema(type = listOf("string"), format = "uuid") to "UUID"),
+					"unknown-format falls back to String" to (JsonSchema(type = listOf("string"), format = "unknown-format") to "String"),
+				),
+			) { (schema, expected) -> getSimpleColumnSqlType(ctx, schema) shouldBe expected }
 		}
 
-		should("maps integer formats to ClickHouse types") {
-			getSimpleColumnSqlType(ctx, JsonSchema(type = listOf("integer"))) shouldBe "Int64"
-			getSimpleColumnSqlType(ctx, JsonSchema(type = listOf("integer"), format = "int128")) shouldBe "Int128"
-			getSimpleColumnSqlType(ctx, JsonSchema(type = listOf("integer"), format = "int64")) shouldBe "Int64"
-			getSimpleColumnSqlType(ctx, JsonSchema(type = listOf("integer"), format = "int32")) shouldBe "Int32"
-			getSimpleColumnSqlType(ctx, JsonSchema(type = listOf("integer"), format = "int16")) shouldBe "Int16"
-			getSimpleColumnSqlType(ctx, JsonSchema(type = listOf("integer"), format = "int8")) shouldBe "Int8"
+		context("maps integer formats to ClickHouse types") {
+			withData(
+				mapOf(
+					"no format" to (JsonSchema(type = listOf("integer")) to "Int64"),
+					"int128" to (JsonSchema(type = listOf("integer"), format = "int128") to "Int128"),
+					"int64" to (JsonSchema(type = listOf("integer"), format = "int64") to "Int64"),
+					"int32" to (JsonSchema(type = listOf("integer"), format = "int32") to "Int32"),
+					"int16" to (JsonSchema(type = listOf("integer"), format = "int16") to "Int16"),
+					"int8" to (JsonSchema(type = listOf("integer"), format = "int8") to "Int8"),
+				),
+			) { (schema, expected) -> getSimpleColumnSqlType(ctx, schema) shouldBe expected }
 		}
 
 		should("throws on unsupported integer format") {
@@ -163,11 +172,15 @@ class JsonSchemaInspectorTest : ShouldSpec({
 			}.message shouldContain "unsupported integer format"
 		}
 
-		should("maps number formats to ClickHouse types") {
-			getSimpleColumnSqlType(ctx, JsonSchema(type = listOf("number"))) shouldBe "Decimal(16, 2)"
-			getSimpleColumnSqlType(ctx, JsonSchema(type = listOf("number"), precision = 30, decimals = 6)) shouldBe "Decimal(30, 6)"
-			getSimpleColumnSqlType(ctx, JsonSchema(type = listOf("number"), format = "float64")) shouldBe "Float64"
-			getSimpleColumnSqlType(ctx, JsonSchema(type = listOf("number"), format = "float32")) shouldBe "Float32"
+		context("maps number formats to ClickHouse types") {
+			withData(
+				mapOf(
+					"no format defaults to Decimal(16, 2)" to (JsonSchema(type = listOf("number")) to "Decimal(16, 2)"),
+					"explicit precision/decimals" to (JsonSchema(type = listOf("number"), precision = 30, decimals = 6) to "Decimal(30, 6)"),
+					"float64" to (JsonSchema(type = listOf("number"), format = "float64") to "Float64"),
+					"float32" to (JsonSchema(type = listOf("number"), format = "float32") to "Float32"),
+				),
+			) { (schema, expected) -> getSimpleColumnSqlType(ctx, schema) shouldBe expected }
 		}
 
 		should("throws on unsupported number format") {

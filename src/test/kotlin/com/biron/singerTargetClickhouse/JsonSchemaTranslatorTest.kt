@@ -4,6 +4,7 @@ import arrow.core.left
 import arrow.core.right
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.ShouldSpec
+import io.kotest.datatest.withData
 import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
@@ -107,17 +108,19 @@ class JsonSchemaTranslatorTest : ShouldSpec({
 	context("toQualifiedType") {
 		val baseCol = idColumn.copy(nullable = false, lowCardinality = false, nestedArray = false)
 
-		should("no modifiers") { toQualifiedType(baseCol) shouldBe "Int32" }
-		should("nestedArray") { toQualifiedType(baseCol.copy(chType = "String", nestedArray = true)) shouldBe "Array(String)" }
-		should("nullable") { toQualifiedType(baseCol.copy(chType = "UInt64", nullable = true)) shouldBe "Nullable(UInt64)" }
-		should("lowCardinality") { toQualifiedType(baseCol.copy(chType = "DateTime", lowCardinality = true)) shouldBe "LowCardinality(DateTime)" }
-		should("multi") {
-			toQualifiedType(baseCol.copy(chType = "UInt8", nullable = true, lowCardinality = true, nestedArray = true)) shouldBe
-				"Array(LowCardinality(Nullable(UInt8)))"
-		}
-		should("placeholders 'undefined type' when chType is null") {
-			toQualifiedType(baseCol.copy(chType = null, nullable = true)) shouldBe "Nullable(undefined type)"
-		}
+		withData(
+			mapOf(
+				"no modifiers" to (baseCol to "Int32"),
+				"nestedArray" to (baseCol.copy(chType = "String", nestedArray = true) to "Array(String)"),
+				"nullable" to (baseCol.copy(chType = "UInt64", nullable = true) to "Nullable(UInt64)"),
+				"lowCardinality" to (baseCol.copy(chType = "DateTime", lowCardinality = true) to "LowCardinality(DateTime)"),
+				"multi" to (
+						baseCol.copy(chType = "UInt8", nullable = true, lowCardinality = true, nestedArray = true) to
+								"Array(LowCardinality(Nullable(UInt8)))"
+						),
+				"placeholders 'undefined type' when chType is null" to (baseCol.copy(chType = null, nullable = true) to "Nullable(undefined type)"),
+			),
+		) { (col, expected) -> toQualifiedType(col) shouldBe expected }
 	}
 
 	context("dropStreamTablesQueries") {
