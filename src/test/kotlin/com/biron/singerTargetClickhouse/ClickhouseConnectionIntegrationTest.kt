@@ -131,6 +131,38 @@ class ClickhouseConnectionIntegrationTest : ShouldSpec({
 		}
 	}
 
+	context("JDBC URL settings reach the server") {
+		should("date_time_input_format=best_effort: parses RFC 1123-style datetimes that the server's default 'basic' format rejects") {
+			jdbc.execute("CREATE TABLE `$databaseName`.events (id Int32, ts DateTime) ENGINE = MergeTree ORDER BY id")
+
+			// Sanity check: a connection that does NOT carry the setting (the test's bare jdbc) is rejected by the server's default `basic` format.
+			shouldThrow<Exception> {
+				jdbc.execute("INSERT INTO `$databaseName`.events VALUES (0, '15 Jan 2024 10:00:00')")
+			}
+
+			// ClickhouseConnection's JDBC URL prefixes settings with `clickhouse_setting_`, so best_effort is forwarded to the server and the same
+			// VALUES literal is accepted.
+			ClickhouseConnection(config).runQuery("INSERT INTO `$databaseName`.events VALUES (1, '15 Jan 2024 10:00:00')", 0)
+
+			jdbc.queryForList("SELECT id, toString(ts) AS ts FROM `$databaseName`.events ORDER BY id") shouldBe
+					listOf(mapOf("id" to 1, "ts" to "2024-01-15 10:00:00"))
+		}
+
+		should("insert_null_as_default=0: NULL into a non-Nullable column is rejected instead of being silently replaced by the type default") {
+			jdbc.execute("CREATE TABLE `$databaseName`.t (id Int32, name String) ENGINE = MergeTree ORDER BY id")
+
+			// Sanity check: with the server's default insert_null_as_default=1, NULL silently becomes ''.
+			jdbc.execute("INSERT INTO `$databaseName`.t VALUES (1, NULL)")
+			jdbc.queryForList("SELECT id, name FROM `$databaseName`.t WHERE id = 1") shouldBe
+					listOf(mapOf("id" to 1, "name" to ""))
+
+			// ClickhouseConnection sets insert_null_as_default=0, so the same INSERT errors out rather than corrupting the data with a default value.
+			shouldThrow<Exception> {
+				ClickhouseConnection(config).runQuery("INSERT INTO `$databaseName`.t VALUES (2, NULL)", 0)
+			}
+		}
+	}
+
 	context("openRowWriter streaming insert") {
 		should("persists rows written in JSONCompactEachRow format") {
 			jdbc.execute("CREATE TABLE `$databaseName`.items (id Int32, name String) ENGINE = MergeTree ORDER BY tuple()")

@@ -375,6 +375,11 @@ class ClickhouseConnection internal constructor(
 		 * trio preserves NULL values literally (otherwise ClickHouse would substitute column
 		 * defaults). `date_time_input_format=best_effort` accepts the variety of date formats
 		 * Singer taps emit.
+		 *
+		 * The v2 JDBC driver routes URL parameters through `ClientConfigProperties`, which
+		 * logs a warning for any key it doesn't recognize as a *client* property. Server-side
+		 * ClickHouse settings must therefore be prefixed with `clickhouse_setting_` to be
+		 * forwarded as query settings instead of being flagged as unknown.
 		 */
 		private fun buildJdbcUrl(cfg: TargetConfig): String {
 			val params = listOf(
@@ -383,7 +388,7 @@ class ClickhouseConnection internal constructor(
 				"insert_null_as_default" to "0",
 				"input_format_null_as_default" to "0",
 				"input_format_defaults_for_omitted_fields" to "0",
-			).joinToString("&") { (k, v) -> "$k=$v" }
+			).joinToString("&") { (k, v) -> "clickhouse_setting_$k=$v" }
 			return "jdbc:clickhouse://${cfg.host}:${cfg.port}/${cfg.database}?$params"
 		}
 
