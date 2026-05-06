@@ -7,9 +7,7 @@ import com.github.ajalt.clikt.parameters.options.flag
 import com.github.ajalt.clikt.parameters.options.multiple
 import com.github.ajalt.clikt.parameters.options.option
 import com.github.ajalt.clikt.parameters.options.required
-import com.github.ajalt.clikt.parameters.types.inputStream
-import com.github.ajalt.clikt.parameters.types.outputStream
-import com.github.ajalt.clikt.parameters.types.path
+import com.github.ajalt.clikt.parameters.types.*
 import io.github.oshai.kotlinlogging.KotlinLogging
 import java.io.BufferedWriter
 import java.io.InputStream
@@ -40,9 +38,11 @@ class RootCommand internal constructor(
 
 	private val inputStream by option("--input", help = "An alternate file to read from, instead of STDIN")
 		.inputStream()
+		.defaultStdin()
 
 	private val outputStream by option("--output", help = "An alternate file to write to, instead of STDOUT")
 		.outputStream(truncateExisting = true)
+		.defaultStdout()
 
 	private val updateStreams by option(
 		"-u", "--update-streams",
@@ -55,17 +55,14 @@ class RootCommand internal constructor(
 
 	override fun run() {
 		val config = configPath.reader(StandardCharsets.UTF_8).use { TargetConfig.fromJson(it) }
-		loggingConfigurer.reconfigure(useStdoutInsteadOfStdErr = false, basePackageLogLevel = config.logLevel)
+		loggingConfigurer.reconfigure(!outputStream.isCliktParameterDefaultStdout, config.logLevel)
 
-		val stdin = inputStream ?: System.`in`
-		val stdout = outputStream ?: System.out
-
-		val writer = BufferedWriter(OutputStreamWriter(stdout, StandardCharsets.UTF_8))
+		val writer = BufferedWriter(OutputStreamWriter(outputStream, StandardCharsets.UTF_8))
 
 		try {
-			stdin.use {
+			inputStream.use {
 				writer.use {
-					pipelineRunner(config, stdin, writer, updateStreams)
+					pipelineRunner(config, inputStream, writer, updateStreams)
 				}
 			}
 			logger.info { "Stream processing done" }

@@ -35,8 +35,8 @@ class LoggingConfigurer(
 	}
 
 	fun reconfigure(useStdoutInsteadOfStdErr: Boolean, basePackageLogLevel: org.slf4j.event.Level = org.slf4j.event.Level.INFO) {
-		if (useStdoutInsteadOfStdErr) mainAppender.apply {
-			target = ConsoleTarget.SystemOut.toString()
+		mainAppender.apply {
+			target = if (useStdoutInsteadOfStdErr) ConsoleTarget.SystemOut.toString() else ConsoleTarget.SystemErr.toString()
 			start()
 		}
 		ctx.getLogger(basePackage).apply {
