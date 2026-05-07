@@ -201,6 +201,19 @@ class JsonSchemaInspectorTest : ShouldSpec({
 			getSimpleColumnSqlType(ctx, JsonSchema(type = emptyList())) shouldBe null
 		}
 
+		// TS treats `!format` as "no format" — empty string falls back to the default branch
+		// rather than the unsupported-format throw. Mirror that for TS-version parity.
+		should("treats empty format string as no format (TS `!format` parity)") {
+			getSimpleColumnSqlType(ctx, JsonSchema(type = listOf("integer"), format = "")) shouldBe "Int64"
+			getSimpleColumnSqlType(ctx, JsonSchema(type = listOf("number"), format = "")) shouldBe "Decimal(16, 2)"
+			getSimpleColumnSqlType(ctx, JsonSchema(type = listOf("boolean"), format = "")) shouldBe "UInt8"
+		}
+
+		// TS-version uses `precision || 16` / `decimals || 2`, so 0 (falsy) falls back to the default.
+		should("treats precision/decimals = 0 as missing for Decimal default (TS `||` parity)") {
+			getSimpleColumnSqlType(ctx, JsonSchema(type = listOf("number"), precision = 0, decimals = 0)) shouldBe "Decimal(16, 2)"
+		}
+
 		should("includes nested ancestry alias in error messages") {
 			val parent = JsonSchemaInspectorContext("root", simpleSchema, listOf("id"))
 			val child = JsonSchemaInspectorContext("audits", simpleSchema, listOf("id"), parentCtx = parent, level = 1)

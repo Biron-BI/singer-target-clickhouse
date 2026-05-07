@@ -310,7 +310,7 @@ private fun getSimpleColumnType(ctx: JsonSchemaInspectorContext, key: String?): 
 
 fun getSimpleColumnSqlType(ctx: JsonSchemaInspectorContext, propDef: JsonSchema, key: String? = null): String? {
 	val type = propDef.type.firstOrNull { it != "null" }
-	val format = propDef.format
+	val format = propDef.format?.takeIf { it.isNotEmpty() }
 	return when (type) {
 		"string" -> when (format) {
 			"date", "x-excel-date" -> "Date"
@@ -331,7 +331,8 @@ fun getSimpleColumnSqlType(ctx: JsonSchemaInspectorContext, propDef: JsonSchema,
 		}
 
 		"number" -> when (format) {
-			null -> "Decimal(${propDef.precision ?: 16}, ${propDef.decimals ?: 2})"
+			// the `.takeIf { it != 0 }` is a backward compatibility with the old TS-version
+			null -> "Decimal(${propDef.precision?.takeIf { it != 0 } ?: 16}, ${propDef.decimals?.takeIf { it != 0 } ?: 2})"
 			"float64" -> "Float64"
 			"float32" -> "Float32"
 			else -> throwError(ctx, "$key: unsupported number format [$format]")
@@ -356,7 +357,7 @@ private fun throwError(ctx: JsonSchemaInspectorContext, msg: String, childAlias:
 	var current = ctx
 	var alias = "${ctx.alias}${childAlias?.let { ".$it" } ?: ""}"
 	while (current.parentCtx != null) {
-		current = current.parentCtx!!
+		current = current.parentCtx
 		alias = "${current.alias}.$alias"
 	}
 	logger.error { "$alias: $msg" }

@@ -102,6 +102,61 @@ list_hash_columns() {
            ORDER BY name FORMAT TSVRaw"
 }
 
+# Returns one already-formatted diff message per line for every column that
+# differs between the two tables — either missing on one side, or present in
+# both with a different type. Empty output means the structures match. The
+# message is composed in SQL so we don't have to deal with bash's tab-IFS
+# collapsing empty middle columns. Versioning columns (`_ver`, `_root_ver`)
+# are excluded since they're an impl-specific concern, like in the
+# content-hash step.
+table_structure_diff() {
+  local table="$1"
+  ch_curl "
+    SELECT
+      multiIf(
+        status = 'only_in_a', concat('only in $DB_A: ', name, ' ', type_a),
+        status = 'only_in_b', concat('only in $DB_B: ', name, ' ', type_b),
+        concat('type differs for ', name, ': ', type_a, ' vs ', type_b)
+      )
+    FROM (
+      SELECT 'only_in_a' AS status, name, type AS type_a, '' AS type_b
+      FROM system.columns
+      WHERE database = '$DB_A' AND table = '$table'
+        AND name NOT IN ('_ver', '_root_ver')
+        AND name NOT IN (
+          SELECT name FROM system.columns
+          WHERE database = '$DB_B' AND table = '$table'
+            AND name NOT IN ('_ver', '_root_ver')
+        )
+      UNION ALL
+      SELECT 'only_in_b', name, '', type
+      FROM system.columns
+      WHERE database = '$DB_B' AND table = '$table'
+        AND name NOT IN ('_ver', '_root_ver')
+        AND name NOT IN (
+          SELECT name FROM system.columns
+          WHERE database = '$DB_A' AND table = '$table'
+            AND name NOT IN ('_ver', '_root_ver')
+        )
+      UNION ALL
+      SELECT 'type_differs', a.name, a.type, b.type
+      FROM (
+        SELECT name, type FROM system.columns
+        WHERE database = '$DB_A' AND table = '$table'
+          AND name NOT IN ('_ver', '_root_ver')
+      ) AS a
+      INNER JOIN (
+        SELECT name, type FROM system.columns
+        WHERE database = '$DB_B' AND table = '$table'
+          AND name NOT IN ('_ver', '_root_ver')
+      ) AS b ON a.name = b.name
+      WHERE a.type != b.type
+    )
+    ORDER BY status, name
+    FORMAT TSVRaw
+  "
+}
+
 # FINAL is rejected by plain MergeTree (only Replacing/Collapsing/... support it).
 # Return "FINAL" only when the table engine accepts it.
 final_modifier() {
@@ -170,18 +225,18 @@ printf "%-45s %-20s %-6s %s\n" "table" "rows (A | B)" "match" "notes"
 printf -- '-%.0s' {1..95}; echo
 
 for t in "${common[@]}"; do
-  cols_a_nl="$(list_hash_columns "$DB_A" "$t")"
-  cols_b_nl="$(list_hash_columns "$DB_B" "$t")"
-
-  if [[ "$cols_a_nl" != "$cols_b_nl" ]]; then
-    printf "%-45s %-20s %-6s %s\n" "$t" "-" "no" "column set differs"
-    if [[ "$VERBOSE" == "1" ]]; then
-      diff <(echo "$cols_a_nl") <(echo "$cols_b_nl") | sed 's/^/    /'
-    fi
+  diff_rows="$(table_structure_diff "$t")"
+  if [[ -n "$diff_rows" ]]; then
+    diff_count="$(printf '%s\n' "$diff_rows" | wc -l | tr -d '[:space:]')"
+    printf "%-45s %-20s %-6s %s\n" "$t" "-" "no" "structure differs ($diff_count column(s))"
+    printf '%s\n' "$diff_rows" | sed 's/^/    /'
     mismatched=$((mismatched + 1))
     continue
   fi
 
+  # Structure matches — column set is identical on both sides, so it's safe to
+  # use either DB to enumerate the columns for the content-hash CSV.
+  cols_a_nl="$(list_hash_columns "$DB_A" "$t")"
   cols_csv=""
   while IFS= read -r col; do
     [[ -z "$col" ]] && continue
