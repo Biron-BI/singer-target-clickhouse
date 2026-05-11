@@ -59,7 +59,7 @@ sealed interface TargetMessage {
 	}
 
 	data class ActiveStreams(
-		val streams: List<String>,
+		val streams: Set<String>,
 	) : TargetMessage {
 		override val type = "ACTIVE_STREAMS"
 	}
@@ -194,7 +194,7 @@ class TargetMessageParser(
 			"DELETED_RECORD" -> TargetMessage.DeletedRecord(requiredStream, requireRow("DELETED_RECORD"))
 			"SCHEMA" -> buildSchema()
 			"STATE" -> TargetMessage.State(value = if (stateSeen) stateValue else null)
-			"ACTIVE_STREAMS" -> TargetMessage.ActiveStreams(streams = streamsList ?: emptyList())
+			"ACTIVE_STREAMS" -> TargetMessage.ActiveStreams(streams = streamsList.orEmpty().toSet())
 			else -> TargetMessage.Unknown("type=${type ?: "null"}")
 		}
 

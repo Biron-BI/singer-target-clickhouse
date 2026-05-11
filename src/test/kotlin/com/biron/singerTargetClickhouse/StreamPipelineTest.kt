@@ -75,7 +75,7 @@ class StreamPipelineTest : ShouldSpec({
 			// Strict mockk: any rename of "tickets" or "tickets__tags" would fail (no stub).
 		}
 
-		should("keeps subtables, extra-active tables, and tables already prefixed _dropped_/_archived_") {
+		should("keeps subtables of active streams and exact-name extra-active tables, ignores already-prefixed ones") {
 			val tables = listOf(
 				"tickets",          // active stream — keep
 				"tickets__tags",    // subtable of active stream — keep
@@ -87,15 +87,32 @@ class StreamPipelineTest : ShouldSpec({
 			)
 			val conn: TargetConnection = mockk {
 				every { listTables() } returns tables
+				every { renameObsoleteTable("audits__events") } returns QueryResult(emptyList(), 0)
 				every { renameObsoleteTable("legacy_metrics") } returns QueryResult(emptyList(), 0)
 			}
 
 			val out = StringWriter()
-			val input = """{"type":"ACTIVE_STREAMS","streams":["tickets"]}""".byteInputStream()
+			val input = """{"type":"ACTIVE_STREAMS","streams":["tickets", "nonExistingTable"]}""".byteInputStream()
 
-			val cfg = baseConfig.copy(extraActiveTables = listOf("audits"))
+			val cfg = baseConfig.copy(extraActiveTables = setOf("audits"))
 			StreamPipeline.forConfig(cfg, connectionFor(cfg, conn)).run(input, out)
 			// Strict mockk: any other rename would fail (no stub).
+		}
+
+		should("keeps an extra-active table whose name starts with the subtable separator") {
+			val conn: TargetConnection = mockk {
+				every { listTables() } returns listOf("product", "_singer_state")
+			}
+
+			val out = StringWriter()
+			val input = """{"type":"ACTIVE_STREAMS","streams":["product"]}""".byteInputStream()
+
+			val cfg = baseConfig.copy(
+				subtableSeparator = "_",
+				extraActiveTables = setOf("_singer_state"),
+			)
+			StreamPipeline.forConfig(cfg, connectionFor(cfg, conn)).run(input, out)
+			// Strict mockk: any rename would fail (no stub).
 		}
 
 		should("respects a custom subtable separator when matching active streams") {

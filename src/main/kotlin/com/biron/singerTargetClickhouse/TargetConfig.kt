@@ -25,7 +25,7 @@ data class TargetConfig(
 	val translateValues: Boolean = false,
 	val insertStreamTimeoutSec: Int = 180,
 	val finalizeConcurrency: Int = 3,
-	val extraActiveTables: List<String> = emptyList(),
+	val extraActiveTables: Set<String> = emptySet(),
 ) {
 	companion object {
 		private val objectMapper = jsonMapper {

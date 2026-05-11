@@ -85,7 +85,7 @@ class ClickhouseConnection internal constructor(
 		updateColumnOp(runQuery, jdbc, table, existing, newCol)
 
 	override fun renameObsoleteTable(table: String): QueryResult {
-		logger.info { "[$table] Renaming table $table" }
+		logger.info { "[$table] Renaming obsolete table $table" }
 		return runQuery(jdbc, "RENAME TABLE `$table` TO `${TargetConnection.DROPPED_TABLE_PREFIX}$table`", 2)
 	}
 

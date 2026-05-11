@@ -432,7 +432,7 @@ class StreamPipelineIntegrationTest : ShouldSpec({
 			showTables().also {
 				it shouldHaveSize 21
 				it.forEach { table ->
-					val protected = table.contains("ticket_audits") || table.contains("tickets")
+					val protected = table.contains("ticket_audits") || table == "tickets"
 					table.startsWith("_dropped_") shouldBe !protected
 				}
 			}

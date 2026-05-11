@@ -189,12 +189,12 @@ class StreamPipeline private constructor(
 	}
 
 	private fun handleActiveStreams(msg: TargetMessage.ActiveStreams) {
-		val activeNames = (msg.streams + config.extraActiveTables).toHashSet()
-		val sep = config.subtableSeparator
 		ch.listTables().forEach { table ->
 			if (table.startsWith(TargetConnection.DROPPED_TABLE_PREFIX)) return@forEach
 			if (table.startsWith(TargetConnection.ARCHIVED_TABLE_PREFIX)) return@forEach
-			if (table.substringBefore(sep) !in activeNames) ch.renameObsoleteTable(table)
+			if (table in config.extraActiveTables) return@forEach
+			if (table.substringBefore(config.subtableSeparator) in msg.streams) return@forEach
+			ch.renameObsoleteTable(table)
 		}
 	}
 }

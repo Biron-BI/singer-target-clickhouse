@@ -53,7 +53,7 @@ class TargetConfigTest : ShouldSpec({
 			translateValues = true,
 			insertStreamTimeoutSec = 45,
 			finalizeConcurrency = 8,
-			extraActiveTables = listOf("a", "b"),
+			extraActiveTables = setOf("a", "b"),
 		)
 	}
 
@@ -82,7 +82,7 @@ class TargetConfigTest : ShouldSpec({
 			database = "d",
 			translateValues = false,
 			insertStreamTimeoutSec = 120,
-			extraActiveTables = listOf("_singer_state"),
+			extraActiveTables = setOf("_singer_state"),
 		)
 	}
 
