@@ -47,12 +47,11 @@ class ClickhouseConnection internal constructor(
 	)
 	private val jdbc: JdbcTemplate = JdbcTemplate(dataSource)
 
-	private val httpClient: HttpClient = HttpClient.newBuilder()
-		.executor(Executors.newCachedThreadPool { r ->
-			Thread(r, "ch-http-worker-${threadSeq.getAndIncrement()}").apply { isDaemon = true }
-		})
-		.connectTimeout(Duration.ofSeconds(30))
-		.build()
+	// Shared across the throwaway HttpClient built for each insert — cheap to reuse, expensive
+	// to recreate. The HttpClient itself is not shared: see openRowWriter for why.
+	private val httpExecutor = Executors.newCachedThreadPool { r ->
+		Thread(r, "ch-http-worker-${threadSeq.getAndIncrement()}").apply { isDaemon = true }
+	}
 
 	private val baseUrl = "http://${config.host}:${config.port}"
 	private val authHeader = "Basic " + Base64.getEncoder()
@@ -89,8 +88,18 @@ class ClickhouseConnection internal constructor(
 		return runQuery(jdbc, "RENAME TABLE `$table` TO `${TargetConnection.DROPPED_TABLE_PREFIX}$table`", 2)
 	}
 
-	override fun openRowWriter(query: String): RowWriter =
-		rowWriterFactory(httpClient, insertUrl(query), authHeader)
+	// Each insert gets its own HttpClient, owned by the returned writer and closed with it.
+	// Reasoning: JDK HttpClient pools HTTP/1.1 connections without probing liveness, while
+	// ClickHouse closes idle keep-alive sockets after ~10s. A shared pool would eventually
+	// hand out a stale socket and fail with `IOException: HTTP/1.1 header parser received
+	// no bytes`. Per-call clients side-step the pool entirely.
+	override fun openRowWriter(query: String): RowWriter {
+		val httpClient = HttpClient.newBuilder()
+			.executor(httpExecutor)
+			.connectTimeout(Duration.ofSeconds(30))
+			.build()
+		return rowWriterFactory(httpClient, insertUrl(query), authHeader)
+	}
 
 	private fun insertUrl(query: String): URI {
 		val params = listOf(
@@ -315,6 +324,7 @@ class ClickhouseConnection internal constructor(
 	internal class HttpStreamingRowWriter internal constructor(
 		private val body: BlockingQueueInputStream,
 		private val responseFuture: CompletableFuture<HttpResponse<String>>,
+		private val onClose: () -> Unit = {},
 	) : RowWriter {
 
 		private var closed = false
@@ -333,7 +343,7 @@ class ClickhouseConnection internal constructor(
 					.POST(HttpRequest.BodyPublishers.ofInputStream { body })
 					.build()
 				val responseFuture = httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofString())
-				return HttpStreamingRowWriter(body, responseFuture)
+				return HttpStreamingRowWriter(body, responseFuture, onClose = httpClient::close)
 			}
 		}
 
@@ -364,6 +374,8 @@ class ClickhouseConnection internal constructor(
 				throw IllegalStateException("ClickHouse insert failed", e.cause ?: e)
 			} catch (e: Throwable) {
 				throw IllegalStateException("ClickHouse insert failed before server responded", e)
+			} finally {
+				onClose()
 			}
 			if (response.statusCode() !in 200..299) {
 				error("ClickHouse insert failed (${response.statusCode()}): ${response.body()}")

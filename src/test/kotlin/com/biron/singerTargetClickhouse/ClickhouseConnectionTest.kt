@@ -451,6 +451,52 @@ class ClickhouseConnectionTest : ShouldSpec({
 			body.copyTo(sink)
 			sink.toString(Charsets.UTF_8) shouldBe "hello\nworld\n"
 		}
+
+		should("close() invokes onClose exactly once on a successful response") {
+			val body = BlockingQueueInputStream()
+			val future = CompletableFuture.completedFuture(mockResponse(statusCode = 200, body = "ok"))
+			val onCloseCalls = AtomicInteger()
+			val underTest = HttpStreamingRowWriter(body, future, onClose = { onCloseCalls.incrementAndGet() })
+
+			underTest.close()
+
+			onCloseCalls.get() shouldBe 1
+		}
+
+		should("close() invokes onClose even when the response status is non-2xx") {
+			val body = BlockingQueueInputStream()
+			val future = CompletableFuture.completedFuture(mockResponse(statusCode = 500, body = "internal error"))
+			val onCloseCalls = AtomicInteger()
+			val underTest = HttpStreamingRowWriter(body, future, onClose = { onCloseCalls.incrementAndGet() })
+
+			shouldThrow<IllegalStateException> { underTest.close() }
+
+			onCloseCalls.get() shouldBe 1
+		}
+
+		should("close() invokes onClose even when the response future failed exceptionally") {
+			val body = BlockingQueueInputStream()
+			val failed = CompletableFuture<HttpResponse<String>>()
+			failed.completeExceptionally(RuntimeException("network glitch"))
+			val onCloseCalls = AtomicInteger()
+			val underTest = HttpStreamingRowWriter(body, failed, onClose = { onCloseCalls.incrementAndGet() })
+
+			shouldThrow<IllegalStateException> { underTest.close() }
+
+			onCloseCalls.get() shouldBe 1
+		}
+
+		should("close() does not invoke onClose a second time when called twice") {
+			val body = BlockingQueueInputStream()
+			val future = CompletableFuture.completedFuture(mockResponse(statusCode = 204, body = ""))
+			val onCloseCalls = AtomicInteger()
+			val underTest = HttpStreamingRowWriter(body, future, onClose = { onCloseCalls.incrementAndGet() })
+
+			underTest.close()
+			underTest.close()
+
+			onCloseCalls.get() shouldBe 1
+		}
 	}
 
 	context("BlockingQueueInputStream") {
