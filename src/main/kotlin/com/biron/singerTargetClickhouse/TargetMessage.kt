@@ -6,12 +6,22 @@ import com.fasterxml.jackson.core.JsonToken
 import com.fasterxml.jackson.core.StreamReadConstraints
 import com.fasterxml.jackson.databind.DeserializationFeature
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.fasterxml.jackson.databind.util.TokenBuffer
 import com.fasterxml.jackson.module.kotlin.jsonMapper
 import com.fasterxml.jackson.module.kotlin.kotlinModule
 import java.io.InputStream
 
 sealed interface TargetMessage {
 	val type: String
+
+	companion object {
+		const val TYPE_SCHEMA = "SCHEMA"
+		const val TYPE_RECORD = "RECORD"
+		const val TYPE_DELETED_RECORD = "DELETED_RECORD"
+		const val TYPE_STATE = "STATE"
+		const val TYPE_ACTIVE_STREAMS = "ACTIVE_STREAMS"
+		const val TYPE_UNKNOWN = "UNKNOWN"
+	}
 
 	/**
 	 * [meta] and [reader] are derived from the schema fields and built once by
@@ -28,7 +38,7 @@ sealed interface TargetMessage {
 		val meta: SourceMeta,
 		val reader: StreamReader,
 	) : TargetMessage {
-		override val type = "SCHEMA"
+		override val type = TYPE_SCHEMA
 	}
 
 	/** Decoded record body, slot layout matching the stream's [StreamReader]. */
@@ -36,7 +46,7 @@ sealed interface TargetMessage {
 		val stream: String,
 		val row: RecordRow,
 	) : TargetMessage {
-		override val type = "RECORD"
+		override val type = TYPE_RECORD
 	}
 
 	/**
@@ -49,24 +59,24 @@ sealed interface TargetMessage {
 		val stream: String,
 		val row: RecordRow,
 	) : TargetMessage {
-		override val type = "DELETED_RECORD"
+		override val type = TYPE_DELETED_RECORD
 	}
 
 	data class State(
 		/** Generic Jackson tree (Map / List / primitive / null). Re-serialized verbatim on output. */
 		val value: Any?,
 	) : TargetMessage {
-		override val type = "STATE"
+		override val type = TYPE_STATE
 	}
 
 	data class ActiveStreams(
 		val streams: Set<String>,
 	) : TargetMessage {
-		override val type = "ACTIVE_STREAMS"
+		override val type = TYPE_ACTIVE_STREAMS
 	}
 
 	data class Unknown(val raw: String) : TargetMessage {
-		override val type = "UNKNOWN"
+		override val type = TYPE_UNKNOWN
 	}
 }
 
@@ -123,9 +133,11 @@ class TargetMessageParser(
 
 	/**
 	 * Streaming envelope reader. Walks the outer message in source order. Singer producers
-	 * always emit `type` (and `stream` for record-bearing messages) before `record`; we
-	 * rely on that ordering to dispatch each `record` body straight into a [StreamReader]
-	 * with no intermediate object model. Messages that violate the ordering are rejected.
+	 * typically emit `type` and `stream` before `record`; in that case we dispatch each
+	 * `record` body straight into the matching [StreamReader] with no intermediate object
+	 * model. When `record` arrives before its required envelope fields we fall back to
+	 * buffering the body into a [TokenBuffer] and replaying it once `type` and `stream` are
+	 * known — correctness preserved, at the cost of an extra token copy on that path.
 	 */
 	private fun readEnvelope(parser: JsonParser): TargetMessage {
 		val acc = EnvelopeAccumulator()
@@ -151,9 +163,7 @@ class TargetMessageParser(
 			"schema" -> acc.schemaValue = parser.readValueAs(Any::class.java)
 			"key_properties" -> acc.keyProperties = readStringList(parser)
 			"clean_first" -> acc.cleanFirst = parser.currentToken == JsonToken.VALUE_TRUE
-			"cleaning_column" -> acc.cleaningColumn =
-				if (parser.currentToken == JsonToken.VALUE_NULL) null else parser.text
-
+			"cleaning_column" -> acc.cleaningColumn = if (parser.currentToken == JsonToken.VALUE_NULL) null else parser.text
 			"all_key_properties" -> acc.allKeyPropertiesRaw = parser.readValueAs(Any::class.java)
 			else -> parser.skipChildren()
 		}
@@ -161,25 +171,33 @@ class TargetMessageParser(
 
 	private fun readRecordField(parser: JsonParser, acc: EnvelopeAccumulator) {
 		val type = acc.type
-		if (type != "RECORD" && type != "DELETED_RECORD") {
-			// Either ordering violation (record before type) or a non-record message that
-			// happens to carry a `record` field — skip it; toMessage() will surface the
-			// right error if the type later turns out to be RECORD/DELETED_RECORD.
+		// Non-record envelope that happens to carry a `record` field (e.g. STATE) — discard it.
+		if (type != null && type != TargetMessage.TYPE_RECORD && type != TargetMessage.TYPE_DELETED_RECORD) {
 			parser.skipChildren()
 			return
 		}
+
 		val stream = acc.stream
-			?: error("Singer $type message must emit 'stream' before 'record'")
-		val reader = streamReaders[stream]
-			?: error("$type received before Schema is defined for stream=$stream")
-		acc.row = reader.read(parser)
+		if (type != null && stream != null) {
+			acc.recordRow = readerFor(type, stream).read(parser)
+		} else {
+			// Fallback: one of `type` / `stream` is still unknown. Buffer the record body and decode it once requireRow() runs at end-of-envelope.
+			// Producers should emit `type`/`stream` first for performance; this path adds a per-record token copy.
+			val buffer = TokenBuffer(parser.codec, false)
+			buffer.copyCurrentStructure(parser)
+			acc.recordBuffer = buffer
+		}
 	}
+
+	private fun readerFor(messageType: String, stream: String): StreamReader =
+		streamReaders[stream] ?: error("$messageType received before Schema is defined for stream=$stream")
 
 	/** Mutable accumulator for one Singer envelope; SRP-isolates field collection from message construction. */
 	private inner class EnvelopeAccumulator {
 		var type: String? = null
 		var stream: String? = null
-		var row: RecordRow? = null
+		var recordRow: RecordRow? = null
+		var recordBuffer: TokenBuffer? = null
 		var stateValue: Any? = null
 		var stateSeen: Boolean = false
 		var streamsList: List<String>? = null
@@ -192,17 +210,25 @@ class TargetMessageParser(
 		val requiredStream: String
 			get() = stream ?: error("Singer message of type=${type ?: "?"} requires a [stream] field")
 
-		fun toMessage(): TargetMessage = when (type) {
-			"RECORD" -> TargetMessage.Record(requiredStream, requireRow("RECORD"))
-			"DELETED_RECORD" -> TargetMessage.DeletedRecord(requiredStream, requireRow("DELETED_RECORD"))
-			"SCHEMA" -> buildSchema()
-			"STATE" -> TargetMessage.State(value = if (stateSeen) stateValue else null)
-			"ACTIVE_STREAMS" -> TargetMessage.ActiveStreams(streams = streamsList.orEmpty().toSet())
+		fun toMessage(): TargetMessage = when (val t = type) {
+			TargetMessage.TYPE_RECORD -> TargetMessage.Record(requiredStream, requireRecordRow(t))
+			TargetMessage.TYPE_DELETED_RECORD -> TargetMessage.DeletedRecord(requiredStream, requireRecordRow(t))
+			TargetMessage.TYPE_SCHEMA -> buildSchema()
+			TargetMessage.TYPE_STATE -> TargetMessage.State(value = if (stateSeen) stateValue else null)
+			TargetMessage.TYPE_ACTIVE_STREAMS -> TargetMessage.ActiveStreams(streams = streamsList.orEmpty().toSet())
 			else -> TargetMessage.Unknown("type=${type ?: "null"}")
 		}
 
-		private fun requireRow(messageType: String): RecordRow =
-			row ?: error("Singer $messageType message must emit 'type' and 'stream' before 'record' (stream=$requiredStream)")
+		private fun requireRecordRow(messageType: String): RecordRow =
+			recordRow ?: run {
+				val stream = requiredStream
+				val buffer = recordBuffer ?: error("Singer $messageType message is missing 'record' field (stream=$stream)")
+				val reader = readerFor(messageType, stream)
+				buffer.asParser().use { bufParser ->
+					bufParser.nextToken()
+					reader.read(bufParser)
+				}
+			}
 
 		private fun buildSchema(): TargetMessage.Schema {
 			val schema = schemaValue?.let { objectMapper.convertValue(it, JsonSchema::class.java) } ?: JsonSchema()

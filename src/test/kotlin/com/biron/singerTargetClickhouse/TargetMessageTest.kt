@@ -186,12 +186,78 @@ class TargetMessageTest : ShouldSpec({
 		}.message shouldContain "DELETED_RECORD received before Schema"
 	}
 
-	should("RECORD with type before stream still throws when stream missing") {
+	should("RECORD without stream field rejects message construction") {
 		val underTest = aUnderTest()
 		underTest.readSingle(userSchemaLine)
 		shouldThrow<IllegalStateException> {
 			underTest.readSingle("""{"type":"RECORD","record":{"id":1}}""")
-		}.message shouldContain "must emit 'stream' before 'record'"
+		}.message shouldContain "requires a [stream] field"
+	}
+
+	should("RECORD message with no 'record' field at all reports the missing record") {
+		val underTest = aUnderTest()
+		underTest.readSingle(userSchemaLine)
+		shouldThrow<IllegalStateException> {
+			underTest.readSingle("""{"type":"RECORD","stream":"users"}""")
+		}.message shouldContain "missing 'record' field"
+	}
+
+	should("buffers RECORD body when 'record' is emitted before 'type' and 'stream'") {
+		val underTest = aUnderTest(translateValues = true)
+		underTest.readSingle(userSchemaLine)
+
+		val msg = underTest.readSingle(
+			"""{"record":{"id":7,"name":"bob"},"stream":"users","type":"RECORD"}"""
+		).shouldBeInstanceOf<TargetMessage.Record>()
+
+		msg.stream shouldBe "users"
+		msg.row.toList() shouldBe listOf(7L, "bob")
+	}
+
+	should("buffers RECORD body when 'record' is emitted before 'type'") {
+		val underTest = aUnderTest(translateValues = true)
+		underTest.readSingle(userSchemaLine)
+
+		val msg = underTest.readSingle(
+			"""{"stream":"users","record":{"id":7,"name":"bob"},"type":"RECORD"}"""
+		).shouldBeInstanceOf<TargetMessage.Record>()
+
+		msg.row.toList() shouldBe listOf(7L, "bob")
+	}
+
+	should("buffers RECORD body when 'record' is emitted before 'stream'") {
+		val underTest = aUnderTest(translateValues = true)
+		underTest.readSingle(userSchemaLine)
+
+		val msg = underTest.readSingle(
+			"""{"type":"RECORD","record":{"id":7,"name":"bob"},"stream":"users"}"""
+		).shouldBeInstanceOf<TargetMessage.Record>()
+
+		msg.row.toList() shouldBe listOf(7L, "bob")
+	}
+
+	should("buffers DELETED_RECORD body when 'record' is emitted before 'type' and 'stream'") {
+		val underTest = aUnderTest(translateValues = true)
+		underTest.readSingle(userSchemaLine)
+
+		val msg = underTest.readSingle(
+			"""{"record":{"id":9},"stream":"users","type":"DELETED_RECORD"}"""
+		).shouldBeInstanceOf<TargetMessage.DeletedRecord>()
+
+		msg.row.toList() shouldBe listOf(9L, null)
+	}
+
+	should("buffered RECORD without prior SCHEMA throws the schema-missing error") {
+		shouldThrow<IllegalStateException> {
+			aUnderTest().readSingle("""{"record":{"id":1},"type":"RECORD","stream":"orphans"}""")
+		}.message shouldContain "before Schema is defined for stream=orphans"
+	}
+
+	should("STATE with 'record' emitted before 'type' still ignores the record body") {
+		val msg = aUnderTest().readSingle(
+			"""{"record":{"id":1},"type":"STATE","value":{"bookmark":"x"}}"""
+		).shouldBeInstanceOf<TargetMessage.State>()
+		msg.value shouldBe mapOf("bookmark" to "x")
 	}
 
 	should("SCHEMA without stream field rejects message construction") {
