@@ -127,6 +127,19 @@ class StreamPipelineTest : ShouldSpec({
 			val cfg = baseConfig.copy(subtableSeparator = "::")
 			StreamPipeline.forConfig(cfg, connectionFor(cfg, conn)).run(input, out)
 		}
+
+		should("keeps an active stream whose name contains the subtable separator (flat schema)") {
+			val conn: TargetConnection = mockk {
+				every { listTables() } returns listOf("foo__bar", "baz", "obsolete")
+				every { renameObsoleteTable("obsolete") } returns QueryResult(emptyList(), 0)
+			}
+
+			val out = StringWriter()
+			val input = """{"type":"ACTIVE_STREAMS","streams":["foo__bar", "baz"]}""".byteInputStream()
+
+			StreamPipeline.forConfig(baseConfig, connectionFor(baseConfig, conn)).run(input, out)
+			// Strict mockk: any rename of "foo__bar" would fail (no stub).
+		}
 	}
 
 	context("StreamPipeline dispatch (with injected fake factory)") {

@@ -193,7 +193,7 @@ class StreamPipeline private constructor(
 			if (table.startsWith(TargetConnection.DROPPED_TABLE_PREFIX)) return@forEach
 			if (table.startsWith(TargetConnection.ARCHIVED_TABLE_PREFIX)) return@forEach
 			if (table in config.extraActiveTables) return@forEach
-			if (table.substringBefore(config.subtableSeparator) in msg.streams) return@forEach
+			if (table in msg.streams || table.substringBefore(config.subtableSeparator) in msg.streams) return@forEach
 			ch.renameObsoleteTable(table)
 		}
 	}
