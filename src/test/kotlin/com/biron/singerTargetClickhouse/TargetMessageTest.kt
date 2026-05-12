@@ -229,6 +229,19 @@ class TargetMessageTest : ShouldSpec({
 		b.children shouldBe emptyMap()
 	}
 
+	should("accepts RECORD with a string field larger than Jackson's default 20MB StreamReadConstraints limit") {
+		val underTest = aUnderTest(translateValues = true)
+		underTest.readSingle(userSchemaLine)
+
+		// Default Jackson StreamReadConstraints.maxStringLength is 20_000_000; go just past it.
+		val bigString = "a".repeat(20_000_500)
+		val msg = underTest.readSingle(
+			"""{"type":"RECORD","stream":"users","record":{"id":1,"name":"$bigString"}}"""
+		).shouldBeInstanceOf<TargetMessage.Record>()
+
+		(msg.row[1] as String).length shouldBe bigString.length
+	}
+
 	should("re-registers the StreamReader on a second SCHEMA for the same stream") {
 		val underTest = aUnderTest(translateValues = true)
 		underTest.readSingle(userSchemaLine)

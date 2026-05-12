@@ -3,6 +3,7 @@ package com.biron.singerTargetClickhouse
 import com.biron.singer.core.domain.JsonSchema
 import com.fasterxml.jackson.core.JsonParser
 import com.fasterxml.jackson.core.JsonToken
+import com.fasterxml.jackson.core.StreamReadConstraints
 import com.fasterxml.jackson.databind.DeserializationFeature
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.module.kotlin.jsonMapper
@@ -101,6 +102,8 @@ class TargetMessageParser(
 	private val objectMapper: ObjectMapper = jsonMapper {
 		addModule(kotlinModule())
 		disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
+	}.also {
+		it.factory.setStreamReadConstraints(StreamReadConstraints.builder().maxStringLength(Int.MAX_VALUE).build())
 	}
 
 	fun createParser(input: InputStream): JsonParser = objectMapper.factory.createParser(input).apply { codec = objectMapper }
