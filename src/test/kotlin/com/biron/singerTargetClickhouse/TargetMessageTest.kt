@@ -1,11 +1,17 @@
 package com.biron.singerTargetClickhouse
 
+import ch.qos.logback.classic.Level
+import ch.qos.logback.classic.Logger
+import ch.qos.logback.classic.spi.ILoggingEvent
+import ch.qos.logback.core.read.ListAppender
 import com.fasterxml.jackson.core.JsonParseException
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.ShouldSpec
+import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.types.shouldBeInstanceOf
+import org.slf4j.LoggerFactory
 
 class TargetMessageTest : ShouldSpec({
 	fun aUnderTest(translateValues: Boolean = false): TargetMessageParser =
@@ -16,6 +22,21 @@ class TargetMessageTest : ShouldSpec({
 
 	val userSchemaLine =
 		"""{"type":"SCHEMA","stream":"users","schema":{"type":["null","object"],"properties":{"id":{"type":"integer"},"name":{"type":"string"}}},"key_properties":["id"]}"""
+
+	val petsSchemaLine =
+		"""{"type":"SCHEMA","stream":"pets","schema":{"type":["null","object"],"properties":{"id":{"type":"integer"},"name":{"type":"string"}}},"key_properties":["id"]}"""
+
+	fun captureWarns(loggerName: String, block: () -> Unit): List<String> {
+		val logbackLogger = LoggerFactory.getLogger(loggerName) as Logger
+		val appender = ListAppender<ILoggingEvent>().apply { start() }
+		logbackLogger.addAppender(appender)
+		try {
+			block()
+		} finally {
+			logbackLogger.detachAppender(appender)
+		}
+		return appender.list.filter { it.level == Level.WARN }.map { it.formattedMessage }
+	}
 
 	should("parses SCHEMA message with minimal fields") {
 		val msg = aUnderTest().readSingle(
@@ -258,6 +279,26 @@ class TargetMessageTest : ShouldSpec({
 			"""{"record":{"id":1},"type":"STATE","value":{"bookmark":"x"}}"""
 		).shouldBeInstanceOf<TargetMessage.State>()
 		msg.value shouldBe mapOf("bookmark" to "x")
+	}
+
+	should("logs one WARN per stream when records arrive 'record'-before-required-fields") {
+		val warns = captureWarns("com.biron.singerTargetClickhouse") {
+			val underTest = aUnderTest(translateValues = true)
+			underTest.readSingle(userSchemaLine) // SCHEMA for stream=users
+			underTest.readSingle(petsSchemaLine) // SCHEMA for stream=pets
+
+			// Two out-of-order RECORDs for stream=users → one WARN.
+			underTest.readSingle("""{"record":{"id":1,"name":"a"},"stream":"users","type":"RECORD"}""")
+			underTest.readSingle("""{"record":{"id":2,"name":"b"},"stream":"users","type":"RECORD"}""")
+			// One out-of-order RECORD for stream=pets → one WARN.
+			underTest.readSingle("""{"record":{"id":99,"name":"rex"},"stream":"pets","type":"RECORD"}""")
+			// In-order RECORD for stream=users → no WARN.
+			underTest.readSingle("""{"type":"RECORD","stream":"users","record":{"id":3,"name":"c"}}""")
+		}
+
+		warns shouldHaveSize 2
+		warns[0].shouldContain("stream=users").shouldContain("buffering")
+		warns[1] shouldContain "stream=pets"
 	}
 
 	should("SCHEMA without stream field rejects message construction") {

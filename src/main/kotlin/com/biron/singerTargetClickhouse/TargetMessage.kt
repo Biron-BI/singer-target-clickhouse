@@ -9,7 +9,10 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.databind.util.TokenBuffer
 import com.fasterxml.jackson.module.kotlin.jsonMapper
 import com.fasterxml.jackson.module.kotlin.kotlinModule
+import io.github.oshai.kotlinlogging.KotlinLogging
 import java.io.InputStream
+
+private val logger = KotlinLogging.logger {}
 
 sealed interface TargetMessage {
 	val type: String
@@ -108,6 +111,9 @@ class TargetMessageParser(
 	private val translateValues: Boolean,
 ) {
 	private val streamReaders: MutableMap<String, StreamReader> = HashMap()
+
+	/** Streams for which we have already warned about an out-of-order `record` field. One log line per stream, not per record. */
+	private val bufferedRecordWarnedStreams: MutableSet<String> = HashSet()
 
 	private val objectMapper: ObjectMapper = jsonMapper {
 		addModule(kotlinModule())
@@ -223,6 +229,11 @@ class TargetMessageParser(
 			recordRow ?: run {
 				val stream = requiredStream
 				val buffer = recordBuffer ?: error("Singer $messageType message is missing 'record' field (stream=$stream)")
+				if (bufferedRecordWarnedStreams.add(stream)) {
+					logger.warn {
+						"Singer $messageType for stream=$stream emitted 'record' before 'type'/'stream'; buffering the body and decoding it at end-of-envelope (which reduces performance). Emit 'type' and 'stream' first to use the streaming and optimized path."
+					}
+				}
 				val reader = readerFor(messageType, stream)
 				buffer.asParser().use { bufParser ->
 					bufParser.nextToken()
