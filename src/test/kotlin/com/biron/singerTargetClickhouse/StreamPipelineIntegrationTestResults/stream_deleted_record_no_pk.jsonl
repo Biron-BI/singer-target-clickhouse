@@ -1,0 +1,3 @@
+{"type": "SCHEMA", "stream": "users", "schema": {"properties": {"id": {"type": ["integer"]}, "name": {"type": ["null", "string"]}}, "type": ["null", "object"]}, "key_properties": []}
+{"type": "RECORD", "stream": "users", "record": {"id": 1, "name": "alice"}}
+{"type": "DELETED_RECORD", "stream": "users", "record": {"id": 1}}

@@ -1,0 +1,5 @@
+{"type": "SCHEMA", "stream": "users", "schema": {"properties": {"id": {"type": ["integer"]}, "name": {"type": ["null", "string"]}, "age": {"type": ["null", "integer"]}}, "type": ["null", "object"]}, "key_properties": ["id"]}
+{"type": "RECORD", "stream": "users", "record": {"id": 1, "name": "alice", "age": 30}}
+{"type": "RECORD", "stream": "users", "record": {"id": 2, "name": "bob", "age": 25}}
+{"type": "RECORD", "stream": "users", "record": {"id": 3, "name": "carol", "age": 40}}
+{"type": "DELETED_RECORD", "stream": "users", "record": {"id": 2}}
