@@ -16,6 +16,8 @@ import java.nio.charset.StandardCharsets
 import java.time.Duration
 import java.util.*
 import java.util.concurrent.*
+import java.util.concurrent.locks.ReentrantLock
+import kotlin.concurrent.withLock
 import kotlin.math.pow
 
 private val logger = KotlinLogging.logger {}
@@ -272,23 +274,53 @@ class ClickhouseConnection internal constructor(
 	 * and recycles them between batches — PipedInputStream would then raise
 	 * "Read end dead" on the next write after the original read thread died.
 	 */
-	internal class BlockingQueueInputStream : InputStream() {
-		private val queue = LinkedBlockingQueue<ByteArray>()
+	internal class BlockingQueueInputStream(
+		private val maxBufferedBytes: Int = DEFAULT_MAX_BUFFERED_BYTES,
+	) : InputStream() {
+		private val lock = ReentrantLock()
+		private val notFull = lock.newCondition()
+		private val notEmpty = lock.newCondition()
+		private val chunks = ArrayDeque<ByteArray>()
+		private var bufferedBytes: Int = 0
 		private var current: ByteArray = EMPTY
 		private var pos: Int = 0
-
-		@Volatile
 		private var completed: Boolean = false
 
+		/**
+		 * Enqueue [bytes], blocking up to [timeoutMs] while the buffer is full. Returns false only
+		 * when the timeout elapses with no room — the caller then decides whether to retry or bail
+		 * (e.g. because the server failed). An empty buffer always admits the next chunk, so a single
+		 * chunk larger than the cap cannot deadlock.
+		 */
+		fun offer(bytes: ByteArray, timeoutMs: Long): Boolean {
+			if (bytes.isEmpty()) return true
+			lock.withLock {
+				var remainingNanos = TimeUnit.MILLISECONDS.toNanos(timeoutMs)
+				while (!completed && bufferedBytes > 0 && bufferedBytes + bytes.size > maxBufferedBytes) {
+					if (remainingNanos <= 0) return false
+					remainingNanos = notFull.awaitNanos(remainingNanos)
+				}
+				if (completed) return true // stream is closing; drop silently, matching put-after-complete
+				chunks.addLast(bytes)
+				bufferedBytes += bytes.size
+				notEmpty.signal()
+				return true
+			}
+		}
+
+		/** Unbounded-timeout [offer]: blocks until there is room (or the stream completes). */
 		fun put(bytes: ByteArray) {
-			if (completed || bytes.isEmpty()) return
-			queue.put(bytes)
+			offer(bytes, Long.MAX_VALUE)
 		}
 
 		fun complete() {
-			if (completed) return
-			completed = true
-			queue.put(EOF)
+			lock.withLock {
+				if (completed) return
+				completed = true
+				// Wake any blocked producer (it will see completed) and any waiting consumer.
+				notFull.signalAll()
+				notEmpty.signalAll()
+			}
 		}
 
 		override fun read(): Int {
@@ -307,8 +339,13 @@ class ClickhouseConnection internal constructor(
 
 		private fun ensureAvailable(): Boolean {
 			while (pos >= current.size) {
-				val next = queue.take()
-				if (next === EOF) return false
+				val next = lock.withLock {
+					while (chunks.isEmpty() && !completed) notEmpty.await()
+					chunks.pollFirst()?.also {
+						bufferedBytes -= it.size
+						notFull.signal() // releasing budget lets a blocked producer proceed
+					}
+				} ?: return false // completed and fully drained
 				current = next
 				pos = 0
 			}
@@ -317,7 +354,9 @@ class ClickhouseConnection internal constructor(
 
 		companion object {
 			private val EMPTY = ByteArray(0)
-			private val EOF = ByteArray(0)
+
+			/** Cap on bytes buffered in-flight to ClickHouse before [offer]/[put] blocks the producer. */
+			const val DEFAULT_MAX_BUFFERED_BYTES: Int = 64 * 1024 * 1024
 		}
 	}
 
@@ -331,6 +370,10 @@ class ClickhouseConnection internal constructor(
 
 		companion object {
 			private const val CLOSE_RESPONSE_TIMEOUT_SEC = 30L
+
+			// How long write() blocks on a full buffer before re-checking the server's response.
+			// Short enough that a failed insert surfaces promptly; long enough to avoid busy-spinning.
+			private const val BACKPRESSURE_POLL_MS = 50L
 
 			// No per-request timeout: one insert stream can stay open for the whole ingestion
 			// of a stream (millions of rows). Idle protection is handled on the caller side by
@@ -350,15 +393,23 @@ class ClickhouseConnection internal constructor(
 		override fun write(bytes: ByteArray) {
 			// If the server rejected the request mid-stream, surface the error now instead of
 			// silently dropping rows into a queue nobody is draining.
-			if (responseFuture.isDone) {
-				try {
-					val resp = responseFuture.get(0, TimeUnit.SECONDS)
-					error("ClickHouse insert completed prematurely (${resp.statusCode()}): ${resp.body()}")
-				} catch (e: ExecutionException) {
-					throw IllegalStateException("ClickHouse insert failed mid-stream", e.cause ?: e)
-				}
+			failIfServerFinished()
+			// The body queue is bounded, so offer() applies backpressure when ClickHouse reads slower
+			// than we produce. While blocked we keep re-checking the response: a stalled or failed
+			// server then surfaces as an error instead of hanging the producer forever.
+			while (!body.offer(bytes, BACKPRESSURE_POLL_MS)) {
+				failIfServerFinished()
 			}
-			body.put(bytes)
+		}
+
+		private fun failIfServerFinished() {
+			if (!responseFuture.isDone) return
+			try {
+				val resp = responseFuture.get(0, TimeUnit.SECONDS)
+				error("ClickHouse insert completed prematurely (${resp.statusCode()}): ${resp.body()}")
+			} catch (e: ExecutionException) {
+				throw IllegalStateException("ClickHouse insert failed mid-stream", e.cause ?: e)
+			}
 		}
 
 		override fun close() {

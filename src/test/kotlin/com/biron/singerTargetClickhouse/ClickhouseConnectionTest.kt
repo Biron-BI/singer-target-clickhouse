@@ -21,7 +21,11 @@ import io.mockk.slot
 import org.springframework.jdbc.core.JdbcTemplate
 import java.net.http.HttpResponse
 import java.util.concurrent.CompletableFuture
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
 import java.util.concurrent.atomic.AtomicInteger
+import kotlin.concurrent.thread
 
 class ClickhouseConnectionTest : ShouldSpec({
 
@@ -438,6 +442,27 @@ class ClickhouseConnectionTest : ShouldSpec({
 			}
 		}
 
+		should("write() surfaces a server failure that arrives while it is blocked on a full buffer") {
+			val body = BlockingQueueInputStream(maxBufferedBytes = 4)
+			val future = CompletableFuture<HttpResponse<String>>()
+			val underTest = HttpStreamingRowWriter(body, future)
+
+			underTest.write(ByteArray(4)) // fills the buffer (admitted into an empty buffer)
+
+			// Second write blocks on the full buffer; capture how it eventually returns.
+			val outcome = CompletableFuture<Throwable?>()
+			thread(start = true, isDaemon = true, name = "test-blocked-writer") {
+				outcome.complete(runCatching { underTest.write(ByteArray(4)) }.exceptionOrNull())
+			}
+			shouldThrow<TimeoutException> { outcome.get(300, TimeUnit.MILLISECONDS) } // must still be blocked
+
+			// Server then fails: the blocked write must wake and surface the error, not hang forever.
+			future.completeExceptionally(RuntimeException("connection reset"))
+			val thrown = outcome.get(5, TimeUnit.SECONDS)
+			thrown.shouldBeInstanceOf<IllegalStateException>()
+			thrown.message shouldContain "mid-stream"
+		}
+
 		should("write() forwards bytes to the body queue when the future is still in-flight") {
 			val body = BlockingQueueInputStream()
 			val future = CompletableFuture<HttpResponse<String>>() // never completes
@@ -542,6 +567,74 @@ class ClickhouseConnectionTest : ShouldSpec({
 			underTest.complete()
 			underTest.complete()
 			underTest.read() shouldBe -1
+		}
+
+		should("put() blocks the producer once maxBufferedBytes is full, then releases it when the consumer drains") {
+			val underTest = BlockingQueueInputStream(maxBufferedBytes = 16)
+			underTest.put(ByteArray(16)) // fills the buffer exactly (an empty buffer always admits one chunk)
+
+			val unblocked = CountDownLatch(1)
+			thread(start = true, isDaemon = true, name = "test-producer") {
+				underTest.put(ByteArray(16)) // must block: buffer is full
+				unblocked.countDown()
+			}
+
+			// While the buffer stays full the producer must not make progress (no backpressure today → fails).
+			unblocked.await(300, TimeUnit.MILLISECONDS) shouldBe false
+
+			// Draining the first chunk frees the budget and must release the blocked producer.
+			underTest.read(ByteArray(16), 0, 16) shouldBe 16
+			unblocked.await(5, TimeUnit.SECONDS) shouldBe true
+		}
+
+		should("offer() returns false when the buffer stays full for the whole timeout") {
+			val underTest = BlockingQueueInputStream(maxBufferedBytes = 4)
+			underTest.put(ByteArray(4)) // fills the buffer
+
+			underTest.offer(ByteArray(4), 50) shouldBe false
+		}
+
+		should("caps resident bytes at the buffer size, so a fast producer cannot exhaust the heap when the consumer stalls (the original OOM)") {
+			val cap = 256 * 1024 // 256 KiB ceiling
+			val chunkSize = 4 * 1024 // 4 KiB per write
+			val totalChunks = 100_000 // ~400 MiB total — would all be resident at once under the old unbounded queue
+			val maxResidentChunks = cap / chunkSize // 64
+
+			val underTest = BlockingQueueInputStream(maxBufferedBytes = cap)
+			val enqueued = AtomicInteger(0)
+			val producer = thread(start = true, isDaemon = true, name = "test-bulk-producer") {
+				repeat(totalChunks) {
+					underTest.put(ByteArray(chunkSize))
+					enqueued.incrementAndGet()
+				}
+				underTest.complete()
+			}
+
+			// Nothing is being read yet: the producer fills the cap and then must block. Wait for that.
+			val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
+			while (producer.state !in setOf(Thread.State.WAITING, Thread.State.TIMED_WAITING) &&
+				System.nanoTime() < deadline
+			) {
+				Thread.onSpinWait()
+			}
+
+			// The OOM-prevention invariant: it could NOT enqueue all ~400 MiB. Peak resident bytes
+			// stay pinned at the cap regardless of how much the producer wants to push.
+			// (Under the old unbounded queue this would already be 100_000.)
+			(enqueued.get() <= maxResidentChunks + 1) shouldBe true
+
+			// Releasing the consumer lets the entire volume stream through, memory still bounded.
+			val readBuf = ByteArray(16 * 1024)
+			var totalRead = 0L
+			while (true) {
+				val n = underTest.read(readBuf, 0, readBuf.size)
+				if (n < 0) break
+				totalRead += n
+			}
+
+			totalRead shouldBe totalChunks.toLong() * chunkSize
+			producer.join(TimeUnit.SECONDS.toMillis(10))
+			enqueued.get() shouldBe totalChunks
 		}
 	}
 })
