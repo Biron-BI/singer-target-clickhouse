@@ -1,4 +1,4 @@
-FROM azul/zulu-openjdk-debian:21.0.1-21.30-jre-headless
+FROM azul/zulu-openjdk-debian:21.0.12.1-21.52-jre-headless
 
 WORKDIR /app
 
