@@ -47,6 +47,8 @@ class StreamPipeline private constructor(
 	}
 
 	fun run(input: InputStream, output: Writer, streamsToReplace: List<String> = emptyList()) {
+		// Logged once here, not per message: ACTIVE_STREAMS can repeat many times in a run.
+		if (config.ignoreActiveStreams) logger.info { "ignore_active_streams is set: ACTIVE_STREAMS messages will be skipped." }
 		val state = ProcessingState(streamsToReplace.toMutableList(), ch.listTables().toMutableList())
 		val processors = linkedMapOf<String, StreamProcessor>()
 		val errSink = ErrorSink()
@@ -149,7 +151,7 @@ class StreamPipeline private constructor(
 			is TargetMessage.Record -> requireProcessor(processors, msg.stream).processRecord(msg.row, lineCount, abort)
 			is TargetMessage.DeletedRecord -> requireProcessor(processors, msg.stream).processDeletedRecord(msg.row)
 			is TargetMessage.State -> handleState(msg, processors, output)
-			is TargetMessage.ActiveStreams -> handleActiveStreams(msg)
+			is TargetMessage.ActiveStreams -> if (!config.ignoreActiveStreams) handleActiveStreams(msg)
 			is TargetMessage.Unknown -> logger.warn {
 				"Message type not handled at line $lineCount starting with [${msg.raw.take(50)}]"
 			}
