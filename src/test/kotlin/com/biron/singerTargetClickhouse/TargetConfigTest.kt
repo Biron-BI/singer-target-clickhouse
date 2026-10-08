@@ -36,6 +36,7 @@ class TargetConfigTest : ShouldSpec({
 				"finalize_concurrency": 8,
 				"subtable_separator": "::",
 				"extra_active_tables": ["a", "b"],
+				"ignore_active_streams": true,
 				"logging_level": "DEBUG"
 			}
 		""".trimIndent()
@@ -54,6 +55,7 @@ class TargetConfigTest : ShouldSpec({
 			insertStreamTimeoutSec = 45,
 			finalizeConcurrency = 8,
 			extraActiveTables = setOf("a", "b"),
+			ignoreActiveStreams = true,
 		)
 	}
 

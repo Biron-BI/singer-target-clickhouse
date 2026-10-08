@@ -75,6 +75,22 @@ class StreamPipelineTest : ShouldSpec({
 			// Strict mockk: any rename of "tickets" or "tickets__tags" would fail (no stub).
 		}
 
+		should("ignores ACTIVE_STREAMS entirely when ignore_active_streams is set") {
+			val conn: TargetConnection = mockk {
+				every { listTables() } returns listOf("tickets", "obsolete")
+			}
+			// Strict mockk: renameObsoleteTable is unstubbed, so any rename fails the test.
+
+			val out = StringWriter()
+			val input = """
+				{"type":"ACTIVE_STREAMS","streams":["tickets"]}
+				{"type":"ACTIVE_STREAMS","streams":["obsolete"]}
+			""".trimIndent().byteInputStream()
+
+			val cfg = baseConfig.copy(ignoreActiveStreams = true)
+			StreamPipeline.forConfig(cfg, connectionFor(cfg, conn)).run(input, out)
+		}
+
 		should("keeps subtables of active streams and exact-name extra-active tables, ignores already-prefixed ones") {
 			val tables = listOf(
 				"tickets",          // active stream — keep
