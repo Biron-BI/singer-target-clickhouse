@@ -502,6 +502,78 @@ class JsonSchemaInspectorTest : ShouldSpec({
 		}
 	}
 
+	context("buildMeta with partition_by") {
+		val eventsSchema = JsonSchema(
+			type = listOf("null", "object"),
+			properties = mapOf(
+				"id" to JsonSchema(type = listOf("integer")),
+				"true" to JsonSchema(type = listOf("integer")),
+				"attributes" to JsonSchema(
+					type = listOf("null", "object"),
+					properties = mapOf(
+						"timestamp" to JsonSchema(type = listOf("null", "integer")),
+						"datetime" to JsonSchema(type = listOf("null", "string")),
+						"\$ts" to JsonSchema(type = listOf("integer")),
+					),
+				),
+				"tags" to JsonSchema(
+					type = listOf("array"),
+					items = JsonSchema(type = listOf("object"), properties = mapOf("at" to JsonSchema(type = listOf("integer")))),
+				),
+			),
+		)
+
+		fun metaPartitionedBy(vararg property: String, converter: PartitionSpec.Converter = PartitionSpec.Converter.YYYYMM) =
+			buildMeta(
+				JsonSchemaInspectorContext(
+					"events", eventsSchema, listOf("id"),
+					partitionSpec = PartitionSpec(property.toList(), PartitionSpec.Type.TIMESTAMP, converter),
+				),
+			)
+
+		should("resolves a nested property into an expression computed in UTC") {
+			val meta = metaPartitionedBy("attributes", "timestamp")
+
+			meta.partitionBy shouldBe PartitionBy(
+				column = "attributes__timestamp",
+				expression = "toYYYYMM(toDateTime(`attributes__timestamp`, 'UTC'))",
+			)
+			meta.children.single().partitionBy shouldBe null
+		}
+
+		should("uses toYear for the YYYY converter") {
+			metaPartitionedBy("attributes", "timestamp", converter = PartitionSpec.Converter.YYYY)
+				.partitionBy?.expression shouldBe "toYear(toDateTime(`attributes__timestamp`, 'UTC'))"
+		}
+
+		should("quotes the column, so that a name like true is not read as a value") {
+			metaPartitionedBy("true").partitionBy?.expression shouldBe "toYYYYMM(toDateTime(`true`, 'UTC'))"
+		}
+
+		should("accepts a key property") {
+			metaPartitionedBy("id").partitionBy?.expression shouldBe "toYYYYMM(toDateTime(`id`, 'UTC'))"
+		}
+
+		should("leaves the column nullability as declared by the schema") {
+			metaPartitionedBy("attributes", "timestamp").simpleColumnMappings
+				.single { it.prop == "attributes${NESTED_SUB_OBJECT_SEPARATOR}timestamp" }.nullable shouldBe true
+		}
+
+		context("rejects a property that cannot be used") {
+			withData(
+				mapOf(
+					"unknown property" to (listOf("attributes", "missing") to "is not a column of the root table"),
+					"property inside an array" to (listOf("tags", "at") to "properties inside arrays are not supported"),
+					"non-integer property" to (listOf("attributes", "datetime") to "must be an integer to be used as a timestamp, found string"),
+				),
+			) { (property, expectedMessage) ->
+				shouldThrow<IllegalStateException> {
+					metaPartitionedBy(*property.toTypedArray())
+				}.message shouldContain expectedMessage
+			}
+		}
+	}
+
 	context("escapeIdentifier nested ancestry") {
 		should("makes truncated identifier deterministic for the same input") {
 			val long = "a".repeat(100)

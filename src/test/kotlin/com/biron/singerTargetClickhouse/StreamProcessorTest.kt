@@ -2,6 +2,7 @@ package com.biron.singerTargetClickhouse
 
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.ShouldSpec
+import io.kotest.matchers.collections.shouldContain
 import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
@@ -70,6 +71,7 @@ class StreamProcessorTest : ShouldSpec({
 
 		should("does not re-create the root when the table already exists") {
 			val conn: TargetConnection = mockk {
+				every { getPartitionKey("order") } returns ""
 				every { listColumns("order") } returns listOf(Column("id", "Int32", isInSortingKey = false))
 			}
 
@@ -177,7 +179,7 @@ class StreamProcessorTest : ShouldSpec({
 
 			underTest.processRecord(mapToRow(meta, mapOf("id" to 1, "name" to "o'brien")), 0, abort)
 
-			queries.queries.any { it.contains("`name` = 'o\\'\\brien'") } shouldBe true
+			queries.queries.any { it.contains("`name` = 'o\\'brien'") } shouldBe true
 		}
 
 		should("skips the cleaning DELETE entirely when cleanFirst=true") {
@@ -325,7 +327,7 @@ class StreamProcessorTest : ShouldSpec({
 
 			underTest.finalizeProcessing()
 
-			queries.queries.any { it.contains("OPTIMIZE TABLE `order` FINAL") } shouldBe true
+			queries.queries shouldContain "OPTIMIZE TABLE `order` FINAL"
 		}
 
 		should("removes children orphans when meta has children") {
@@ -420,6 +422,178 @@ class StreamProcessorTest : ShouldSpec({
 			shouldThrow<IllegalStateException> {
 				underTest.finalizeProcessing()
 			}.message shouldContain "could not save new records"
+		}
+	}
+
+	context("partition_by") {
+		val createdAtColumn = typedNameColumn.copy(
+			prop = "created_at", sqlIdentifier = "`created_at`", chType = "Int64", schemaType = "integer",
+			valueExtractor = { (it as? Map<*, *>)?.get("created_at") },
+		)
+		val monthlyPartition = PartitionBy("created_at", "toYYYYMM(toDateTime(`created_at`, 'UTC'))")
+
+		fun partitionedMeta(): SourceMeta = metaWithPk().copy(
+			simpleColumnMappings = listOf(typedNameColumn, createdAtColumn),
+			partitionBy = monthlyPartition,
+		)
+
+		fun partitionedMetaWithChildren(): SourceMeta = metaWithPKAndChildren.copy(
+			simpleColumnMappings = metaWithPKAndChildren.simpleColumnMappings + createdAtColumn,
+			partitionBy = monthlyPartition,
+		)
+
+		should("creates only the root table partitioned, with a non-nullable partition column") {
+			val conn: TargetConnection = mockk {
+				every { getDatabase() } returns "db"
+			}
+			val queries = conn.captureRunQueries()
+
+			StreamProcessor.create(conn, partitionedMetaWithChildren(), baseConfig, false, emptyList(), null)
+
+			val creates = queries.queries.filter { it.startsWith("CREATE TABLE") }
+			creates shouldHaveSize 3
+			creates[0] shouldContain "`created_at` Int64,"
+			creates[0] shouldContain "ENGINE = ReplacingMergeTree(_ver) PARTITION BY toYYYYMM(toDateTime(`created_at`, 'UTC')) ORDER BY `id`"
+			creates.drop(1).none { it.contains("PARTITION BY") } shouldBe true
+		}
+
+		should("ignores partition_by entirely on an existing unpartitioned root table") {
+			// Strict mockk: no updateColumn stub, so turning created_at into a non-nullable column would fail the test.
+			val conn: TargetConnection = mockk {
+				every { getPartitionKey("order") } returns ""
+				every { listColumns("order") } returns listOf(
+					Column("id", "UInt32", isInSortingKey = true),
+					Column("name", "Nullable(String)", isInSortingKey = false),
+					Column("created_at", "Nullable(Int64)", isInSortingKey = false),
+					Column("_ver", "UInt64", isInSortingKey = false),
+				)
+			}
+			val queries = conn.captureRunQueries()
+
+			StreamProcessor.create(conn, partitionedMeta(), baseConfig, false, listOf("order"), null).finalizeProcessing()
+
+			queries.queries shouldContain "OPTIMIZE TABLE `order` FINAL"
+		}
+
+		should("refuses an existing root table partitioned by another key, before altering it") {
+			// No listColumns stub: strict mockk fails the test if the schema update starts.
+			val conn: TargetConnection = mockk {
+				every { getPartitionKey("order") } returns "toYear(toDateTime(created_at, 'UTC'))"
+				every { formatExpression(any()) } answers { firstArg<String>().replace("`", "") }
+			}
+
+			shouldThrow<IllegalStateException> {
+				StreamProcessor.create(conn, partitionedMeta(), baseConfig, false, listOf("order"), null)
+			}.message shouldContain "table order is partitioned by [toYear(toDateTime(created_at, 'UTC'))]"
+		}
+
+		val partitionedTableColumns = listOf(
+			Column("id", "UInt32", isInSortingKey = true),
+			Column("name", "Nullable(String)", isInSortingKey = false),
+			Column("created_at", "Int64", isInSortingKey = false, isInPartitionKey = true),
+			Column("_ver", "UInt64", isInSortingKey = false),
+		)
+
+		should("only optimizes the partitions that need it on an existing table partitioned by the same key") {
+			val conn: TargetConnection = mockk {
+				every { getPartitionKey("order") } returns "toYYYYMM(toDateTime(created_at, 'UTC'))"
+				every { listColumns("order") } returns partitionedTableColumns
+			}
+			val queries = conn.captureRunQueries()
+
+			StreamProcessor.create(conn, partitionedMeta(), baseConfig, false, listOf("order"), null).finalizeProcessing()
+
+			queries.queries shouldContain "OPTIMIZE TABLE `order` FINAL SETTINGS optimize_skip_merged_partitions = 1"
+		}
+
+		should("keeps the partitioning of an existing table when the SCHEMA message has no partition_by") {
+			// Strict mockk: no updateColumn stub, so turning created_at into a Nullable column would fail the test.
+			val conn: TargetConnection = mockk {
+				every { getPartitionKey("order") } returns "toYYYYMM(toDateTime(created_at, 'UTC'))"
+				every { listColumns("order") } returns partitionedTableColumns
+			}
+			val queries = conn.captureRunQueries()
+
+			StreamProcessor.create(conn, partitionedMeta().copy(partitionBy = null), baseConfig, false, listOf("order"), null)
+				.finalizeProcessing()
+
+			queries.queries shouldContain "OPTIMIZE TABLE `order` FINAL SETTINGS optimize_skip_merged_partitions = 1"
+		}
+
+		fun duplicateFound(partitions: (String) -> QueryResult): (String) -> QueryResult = { q ->
+			when {
+				q.contains("ROW_NUMBER") && q.contains("FROM `order__tags`)") -> QueryResult(listOf(listOf<Any?>(7L, 0)), rows = 1)
+				q.contains("ROW_NUMBER") && q.contains("FROM `order`)") -> QueryResult(listOf(listOf<Any?>(7L)), rows = 1)
+				q.contains("uniqExact(_partition_id)") -> partitions(q)
+				else -> QueryResult(emptyList(), rows = 0)
+			}
+		}
+
+		should("explains a duplicate caused by a key stored in several partitions, looking at that key only") {
+			val conn: TargetConnection = mockk {
+				every { getDatabase() } returns "db"
+			}
+			val queries = conn.captureRunQueries(duplicateFound { QueryResult(listOf(listOf<Any?>(2L)), rows = 1) })
+
+			shouldThrow<IllegalStateException> {
+				StreamProcessor.create(conn, partitionedMeta(), baseConfig, false, emptyList(), null).finalizeProcessing()
+			}.message shouldBe "Duplicate key on table `order`, data: [[7]], aborting process. Key [7] of `order` is stored " +
+					"in 2 partitions: its partition_by value [toYYYYMM(toDateTime(`created_at`, 'UTC'))] changed between two " +
+					"versions, which ReplacingMergeTree cannot deduplicate. partition_by must only depend on values that " +
+					"never change for a given key (see docs/partitioning.md)"
+			queries.queries.single { it.contains("uniqExact(_partition_id)") } shouldBe
+					"SELECT uniqExact(_partition_id) FROM `order` WHERE `id` = 7"
+		}
+
+		should("explains a duplicate found on a child table through its root key") {
+			val conn: TargetConnection = mockk {
+				every { getDatabase() } returns "db"
+			}
+			val queries = conn.captureRunQueries(duplicateFound { QueryResult(listOf(listOf<Any?>(2L)), rows = 1) })
+
+			shouldThrow<IllegalStateException> {
+				StreamProcessor.create(conn, partitionedMetaWithChildren(), baseConfig, false, emptyList(), null).finalizeProcessing()
+			}.message shouldContain "Duplicate key on table `order__tags`, data: [[7, 0]], aborting process. " +
+					"Key [7] of `order` is stored in 2 partitions"
+			queries.queries.single { it.contains("uniqExact(_partition_id)") } shouldBe
+					"SELECT uniqExact(_partition_id) FROM `order` WHERE `id` = 7"
+		}
+
+		should("adds nothing when the duplicate key is stored in a single partition") {
+			val conn: TargetConnection = mockk {
+				every { getDatabase() } returns "db"
+			}
+			conn.captureRunQueries(duplicateFound { QueryResult(listOf(listOf<Any?>(1L)), rows = 1) })
+
+			shouldThrow<IllegalStateException> {
+				StreamProcessor.create(conn, partitionedMeta(), baseConfig, false, emptyList(), null).finalizeProcessing()
+			}.message shouldBe "Duplicate key on table `order`, data: [[7]], aborting process"
+		}
+
+		should("keeps the duplicate key error when the diagnosis query fails") {
+			val conn: TargetConnection = mockk {
+				every { getDatabase() } returns "db"
+			}
+			conn.captureRunQueries(duplicateFound { error("Memory limit exceeded") })
+
+			shouldThrow<IllegalStateException> {
+				StreamProcessor.create(conn, partitionedMeta(), baseConfig, false, emptyList(), null).finalizeProcessing()
+			}.message shouldBe "Duplicate key on table `order`, data: [[7]], aborting process"
+		}
+
+		should("does not look for cross-partition duplicates without partition_by") {
+			val conn: TargetConnection = mockk {
+				every { getDatabase() } returns "db"
+			}
+			val queries = conn.captureRunQueries { q ->
+				if (q.contains("ROW_NUMBER")) QueryResult(listOf(listOf<Any?>(7L)), rows = 1)
+				else QueryResult(emptyList(), rows = 0)
+			}
+
+			shouldThrow<IllegalStateException> {
+				StreamProcessor.create(conn, metaWithPk(), baseConfig, false, emptyList(), null).finalizeProcessing()
+			}.message shouldBe "Duplicate key on table `order`, data: [[7]], aborting process"
+			queries.queries.none { it.contains("_partition_id") } shouldBe true
 		}
 	}
 })

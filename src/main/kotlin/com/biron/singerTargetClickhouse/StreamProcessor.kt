@@ -44,6 +44,8 @@ internal class DefaultStreamProcessor private constructor(
 	private val recordProcessor: RecordProcessor,
 	private val deletedRecordProcessor: DeletedRecordProcessor,
 	private val cleaningColumnSlot: Int?,
+	/** Partition key of the root table as it exists in ClickHouse, null when it is not partitioned. */
+	private val partitionKey: String?,
 	initialMaxVer: Long,
 ) : StreamProcessor {
 	private var maxVer: Long = initialMaxVer
@@ -96,11 +98,20 @@ internal class DefaultStreamProcessor private constructor(
 
 	private fun optimizeReplacingMergeTree() {
 		logger.info { "[${meta.prop}]: removing root duplicates" }
-		clickhouse.runQuery("OPTIMIZE TABLE ${meta.sqlTableName} FINAL")
+		clickhouse.runQuery(optimizeRootQuery())
 		if (!recordProcessor.hasChildren) return
 		logger.info { "[${meta.prop}]: removing children orphans" }
 		meta.children.forEach { deleteChildDuplicates(it) }
 	}
+
+	/**
+	 * A partition made of a single merged part holds no duplicate, so on a partitioned root
+	 * `optimize_skip_merged_partitions` rewrites only the partitions that received rows since the
+	 * last OPTIMIZE (including ones left behind by an interrupted run) instead of the whole table.
+	 */
+	private fun optimizeRootQuery(): String =
+		if (partitionKey == null) "OPTIMIZE TABLE ${meta.sqlTableName} FINAL"
+		else "OPTIMIZE TABLE ${meta.sqlTableName} FINAL SETTINGS optimize_skip_merged_partitions = 1"
 
 	private fun deleteCleaningValue(value: String) {
 		val cleaningColumn = meta.cleaningColumn ?: run {
@@ -111,7 +122,7 @@ internal class DefaultStreamProcessor private constructor(
 		logger.info { "[${meta.prop}]: cleaning column: deleting based on $value" }
 		clickhouse.runQuery(
 			"""ALTER TABLE ${meta.sqlTableName} DELETE
-			   WHERE `$cleaningColumn` = '${escapeValue(value)}'
+			   WHERE `$cleaningColumn` = ${sqlStringLiteral(value)}
 			   SETTINGS mutations_sync=2""".trimIndent(),
 		)
 	}
@@ -148,8 +159,41 @@ internal class DefaultStreamProcessor private constructor(
 			   WHERE row_number > 1 LIMIT 1""".trimIndent(),
 		)
 		if (res.rows > 0) {
-			error("Duplicate key on table ${current.sqlTableName}, data: ${res.data}, aborting process")
+			val diagnosis = runCatching { crossPartitionDiagnosis(current, res.data.first()) }.getOrElse {
+				logger.warn(it) { "[${meta.prop}]: could not check whether the duplicate key spans several partitions" }
+				""
+			}
+			error("Duplicate key on table ${current.sqlTableName}, data: ${res.data}, aborting process$diagnosis")
 		}
+	}
+
+	/**
+	 * ReplacingMergeTree never deduplicates across partitions: on a partitioned root, explain a
+	 * duplicate caused by a key whose partition_by value changed between two of its versions. Both
+	 * versions then keep their child rows, so the duplicate may first be reported on a child table:
+	 * the root key is then read from the child's `_root_*` columns.
+	 */
+	private fun crossPartitionDiagnosis(current: SourceMeta, duplicate: List<Any?>): String {
+		if (partitionKey == null || meta.pkMappings.isEmpty()) return ""
+		val rootKeyType = if (current === meta) PKType.CURRENT else PKType.ROOT
+		val rootKey = current.pkMappings.indices
+			.filter { current.pkMappings[it].pkType == rootKeyType }
+			.map { duplicate[it] }
+		if (rootKey.size != meta.pkMappings.size) return ""
+		val keyFilter = meta.pkMappings.zip(rootKey).joinToString(" AND ") { (pk, value) -> "${pk.sqlIdentifier} = ${sqlValue(value)}" }
+		val partitions = clickhouse.runQuery(
+			"SELECT uniqExact(_partition_id) FROM ${meta.sqlTableName} WHERE $keyFilter",
+		).data.firstOrNull()?.firstOrNull()?.toString()?.toLongOrNull() ?: return ""
+		if (partitions < 2) return ""
+		return ". Key $rootKey of ${meta.sqlTableName} is stored in $partitions partitions: its partition_by " +
+				"value [$partitionKey] changed between two versions, which ReplacingMergeTree cannot deduplicate. " +
+				"partition_by must only depend on values that never change for a given key (see docs/partitioning.md)"
+	}
+
+	private fun sqlValue(value: Any?): String = when (value) {
+		null -> "NULL"
+		is Number -> value.toString()
+		else -> sqlStringLiteral(value.toString())
 	}
 
 	companion object {
@@ -161,24 +205,32 @@ internal class DefaultStreamProcessor private constructor(
 			existingTables: List<String>,
 			cleaningColumnSlot: Int?,
 		): DefaultStreamProcessor {
-			applySchema(ch, meta, cleanFirst, existingTables)
+			val partitionKey = applySchema(ch, meta, cleanFirst, existingTables)
+			partitionKey?.let { logger.info { "[${meta.prop}]: root table partitioned by [$it]" } }
 			val maxVer = initialMaxVer(ch, meta, cleanFirst)
 			logger.info { "[${meta.prop}]: initial max version is [$maxVer]" }
-			return buildProcessor(ch, meta, config, cleanFirst, cleaningColumnSlot, maxVer)
+			return buildProcessor(ch, meta, config, cleanFirst, cleaningColumnSlot, partitionKey, maxVer)
 		}
 
-		private fun applySchema(ch: TargetConnection, meta: SourceMeta, cleanFirst: Boolean, existingTables: List<String>) {
+		/** Returns the partition key of the root table. */
+		private fun applySchema(
+			ch: TargetConnection,
+			meta: SourceMeta,
+			cleanFirst: Boolean,
+			existingTables: List<String>,
+		): String? {
 			val rootAlreadyExists = if (cleanFirst) {
 				dropStreamTablesQueries(meta).forEach { ch.runQuery(it) }
 				false
 			} else {
 				existingTables.any { meta.sqlTableName == escapeIdentifier(it) }
 			}
-			if (rootAlreadyExists) {
-				updateSchema(meta, ch, existingTables)
+			return if (rootAlreadyExists) {
+				existingPartitionKey(meta, ch).also { updateSchema(meta, ch, existingTables) }
 			} else {
 				logger.info { "[${meta.prop}]: creating tables" }
 				translateCH(ch.getDatabase(), meta, recursive = true).forEach { ch.runQuery(it) }
+				meta.partitionBy?.expression
 			}
 		}
 
@@ -194,6 +246,7 @@ internal class DefaultStreamProcessor private constructor(
 			config: TargetConfig,
 			cleanFirst: Boolean,
 			cleaningColumnSlot: Int?,
+			partitionKey: String?,
 			initialMaxVer: Long
 		) =
 			DefaultStreamProcessor(
@@ -218,6 +271,7 @@ internal class DefaultStreamProcessor private constructor(
 					),
 				),
 				cleaningColumnSlot,
+				partitionKey,
 				initialMaxVer,
 			)
 

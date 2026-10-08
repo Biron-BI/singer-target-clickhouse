@@ -4,17 +4,13 @@ import io.kotest.core.spec.style.ShouldSpec
 import io.kotest.matchers.shouldBe
 
 class UtilsTest : ShouldSpec({
-	context("escapeValue") {
-		should("doubles delimiter with backslashes") {
-			escapeValue("bob's stuff") shouldBe "bob\\'\\s stuff"
+	context("sqlStringLiteral") {
+		should("wraps the value in single quotes") {
+			sqlStringLiteral("toYYYYMM(ts)") shouldBe "'toYYYYMM(ts)'"
 		}
 
-		should("returns input unchanged when delimiter absent") {
-			escapeValue("no quotes here") shouldBe "no quotes here"
-		}
-
-		should("works with custom delimiter") {
-			escapeValue("a\"b", delimiter = "\"") shouldBe "a\\\"\\b"
+		should("escapes single quotes and backslashes") {
+			sqlStringLiteral("""formatDateTime(ts, '%Y') || '\'""") shouldBe """'formatDateTime(ts, \'%Y\') || \'\\\''"""
 		}
 	}
 })

@@ -67,12 +67,27 @@ class ClickhouseConnection internal constructor(
 	override fun listColumns(table: String): List<Column> = listColumnsParser(
 		runQuery(
 			jdbc,
-			"""SELECT name, type, is_in_sorting_key
+			"""SELECT name, type, is_in_sorting_key, is_in_partition_key
 			   FROM system.columns
-			   WHERE database = '${escapeValue(config.database)}' AND table = '${escapeValue(table)}'""".trimIndent(),
+			   WHERE database = ${sqlStringLiteral(config.database)} AND table = ${sqlStringLiteral(table)}""".trimIndent(),
 			2,
 		),
 	)
+
+	override fun getPartitionKey(table: String): String =
+		runQuery(
+			jdbc,
+			"""SELECT partition_key
+			   FROM system.tables
+			   WHERE database = ${sqlStringLiteral(config.database)} AND name = ${sqlStringLiteral(table)}""".trimIndent(),
+			2,
+		).data.firstOrNull()?.firstOrNull()?.toString().orEmpty()
+
+	// Formatting `SELECT <expression>` yields the same text as system.tables uses for keys
+	// (e.g. `INTERVAL 1 MONTH` becomes `toIntervalMonth(1)`, superfluous backquotes are dropped).
+	override fun formatExpression(expression: String): String =
+		runQuery(jdbc, "SELECT formatQuerySingleLine(${sqlStringLiteral("SELECT $expression")})", 2)
+			.data.single().single().toString().removePrefix("SELECT ")
 
 	override fun addColumn(table: String, newCol: Column): Either<AddColumnError, Unit> =
 		addColumnOp(runQuery, jdbc, table, newCol)
@@ -111,6 +126,9 @@ class ClickhouseConnection internal constructor(
 			"input_format_null_as_default" to "0",
 			"input_format_defaults_for_omitted_fields" to "0",
 			"http_receive_timeout" to config.insertStreamTimeoutSec.toString(),
+			// A full-history load into a table partitioned by month can put more than the default 100
+			// months in one insert block; 1000 months is never reached. No effect on unpartitioned tables.
+			"max_partitions_per_insert_block" to "1000",
 		)
 		val qs = params.joinToString("&") { (k, v) -> "${encode(k)}=${encode(v)}" }
 		return URI.create("$baseUrl/?$qs")
@@ -241,7 +259,7 @@ class ClickhouseConnection internal constructor(
 	}
 
 	/**
-	 * Decodes a `system.columns` result row into a [Column]. The `is_in_sorting_key` value can come
+	 * Decodes a `system.columns` result row into a [Column]. The `is_in_*_key` values can come
 	 * back as Boolean, Number, null, or a String depending on the JDBC driver version, so we
 	 * normalize each shape here.
 	 */
@@ -250,13 +268,16 @@ class ClickhouseConnection internal constructor(
 			Column(
 				name = row[0].toString(),
 				type = row[1].toString(),
-				isInSortingKey = when (val v = row[2]) {
-					is Boolean -> v
-					is Number -> v.toLong() != 0L
-					null -> false
-					else -> v.toString().toBoolean()
-				},
+				isInSortingKey = toBoolean(row[2]),
+				isInPartitionKey = toBoolean(row.getOrNull(3)),
 			)
+		}
+
+		private fun toBoolean(v: Any?): Boolean = when (v) {
+			is Boolean -> v
+			is Number -> v.toLong() != 0L
+			null -> false
+			else -> v.toString().toBoolean()
 		}
 	}
 

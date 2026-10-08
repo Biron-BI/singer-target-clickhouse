@@ -83,8 +83,32 @@ class ClickhouseConnectionTest : ShouldSpec({
 
 			aUnderTest(runQuery = runQuery, listColumnsParser = parser).listColumns("o'brien")
 
-			// escapeValue doubles the apostrophe with backslashes — proves the table arg flows through that path.
-			captured.captured shouldContain """'o\'\brien'"""
+			captured.captured shouldContain """table = 'o\'brien'"""
+		}
+
+		should("getPartitionKey reads system.tables for the configured database and table") {
+			val runQuery = mockk<QueryRunner>()
+			every {
+				runQuery(any(), match { it.contains("system.tables") && it.contains("database = 'db'") && it.contains("name = 'box'") }, 2)
+			} returns QueryResult(listOf(listOf("toYYYYMM(ts)")), 1)
+
+			aUnderTest(runQuery = runQuery).getPartitionKey("box") shouldBe "toYYYYMM(ts)"
+		}
+
+		should("getPartitionKey returns an empty key when the table is unknown") {
+			val runQuery = mockk<QueryRunner>()
+			every { runQuery(any(), any(), 2) } returns QueryResult(emptyList(), 0)
+
+			aUnderTest(runQuery = runQuery).getPartitionKey("box") shouldBe ""
+		}
+
+		should("formatExpression formats the expression as a quoted SELECT and strips the SELECT keyword") {
+			val runQuery = mockk<QueryRunner>()
+			every {
+				runQuery(any(), """SELECT formatQuerySingleLine('SELECT formatDateTime(ts, \'%Y\')')""", 2)
+			} returns QueryResult(listOf(listOf("SELECT formatDateTime(ts, '%Y')")), 1)
+
+			aUnderTest(runQuery = runQuery).formatExpression("formatDateTime(ts, '%Y')") shouldBe "formatDateTime(ts, '%Y')"
 		}
 
 		should("addColumn delegates to ColumnAdder with the injected QueryRunner, jdbc, table, newCol") {
@@ -156,6 +180,7 @@ class ClickhouseConnectionTest : ShouldSpec({
 			urlString shouldContain "INSERT+INTO+box"
 			urlString shouldContain "input_format_null_as_default=0"
 			urlString shouldContain "http_receive_timeout=180"
+			urlString shouldContain "max_partitions_per_insert_block=1000"
 
 			// `Basic ` + base64("u:p")
 			capturedAuth.captured shouldBe "Basic ${java.util.Base64.getEncoder().encodeToString("u:p".toByteArray())}"
@@ -268,6 +293,18 @@ class ClickhouseConnectionTest : ShouldSpec({
 
 		should("treats null as not-in-sorting-key") {
 			underTest(QueryResult(listOf(row("id", "Int32", null)), 1)).single().isInSortingKey shouldBe false
+		}
+
+		should("reads the partition key flag from the fourth column, absent meaning false") {
+			underTest(
+				QueryResult(
+					listOf(
+						listOf<Any?>("ts", "Int64", 0, 1),
+						listOf<Any?>("id", "String", 1, false),
+						row("name", "String", false),
+					), 3
+				)
+			).map { it.isInPartitionKey } shouldContainExactly listOf(true, false, false)
 		}
 
 		should("parses string values via toBoolean()") {

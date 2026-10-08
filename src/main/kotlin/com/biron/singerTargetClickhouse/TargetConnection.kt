@@ -6,6 +6,7 @@ data class Column(
 	val name: String,
 	val type: String,
 	val isInSortingKey: Boolean,
+	val isInPartitionKey: Boolean = false,
 )
 
 data class QueryResult(
@@ -37,6 +38,12 @@ interface TargetConnection {
 	fun updateColumn(table: String, existing: Column, newCol: Column): Either<UpdateColumnError, Unit>
 	fun renameObsoleteTable(table: String): QueryResult
 	fun openRowWriter(query: String): RowWriter
+
+	/** Partition key of [table] as ClickHouse reports it, empty when the table is not partitioned. */
+	fun getPartitionKey(table: String): String
+
+	/** [expression] normalized by the ClickHouse formatter, so that equivalent spellings compare equal. */
+	fun formatExpression(expression: String): String
 
 	companion object {
 		const val DROPPED_TABLE_PREFIX = "_dropped_"

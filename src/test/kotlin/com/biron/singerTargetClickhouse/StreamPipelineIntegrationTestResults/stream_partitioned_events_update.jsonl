@@ -1,0 +1,6 @@
+{"type": "SCHEMA", "stream": "events", "schema": {"type": ["null", "object"], "properties": {"id": {"type": ["string"]}, "attributes": {"type": ["null", "object"], "properties": {"timestamp": {"type": ["null", "integer"]}, "name": {"type": ["null", "string"]}}}, "tags": {"type": ["null", "array"], "items": {"type": ["string"]}}}}, "key_properties": ["id"], "partition_by": {"property": ["attributes", "timestamp"], "type": "timestamp", "converter": "YYYYMM"}}
+{"type": "RECORD", "stream": "events", "record": {"id": "e2", "attributes": {"timestamp": 1707552000, "name": "order v3"}, "tags": ["b3", "c3"]}}
+{"type": "RECORD", "stream": "events", "record": {"id": "e4", "attributes": {"timestamp": 1712736000, "name": "order v2"}, "tags": []}}
+{"type": "RECORD", "stream": "events", "record": {"id": "e7", "attributes": {"timestamp": 1713600000, "name": "visit"}, "tags": ["f"]}}
+{"type": "RECORD", "stream": "events", "record": {"id": "e8", "attributes": {"timestamp": 1717228800, "name": "signup"}, "tags": ["g"]}}
+{"type": "STATE", "value": {"bookmarks": {"events": "2024-06-01"}}}

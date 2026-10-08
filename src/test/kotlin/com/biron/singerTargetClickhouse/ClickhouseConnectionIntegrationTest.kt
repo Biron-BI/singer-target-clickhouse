@@ -89,6 +89,47 @@ class ClickhouseConnectionIntegrationTest : ShouldSpec({
 		}
 	}
 
+	context("listColumns on a partitioned table") {
+		should("flags the columns of the partition key") {
+			jdbc.execute(
+				"CREATE TABLE `$databaseName`.box (id Int32, ts Int64) ENGINE = MergeTree PARTITION BY toYYYYMM(toDateTime(ts, 'UTC')) ORDER BY id",
+			)
+			ClickhouseConnection(config).listColumns("box").toSet() shouldBe setOf(
+				Column("id", "Int32", isInSortingKey = true),
+				Column("ts", "Int64", isInSortingKey = false, isInPartitionKey = true),
+			)
+		}
+	}
+
+	context("getPartitionKey") {
+		should("returns the partition key of a partitioned table") {
+			jdbc.execute(
+				"CREATE TABLE `$databaseName`.box (id Int32, ts DateTime) ENGINE = MergeTree PARTITION BY toYYYYMM(`ts`) ORDER BY id",
+			)
+			ClickhouseConnection(config).getPartitionKey("box") shouldBe "toYYYYMM(ts)"
+		}
+
+		should("returns an empty key for an unpartitioned table") {
+			jdbc.execute("CREATE TABLE `$databaseName`.box (id Int32) ENGINE = MergeTree ORDER BY id")
+			ClickhouseConnection(config).getPartitionKey("box") shouldBe ""
+		}
+	}
+
+	context("formatExpression") {
+		should("normalizes an expression the way system.tables reports keys") {
+			ClickhouseConnection(config).formatExpression("toStartOfInterval( `ts`, INTERVAL 1 MONTH )") shouldBe
+					"toStartOfInterval(ts, toIntervalMonth(1))"
+		}
+
+		should("keeps string literals intact") {
+			ClickhouseConnection(config).formatExpression("formatDateTime(ts, '%Y')") shouldBe "formatDateTime(ts, '%Y')"
+		}
+
+		should("throws on an invalid expression") {
+			shouldThrow<Exception> { ClickhouseConnection(config).formatExpression("toYYYYMM(ts") }
+		}
+	}
+
 	context("addColumn") {
 		should("adds a column on success") {
 			jdbc.execute("CREATE TABLE `$databaseName`.box (id Int32) ENGINE = MergeTree ORDER BY tuple()")

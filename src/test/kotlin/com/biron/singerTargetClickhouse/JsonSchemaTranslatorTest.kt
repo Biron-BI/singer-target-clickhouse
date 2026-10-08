@@ -68,6 +68,14 @@ class JsonSchemaTranslatorTest : ShouldSpec({
 	val metaWithPKAndChildren = metaWithPK.copy(
 		children = listOf(simpleMeta.copy(sqlTableName = "`order_child`")),
 	)
+	val createdAtColumn = nameColumn.copy(
+		prop = "created_at", sqlIdentifier = "`created_at`", chType = "Int64", schemaType = "integer", nullable = true,
+	)
+	val monthlyPartition = PartitionBy("created_at", "toYYYYMM(toDateTime(`created_at`, 'UTC'))")
+	val partitionedMeta = metaWithPKAndChildren.copy(
+		simpleColumnMappings = listOf(nameColumn, createdAtColumn),
+		partitionBy = monthlyPartition,
+	)
 
 	context("translateCH") {
 		should("refuses empty meta") {
@@ -91,6 +99,14 @@ class JsonSchemaTranslatorTest : ShouldSpec({
 		should("translates meta with PK and children recursively") {
 			translateCH("db", metaWithPKAndChildren, recursive = true) shouldContainExactly listOf(
 				"CREATE TABLE db.`order` ( `id` UInt32, `name` Nullable(String), `_ver` UInt64 ) ENGINE = ReplacingMergeTree(_ver) ORDER BY `id`",
+				"CREATE TABLE db.`order_child` ( `id` Int32, `name` Nullable(String), `_root_ver` UInt64 ) ENGINE = MergeTree ORDER BY tuple()",
+			)
+		}
+
+		should("partitions the root table only, with a non-nullable partition column") {
+			translateCH("db", partitionedMeta, recursive = true) shouldContainExactly listOf(
+				"CREATE TABLE db.`order` ( `id` UInt32, `name` Nullable(String), `created_at` Int64, `_ver` UInt64 ) " +
+						"ENGINE = ReplacingMergeTree(_ver) PARTITION BY toYYYYMM(toDateTime(`created_at`, 'UTC')) ORDER BY `id`",
 				"CREATE TABLE db.`order_child` ( `id` Int32, `name` Nullable(String), `_root_ver` UInt64 ) ENGINE = MergeTree ORDER BY tuple()",
 			)
 		}
@@ -168,6 +184,20 @@ class JsonSchemaTranslatorTest : ShouldSpec({
 			updateSchema(metaWithPK, conn, existingTables = emptyList())
 
 			queries.queries.first() shouldContain "CREATE TABLE db.`order`"
+		}
+
+		should("never makes a column of the table's partition key Nullable, whatever the schema says") {
+			// Strict mockk: no updateColumn stub, so expecting Nullable(Int64) would fail the test.
+			val conn: TargetConnection = mockk {
+				every { listColumns("order") } returns listOf(
+					Column("id", "UInt32", isInSortingKey = true),
+					Column("name", "Nullable(String)", isInSortingKey = false),
+					Column("created_at", "Int64", isInSortingKey = false, isInPartitionKey = true),
+					Column("_ver", "UInt64", isInSortingKey = false),
+				)
+			}
+			// No partition_by and a nullable created_at in the schema.
+			updateSchema(partitionedMeta.copy(children = emptyList(), partitionBy = null), conn, existingTables = listOf("order"))
 		}
 
 		should("throws when a primary key was added vs the live table") {
@@ -275,6 +305,66 @@ class JsonSchemaTranslatorTest : ShouldSpec({
 				every { addColumn("`order_child`", match { it.name == "name" }) } returns Unit.right()
 			}
 			updateSchema(metaWithPKAndChildren, conn, existingTables = listOf("order", "order_child"))
+		}
+	}
+
+	context("existingPartitionKey") {
+		val unpartitionedMeta = partitionedMeta.copy(partitionBy = null)
+
+		should("ignores partition_by on an unpartitioned table") {
+			val conn: TargetConnection = mockk {
+				every { getPartitionKey("order") } returns ""
+			}
+			existingPartitionKey(partitionedMeta, conn) shouldBe null
+		}
+
+		should("returns the table's key when it is partition_by, without asking ClickHouse to normalize it") {
+			val conn: TargetConnection = mockk {
+				every { getPartitionKey("order") } returns monthlyPartition.expression
+			}
+			existingPartitionKey(partitionedMeta, conn) shouldBe monthlyPartition.expression
+		}
+
+		should("returns the table's key when ClickHouse prints partition_by without backquotes, without normalizing it") {
+			val conn: TargetConnection = mockk {
+				every { getPartitionKey("order") } returns "toYYYYMM(toDateTime(created_at, 'UTC'))"
+			}
+			existingPartitionKey(partitionedMeta, conn) shouldBe "toYYYYMM(toDateTime(created_at, 'UTC'))"
+		}
+
+		should("returns the table's key when it is partition_by spelled differently") {
+			val conn: TargetConnection = mockk {
+				every { getPartitionKey("order") } returns "toYYYYMM( toDateTime(`created_at`,'UTC') )"
+				every { formatExpression("toYYYYMM( toDateTime(`created_at`,'UTC') )") } returns "toYYYYMM(toDateTime(created_at, 'UTC'))"
+				every { formatExpression(monthlyPartition.expression) } returns "toYYYYMM(toDateTime(created_at, 'UTC'))"
+			}
+			existingPartitionKey(partitionedMeta, conn) shouldBe "toYYYYMM( toDateTime(`created_at`,'UTC') )"
+		}
+
+		should("refuses a table partitioned by another key than partition_by") {
+			val conn: TargetConnection = mockk {
+				every { getPartitionKey("order") } returns "toYear(toDateTime(created_at, 'UTC'))"
+				every { formatExpression("toYear(toDateTime(created_at, 'UTC'))") } returns "toYear(toDateTime(created_at, 'UTC'))"
+				every { formatExpression(monthlyPartition.expression) } returns "toYYYYMM(toDateTime(created_at, 'UTC'))"
+			}
+			shouldThrow<IllegalStateException> {
+				existingPartitionKey(partitionedMeta, conn)
+			}.message shouldContain "[order]: table order is partitioned by [toYear(toDateTime(created_at, 'UTC'))] " +
+					"but partition_by requires [toYYYYMM(toDateTime(`created_at`, 'UTC'))]"
+		}
+
+		should("returns the table's key when the SCHEMA message has no partition_by") {
+			val conn: TargetConnection = mockk {
+				every { getPartitionKey("order") } returns "toYear(toDateTime(created_at, 'UTC'))"
+			}
+			existingPartitionKey(unpartitionedMeta, conn) shouldBe "toYear(toDateTime(created_at, 'UTC'))"
+		}
+
+		should("returns null for an unpartitioned table without partition_by") {
+			val conn: TargetConnection = mockk {
+				every { getPartitionKey("order") } returns ""
+			}
+			existingPartitionKey(unpartitionedMeta, conn) shouldBe null
 		}
 	}
 

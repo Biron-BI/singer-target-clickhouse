@@ -171,6 +171,7 @@ class TargetMessageParser(
 			"clean_first" -> acc.cleanFirst = parser.currentToken == JsonToken.VALUE_TRUE
 			"cleaning_column" -> acc.cleaningColumn = if (parser.currentToken == JsonToken.VALUE_NULL) null else parser.text
 			"all_key_properties" -> acc.allKeyPropertiesRaw = parser.readValueAs(Any::class.java)
+			"partition_by" -> acc.partitionByRaw = parser.readValueAs(Any::class.java)
 			else -> parser.skipChildren()
 		}
 	}
@@ -212,6 +213,7 @@ class TargetMessageParser(
 		var cleanFirst: Boolean = false
 		var cleaningColumn: String? = null
 		var allKeyPropertiesRaw: Any? = null
+		var partitionByRaw: Any? = null
 
 		val requiredStream: String
 			get() = stream ?: error("Singer message of type=${type ?: "?"} requires a [stream] field")
@@ -252,7 +254,8 @@ class TargetMessageParser(
 					keyProperties,
 					subtableSeparator,
 					cleaningColumn = cleaningColumn,
-					allKeyProperties = allKeyProperties
+					allKeyProperties = allKeyProperties,
+					partitionSpec = partitionByRaw?.let { PartitionSpec.parse(requiredStream, it) },
 				),
 			)
 			val reader = StreamReader.from(meta, translateValues)

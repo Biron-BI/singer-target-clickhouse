@@ -7,6 +7,7 @@ import ch.qos.logback.core.read.ListAppender
 import com.fasterxml.jackson.core.JsonParseException
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.ShouldSpec
+import io.kotest.datatest.withData
 import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
@@ -186,6 +187,52 @@ class TargetMessageTest : ShouldSpec({
 			"""{"type":"SCHEMA","stream":"u","schema":{"type":["object"],"properties":{"id":{"type":"integer"}}},"key_properties":["id"],"all_key_properties":42}"""
 		).shouldBeInstanceOf<TargetMessage.Schema>()
 		msg.allKeyProperties shouldBe SchemaKeyProperties.empty
+	}
+
+	context("partition_by") {
+		fun schemaLine(partitionBy: String) =
+			"""{"type":"SCHEMA","stream":"events",
+			   "schema":{"type":["object"],"properties":{"id":{"type":"string"},
+			     "attributes":{"type":["null","object"],"properties":{"timestamp":{"type":["null","integer"]}}}}},
+			   "key_properties":["id"],"partition_by":$partitionBy}"""
+
+		should("parses partition_by and resolves it on the root meta") {
+			val msg = aUnderTest().readSingle(
+				schemaLine("""{"property":["attributes","timestamp"],"type":"timestamp","converter":"YYYYMM"}"""),
+			).shouldBeInstanceOf<TargetMessage.Schema>()
+
+			msg.meta.partitionBy?.expression shouldBe "toYYYYMM(toDateTime(`attributes__timestamp`, 'UTC'))"
+		}
+
+		should("reads a null partition_by as no partitioning") {
+			val msg = aUnderTest().readSingle(schemaLine("null")).shouldBeInstanceOf<TargetMessage.Schema>()
+			msg.meta.partitionBy shouldBe null
+		}
+
+		context("rejects an invalid partition_by") {
+			withData(
+				mapOf(
+					"not an object" to ("\"attributes.timestamp\"" to "expected an object"),
+					"property as a string" to (
+							"""{"property":"attributes.timestamp","type":"timestamp","converter":"YYYYMM"}""" to
+									"property must be a non-empty array of strings"
+							),
+					"empty property" to ("""{"property":[],"type":"timestamp","converter":"YYYYMM"}""" to "property must be"),
+					"unknown type" to (
+							"""{"property":["attributes","timestamp"],"type":"date","converter":"YYYYMM"}""" to
+									"type must be one of [timestamp]"
+							),
+					"unknown converter" to (
+							"""{"property":["attributes","timestamp"],"type":"timestamp","converter":"YYYYMMDD"}""" to
+									"converter must be one of [YYYYMM, YYYY]"
+							),
+				),
+			) { (partitionBy, expectedMessage) ->
+				shouldThrow<IllegalStateException> {
+					aUnderTest().readSingle(schemaLine(partitionBy))
+				}.message.shouldContain("[events]: invalid partition_by").shouldContain(expectedMessage)
+			}
+		}
 	}
 
 	should("SCHEMA with cleaning_column=null reads the null") {

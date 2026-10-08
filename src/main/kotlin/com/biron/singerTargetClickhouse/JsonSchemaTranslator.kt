@@ -29,7 +29,8 @@ fun updateSchema(meta: SourceMeta, ch: TargetConnection, existingTables: List<St
 	createTableIfMissing(meta, ch, existingTables, isRoot)
 
 	val existingColumns = ch.listColumns(unescape(meta.sqlTableName))
-	val expectedColumns = buildExpectedColumns(meta, isRoot)
+	val partitionKeyColumns = existingColumns.filter { it.isInPartitionKey }.map { it.name }.toSet()
+	val expectedColumns = buildExpectedColumns(meta, isRoot, partitionKeyColumns)
 
 	if (isRoot) {
 		checkPrimaryKeysConsistency(existingColumns, meta)
@@ -42,6 +43,41 @@ fun updateSchema(meta: SourceMeta, ch: TargetConnection, existingTables: List<St
 	}
 }
 
+/**
+ * Partition key of an existing root table, null when it is not partitioned. ClickHouse cannot change
+ * it, so the table wins over the SCHEMA message: `partition_by` is ignored with a warning on an
+ * unpartitioned table, and refused when it differs from the table's key. Keys are normalized by
+ * ClickHouse, so formatting differences (e.g. backquotes) are not reported.
+ */
+fun existingPartitionKey(meta: SourceMeta, ch: TargetConnection): String? {
+	val table = unescape(meta.sqlTableName)
+	val existing = ch.getPartitionKey(table)
+	val partitionBy = meta.partitionBy
+	if (existing.isEmpty()) {
+		partitionBy?.let {
+			logger.warn { "[${meta.prop}]: table $table is not partitioned, partition_by is ignored (expected PARTITION BY ${it.expression})" }
+		}
+		return null
+	}
+	if (partitionBy != null && !isSpellingOf(existing, partitionBy) &&
+		ch.formatExpression(existing) != ch.formatExpression(partitionBy.expression)
+	) {
+		error(
+			"[${meta.prop}]: table $table is partitioned by [$existing] but partition_by requires [${partitionBy.expression}]. " +
+					"ClickHouse cannot change the partition key of an existing table (see docs/partitioning.md)",
+		)
+	}
+	return existing
+}
+
+/**
+ * The generated key always quotes its column, while ClickHouse prints most column names without quotes
+ * (even `true` or `false`). The unquoted spelling cannot denote another key: ClickHouse refuses constant
+ * partition keys, so a name in a stored key is always a column.
+ */
+private fun isSpellingOf(existing: String, partitionBy: PartitionBy): Boolean =
+	existing == partitionBy.expression || existing == partitionBy.expression.replace("`", "")
+
 private fun translateCHInternal(
 	database: String,
 	meta: SourceMeta,
@@ -52,13 +88,15 @@ private fun translateCHInternal(
 
 	val createDefs = buildList {
 		meta.pkMappings.forEach { add("${it.sqlIdentifier} ${it.chType}") }
-		meta.simpleColumnMappings.forEach { add("${it.sqlIdentifier} ${toQualifiedType(it)}") }
+		val partitionKeyColumns = setOfNotNull(meta.partitionBy?.column)
+		meta.simpleColumnMappings.forEach { add("${it.sqlIdentifier} ${qualifiedType(it, partitionKeyColumns)}") }
 		resolveVersionColumn(isNodeRoot, hasPkMappings)
 			.takeIf { it.isNotEmpty() }?.let { add(it) }
 	}
 
+	val partitionClause = meta.partitionBy?.let { " PARTITION BY ${it.expression}" }.orEmpty()
 	val query = "CREATE TABLE $database.${meta.sqlTableName} ( ${createDefs.joinToString(", ")} ) " +
-			"ENGINE = ${resolveEngine(isNodeRoot, hasPkMappings)} ORDER BY ${resolveOrderBy(meta, isNodeRoot)}"
+			"ENGINE = ${resolveEngine(isNodeRoot, hasPkMappings)}$partitionClause ORDER BY ${resolveOrderBy(meta, isNodeRoot)}"
 
 	return if (recursive) {
 		listOf(query) + meta.children.flatMap { translateCHInternal(database, it, true, false) }
@@ -105,9 +143,16 @@ private fun wrapModifiers(chType: String?, nullable: Boolean, lowCardinality: Bo
 	return modifiers.fold(base) { acc, modifier -> "$modifier($acc)" }
 }
 
-private fun columnMapToColumn(col: ColumnMap): Column = Column(
+/**
+ * Like key columns, the columns of the partition key are never Nullable: ClickHouse refuses a Nullable
+ * partition key. They come from `partition_by` when creating a table, from the table itself when updating it.
+ */
+private fun qualifiedType(col: ColumnMap, partitionKeyColumns: Set<String>): String =
+	toQualifiedType(if (unescape(col.sqlIdentifier) in partitionKeyColumns) col.copy(nullable = false) else col)
+
+private fun columnMapToColumn(col: ColumnMap, partitionKeyColumns: Set<String>): Column = Column(
 	name = unescape(col.sqlIdentifier),
-	type = toQualifiedType(col),
+	type = qualifiedType(col, partitionKeyColumns),
 	isInSortingKey = false,
 )
 
@@ -177,7 +222,7 @@ private fun applyColumnDeltas(meta: SourceMeta, ch: TargetConnection, intersecti
 	return (added + updated + removed).mapNotNull { it.leftOrNull() }
 }
 
-private fun buildExpectedColumns(meta: SourceMeta, isRoot: Boolean): List<Column> {
+private fun buildExpectedColumns(meta: SourceMeta, isRoot: Boolean, partitionKeyColumns: Set<String>): List<Column> {
 	val sortingPks = meta.pkMappings
 		.filter { if (isRoot) it.pkType == PKType.CURRENT else it.pkType == PKType.ROOT || it.pkType == PKType.LEVEL }
 		.map { pkMapToColumn(it, isInSortingKey = true) }
@@ -187,7 +232,7 @@ private fun buildExpectedColumns(meta: SourceMeta, isRoot: Boolean): List<Column
 		.filter { it.pkType == PKType.CURRENT || it.pkType == PKType.PARENT }
 		.map { pkMapToColumn(it, isInSortingKey = false) }
 
-	val simpleColumns = meta.simpleColumnMappings.map(::columnMapToColumn)
+	val simpleColumns = meta.simpleColumnMappings.map { columnMapToColumn(it, partitionKeyColumns) }
 	val versionColumn = buildVersionColumn(meta, isRoot)
 
 	return sortingPks + nonSortingPks + simpleColumns + versionColumn

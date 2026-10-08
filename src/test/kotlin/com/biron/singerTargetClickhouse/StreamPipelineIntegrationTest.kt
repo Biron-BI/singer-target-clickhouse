@@ -15,6 +15,7 @@ import io.kotest.core.spec.style.ShouldSpec
 import io.kotest.matchers.collections.*
 import io.kotest.matchers.paths.shouldExist
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.shouldNotBe
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldInclude
 import io.kotest.property.Arb
@@ -734,6 +735,194 @@ class StreamPipelineIntegrationTest : ShouldSpec({
 			shouldThrow<IllegalStateException> {
 				runTarget("stream_deleted_record_no_pk.jsonl")
 			}.message shouldContain "cannot push deleted record to a stream without pk mapping"
+		}
+	}
+
+	context("partitioning") {
+		val monthly = "toYYYYMM(toDateTime(attributes__timestamp, 'UTC'))"
+
+		fun partitionKeys(database: String = db): List<String> =
+			queryRows("SELECT name, partition_key FROM system.tables WHERE database = '$database' ORDER BY name")
+
+		fun timestampColumnType(): String =
+			jdbcTemplate.queryForObject<String>(
+				"SELECT type FROM system.columns WHERE database = '$db' AND table = 'events' AND name = 'attributes__timestamp'",
+			)
+
+		fun activeEventsParts(): Map<String, List<String>> = jdbcTemplate.queryForList(
+			"""
+			SELECT partition_id, name
+			FROM system.parts
+			WHERE database = '$db' AND table = 'events' AND active
+			ORDER BY partition_id, name
+			""".trimIndent(),
+		).groupBy({ it["partition_id"].toString() }, { it["name"].toString() })
+
+		fun eventsContent(database: String = db): List<String> =
+			queryRows("SELECT id, attributes__name, attributes__timestamp FROM $database.events ORDER BY id") +
+					queryRows("SELECT _root_id, value FROM $database.events__tags ORDER BY _root_id, value")
+
+		val contentAfterUpdate = listOf(
+			"e1\tsignup\t1704873600",
+			"e2\torder v3\t1707552000",
+			"e3\trefund\t1710057600",
+			"e4\torder v2\t1712736000",
+			"e5\tvisit\t1715328000",
+			"e6\tvisit\t1706743800",
+			"e7\tvisit\t1713600000",
+			"e8\tsignup\t1717228800",
+			"e1\ta", "e2\tb3", "e2\tc3", "e5\te", "e6\th", "e7\tf", "e8\tg",
+		)
+
+		should("should partition the root table as declared by the SCHEMA message and leave child tables unpartitioned") {
+			runTarget("stream_partitioned_events.jsonl")
+
+			partitionKeys() shouldContainExactly listOf("events\t$monthly", "events__tags\t")
+			timestampColumnType() shouldBe "Int64"
+			// 2024-01-31T23:30:00Z: still January in UTC, already February in Europe/Paris
+			queryRows("SELECT _partition_id FROM $db.events WHERE id = 'e6'") shouldContainExactly listOf("202401")
+		}
+
+		should("should keep tables unpartitioned without partition_by") {
+			runTarget("stream_unpartitioned_events.jsonl")
+
+			partitionKeys() shouldContainExactly listOf("events\t", "events__tags\t")
+			timestampColumnType() shouldBe "Nullable(Int64)"
+		}
+
+		should("should partition by year with the YYYY converter") {
+			runTarget("stream_partitioned_events_yearly.jsonl")
+
+			partitionKeys() shouldContainExactly listOf(
+				"events\ttoYear(toDateTime(attributes__timestamp, 'UTC'))",
+				"events__tags\t",
+			)
+			activeEventsParts().keys.toList() shouldContainExactly listOf("2024")
+		}
+
+		should("should partition by a property named like a ClickHouse value") {
+			// ClickHouse would read a bare `true` as a value; it prints the column unquoted in system.tables.
+			runTarget("stream_partitioned_logins_true.jsonl")
+			runTarget("stream_partitioned_logins_true.jsonl")
+
+			queryRows("SELECT partition_key FROM system.tables WHERE database = '$db' AND name = 'logins'") shouldContainExactly
+					listOf("toYYYYMM(toDateTime(true, 'UTC'))")
+			queryRows("SELECT id, _partition_id FROM $db.logins ORDER BY id") shouldContainExactly
+					listOf("l1\t202401", "l2\t202403")
+		}
+
+		should("should load more than 100 months in a single insert") {
+			// ClickHouse refuses by default an insert block spanning more than 100 partitions.
+			runTarget("stream_partitioned_events_long_history.jsonl")
+
+			queryCount("events") shouldBe 150
+			activeEventsParts().keys shouldHaveSize 150
+		}
+
+		should("should deduplicate root and children across runs exactly like an unpartitioned table") {
+			val unpartitionedDb = "${db}_unpartitioned"
+			jdbcTemplate.execute("DROP DATABASE IF EXISTS $unpartitionedDb")
+			jdbcTemplate.execute("CREATE DATABASE $unpartitionedDb")
+			val unpartitionedConfig = writeConfig(baseConfig.copy(database = unpartitionedDb))
+
+			try {
+				listOf("events.jsonl", "events_update.jsonl", "events_update.jsonl").forEach {
+					runTarget("stream_partitioned_$it")
+					runTarget("stream_unpartitioned_$it", configFile = unpartitionedConfig)
+				}
+
+				eventsContent() shouldContainExactly contentAfterUpdate
+				eventsContent(unpartitionedDb) shouldContainExactly contentAfterUpdate
+			} finally {
+				jdbcTemplate.execute("DROP DATABASE IF EXISTS $unpartitionedDb")
+			}
+		}
+
+		should("should only rewrite the partitions that received rows") {
+			runTarget("stream_partitioned_events.jsonl")
+			val before = activeEventsParts()
+			before.keys.toList() shouldContainExactly listOf("202401", "202402", "202403", "202404", "202405")
+			before.values.forEach { it shouldHaveSize 1 }
+
+			runTarget("stream_partitioned_events_update.jsonl")
+			val after = activeEventsParts()
+
+			after.keys.toList() shouldContainExactly before.keys.toList() + "202406"
+			after.values.forEach { it shouldHaveSize 1 }
+			listOf("202401", "202403", "202405").forEach { after[it] shouldBe before[it] }
+			listOf("202402", "202404").forEach { after[it] shouldNotBe before[it] }
+		}
+
+		should("should deduplicate a partition left unmerged by an interrupted run") {
+			runTarget("stream_partitioned_events.jsonl")
+			// What a run that died between its inserts and its OPTIMIZE leaves behind: a duplicate in a partition
+			// that the next run does not touch.
+			jdbcTemplate.execute(
+				"""
+				INSERT INTO $db.events (id, attributes__timestamp, attributes__name, _ver)
+				VALUES ('e1', 1704873600, 'signup again', 1000)
+				""".trimIndent(),
+			)
+			queryCount("events") shouldBe 7
+
+			runTarget("stream_partitioned_events_schema_only.jsonl")
+
+			queryCount("events") shouldBe 6
+			queryRows("SELECT attributes__name FROM $db.events WHERE id = 'e1'") shouldContainExactly listOf("signup again")
+		}
+
+		should("should store a record without a value for the partition column with timestamp 0, like a missing key value") {
+			// ClickHouse's JSON input turns null into the column default for a non-Nullable column,
+			// whatever input_format_null_as_default says.
+			runTarget("stream_partitioned_events_null_timestamp.jsonl")
+
+			queryRows("SELECT id, attributes__timestamp, _partition_id FROM $db.events") shouldContainExactly
+					listOf("e9\t0\t197001")
+		}
+
+		should("should ignore partition_by entirely on an existing unpartitioned table") {
+			runTarget("stream_unpartitioned_events.jsonl")
+
+			runTarget("stream_partitioned_events_update.jsonl")
+
+			partitionKeys() shouldContainExactly listOf("events\t", "events__tags\t")
+			timestampColumnType() shouldBe "Nullable(Int64)"
+			eventsContent() shouldContainExactly contentAfterUpdate
+		}
+
+		should("should keep using the partitioning of an existing table when the SCHEMA message has no partition_by") {
+			runTarget("stream_partitioned_events.jsonl")
+			val before = activeEventsParts()
+
+			// Declares attributes.timestamp nullable and has no partition_by.
+			runTarget("stream_unpartitioned_events_update.jsonl")
+
+			partitionKeys() shouldContainExactly listOf("events\t$monthly", "events__tags\t")
+			timestampColumnType() shouldBe "Int64"
+			eventsContent() shouldContainExactly contentAfterUpdate
+			listOf("202401", "202403", "202405").forEach { activeEventsParts()[it] shouldBe before[it] }
+		}
+
+		should("should refuse an existing root table partitioned by another key, without changing it") {
+			runTarget("stream_partitioned_events_yearly.jsonl")
+			fun tablesState() = partitionKeys() + eventsContent() +
+					queryRows("SELECT table, name, type FROM system.columns WHERE database = '$db' ORDER BY table, name")
+			val before = tablesState()
+
+			shouldThrow<IllegalStateException> {
+				runTarget("stream_partitioned_events_update.jsonl")
+			}.message shouldContain "table events is partitioned by [toYear(toDateTime(attributes__timestamp, 'UTC'))] " +
+					"but partition_by requires [toYYYYMM(toDateTime(`attributes__timestamp`, 'UTC'))]"
+
+			tablesState() shouldContainExactly before
+		}
+
+		should("should explain a duplicate caused by a key moving to another partition") {
+			runTarget("stream_partitioned_events.jsonl")
+
+			shouldThrow<IllegalStateException> {
+				runTarget("stream_partitioned_events_moved.jsonl")
+			}.message shouldContain "Key [e1] of `events` is stored in 2 partitions"
 		}
 	}
 })

@@ -1,0 +1,9 @@
+{"type": "SCHEMA", "stream": "events", "schema": {"type": ["null", "object"], "properties": {"id": {"type": ["string"]}, "attributes": {"type": ["null", "object"], "properties": {"timestamp": {"type": ["null", "integer"]}, "name": {"type": ["null", "string"]}}}, "tags": {"type": ["null", "array"], "items": {"type": ["string"]}}}}, "key_properties": ["id"]}
+{"type": "RECORD", "stream": "events", "record": {"id": "e1", "attributes": {"timestamp": 1704873600, "name": "signup"}, "tags": ["a"]}}
+{"type": "RECORD", "stream": "events", "record": {"id": "e2", "attributes": {"timestamp": 1707552000, "name": "order"}, "tags": ["b", "c"]}}
+{"type": "RECORD", "stream": "events", "record": {"id": "e3", "attributes": {"timestamp": 1710057600, "name": "refund"}, "tags": []}}
+{"type": "RECORD", "stream": "events", "record": {"id": "e4", "attributes": {"timestamp": 1712736000, "name": "order"}, "tags": ["d"]}}
+{"type": "RECORD", "stream": "events", "record": {"id": "e5", "attributes": {"timestamp": 1715328000, "name": "visit"}, "tags": ["e"]}}
+{"type": "RECORD", "stream": "events", "record": {"id": "e6", "attributes": {"timestamp": 1706743800, "name": "visit"}, "tags": ["h"]}}
+{"type": "RECORD", "stream": "events", "record": {"id": "e2", "attributes": {"timestamp": 1707552000, "name": "order v2"}, "tags": ["b2"]}}
+{"type": "STATE", "value": {"bookmarks": {"events": "2024-05-10"}}}

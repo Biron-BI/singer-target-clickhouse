@@ -1,0 +1,3 @@
+{"type": "SCHEMA", "stream": "logins", "schema": {"type": ["null", "object"], "properties": {"id": {"type": ["string"]}, "true": {"type": ["null", "integer"]}}}, "key_properties": ["id"], "partition_by": {"property": ["true"], "type": "timestamp", "converter": "YYYYMM"}}
+{"type": "RECORD", "stream": "logins", "record": {"id": "l1", "true": 1704873600}}
+{"type": "RECORD", "stream": "logins", "record": {"id": "l2", "true": 1710057600}}

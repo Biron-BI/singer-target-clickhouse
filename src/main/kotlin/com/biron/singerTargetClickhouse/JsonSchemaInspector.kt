@@ -45,6 +45,8 @@ data class SourceMeta(
 	val simpleColumnMappings: List<ColumnMap>,
 	val sqlTableName: String,
 	val cleaningColumn: String? = null,
+	/** Only ever set on a root table. */
+	val partitionBy: PartitionBy? = null,
 )
 
 data class JsonSchemaInspectorContext(
@@ -57,6 +59,7 @@ data class JsonSchemaInspectorContext(
 	val tableName: String = defaultTableName(alias, subtableSeparator, parentCtx),
 	val cleaningColumn: String? = null,
 	val allKeyProperties: SchemaKeyProperties = SchemaKeyProperties.empty,
+	val partitionSpec: PartitionSpec? = null,
 ) {
 	fun isRoot(): Boolean = parentCtx == null
 	val rootCtx: JsonSchemaInspectorContext by lazy { generateSequence(this) { it.parentCtx }.last() }
@@ -87,13 +90,15 @@ private fun sha1Hex(input: String): String =
 
 fun buildMeta(ctx: JsonSchemaInspectorContext): SourceMeta {
 	val (simpleColumnMappings, children) = buildMetaProps(ctx)
+	val pkMappings = buildMetaPkProps(ctx)
 	return SourceMeta(
 		prop = ctx.alias,
 		sqlTableName = escapeIdentifier(ctx.tableName, ctx.subtableSeparator),
-		pkMappings = buildMetaPkProps(ctx),
+		pkMappings = pkMappings,
 		cleaningColumn = ctx.cleaningColumn,
 		simpleColumnMappings = simpleColumnMappings,
 		children = children,
+		partitionBy = ctx.partitionSpec?.let { resolvePartitionBy(ctx.alias, it, pkMappings, simpleColumnMappings) },
 	)
 }
 
