@@ -358,6 +358,11 @@ class ClickhouseConnection internal constructor(
 		@Volatile
 		private var completed: Boolean = false
 
+		/** [System.nanoTime] of the last read call that returned: how [HttpStreamingRowWriter.close] tells a slow upload from a stalled one. */
+		@Volatile
+		var lastReadNanos: Long = System.nanoTime()
+			private set
+
 		/**
 		 * Blocks while [budget] is full. [checkAlive] runs between waits so that a request the
 		 * server already ended surfaces as an error instead of a hang.
@@ -395,16 +400,19 @@ class ClickhouseConnection internal constructor(
 		}
 
 		override fun read(): Int {
-			if (!ensureAvailable()) return -1
-			return current[pos++].toInt() and 0xFF
+			val byte = if (ensureAvailable()) current[pos++].toInt() and 0xFF else -1
+			lastReadNanos = System.nanoTime()
+			return byte
 		}
 
 		override fun read(b: ByteArray, off: Int, len: Int): Int {
 			if (len == 0) return 0
-			if (!ensureAvailable()) return -1
-			val n = minOf(len, current.size - pos)
-			System.arraycopy(current, pos, b, off, n)
-			pos += n
+			val n = if (ensureAvailable()) minOf(len, current.size - pos) else -1
+			if (n > 0) {
+				System.arraycopy(current, pos, b, off, n)
+				pos += n
+			}
+			lastReadNanos = System.nanoTime()
 			return n
 		}
 
@@ -426,10 +434,17 @@ class ClickhouseConnection internal constructor(
 		}
 	}
 
+	/**
+	 * [onClose] releases the HTTP client once the request is over. [onAbort] cancels a request
+	 * still running when [close] gives up on it: `HttpClient.close()` would wait for it to
+	 * complete instead, with no time limit.
+	 */
 	internal class HttpStreamingRowWriter internal constructor(
 		private val body: BlockingQueueInputStream,
 		private val responseFuture: CompletableFuture<HttpResponse<String>>,
 		private val onClose: () -> Unit = {},
+		private val onAbort: () -> Unit = {},
+		private val closeIdleTimeoutMs: Long = CLOSE_IDLE_TIMEOUT_MS,
 	) : RowWriter {
 
 		private var closed = false
@@ -441,7 +456,7 @@ class ClickhouseConnection internal constructor(
 		}
 
 		companion object {
-			private const val CLOSE_RESPONSE_TIMEOUT_SEC = 30L
+			private const val CLOSE_IDLE_TIMEOUT_MS = 30_000L
 
 			// No per-request timeout: one insert stream can stay open for the whole ingestion
 			// of a stream (millions of rows). Idle protection is handled on the caller side by
@@ -454,7 +469,7 @@ class ClickhouseConnection internal constructor(
 					.POST(HttpRequest.BodyPublishers.ofInputStream { body })
 					.build()
 				val responseFuture = httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofString())
-				return HttpStreamingRowWriter(body, responseFuture, onClose = httpClient::close)
+				return HttpStreamingRowWriter(body, responseFuture, onClose = httpClient::close, onAbort = httpClient::shutdownNow)
 			}
 		}
 
@@ -480,20 +495,42 @@ class ClickhouseConnection internal constructor(
 			if (closed) return
 			closed = true
 			body.complete()
-			// Once the body terminator is written, the server should commit and respond within
-			// seconds. A bounded wait here also bounds how many auto-end worker threads can be
-			// parked at once if the server ever stops responding entirely.
 			val response = try {
-				responseFuture.get(CLOSE_RESPONSE_TIMEOUT_SEC, TimeUnit.SECONDS)
+				awaitResponse()
 			} catch (e: ExecutionException) {
+				onClose()
 				throw IllegalStateException("ClickHouse insert failed", e.cause ?: e)
 			} catch (e: Throwable) {
+				onAbort()
 				throw IllegalStateException("ClickHouse insert failed before server responded", e)
-			} finally {
-				onClose()
 			}
+			onClose()
 			if (response.statusCode() !in 200..299) {
 				error("ClickHouse insert failed (${response.statusCode()}): ${response.body()}")
+			}
+		}
+
+		/**
+		 * Waits as long as the request makes progress: the queued rows still have to be uploaded,
+		 * which takes as long as the link needs. Gives up only after [closeIdleTimeoutMs] without
+		 * the HTTP client reading anything, i.e. a stalled upload, or a server that does not
+		 * answer after the last byte. This bounds how long an auto-end worker can stay parked
+		 * here if the server stops responding entirely.
+		 */
+		private fun awaitResponse(): HttpResponse<String> {
+			val closeStartedNanos = System.nanoTime()
+			val idleTimeoutNanos = TimeUnit.MILLISECONDS.toNanos(closeIdleTimeoutMs)
+			while (true) {
+				val idleSinceNanos = maxOf(body.lastReadNanos, closeStartedNanos)
+				val remainingNanos = idleSinceNanos + idleTimeoutNanos - System.nanoTime()
+				if (remainingNanos <= 0) {
+					throw TimeoutException("no progress for $closeIdleTimeoutMs ms")
+				}
+				try {
+					return responseFuture.get(remainingNanos, TimeUnit.NANOSECONDS)
+				} catch (_: TimeoutException) {
+					// Re-checked against the reader's latest progress: only a full idle period gives up.
+				}
 			}
 		}
 	}

@@ -11,6 +11,7 @@ import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.ShouldSpec
 import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.collections.shouldHaveSize
+import io.kotest.matchers.longs.shouldBeGreaterThan
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.types.shouldBeInstanceOf
@@ -24,6 +25,8 @@ import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ExecutionException
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
+import kotlin.concurrent.thread
+import kotlin.system.measureTimeMillis
 
 class ClickhouseConnectionTest : ShouldSpec({
 
@@ -554,6 +557,46 @@ class ClickhouseConnectionTest : ShouldSpec({
 			underTest.close()
 
 			onCloseCalls.get() shouldBe 1
+		}
+
+		should("close() gives up and aborts the request once the upload makes no progress for the idle timeout") {
+			val body = BlockingQueueInputStream()
+			body.put("never read".toByteArray())
+			val onCloseCalls = AtomicInteger()
+			val onAbortCalls = AtomicInteger()
+			val underTest = HttpStreamingRowWriter(
+				body,
+				CompletableFuture<HttpResponse<String>>(), // never answers
+				onClose = { onCloseCalls.incrementAndGet() },
+				onAbort = { onAbortCalls.incrementAndGet() },
+				closeIdleTimeoutMs = 200,
+			)
+
+			shouldThrow<IllegalStateException> { underTest.close() }.apply {
+				message shouldContain "before server responded"
+				cause?.message shouldBe "no progress for 200 ms"
+			}
+			onAbortCalls.get() shouldBe 1
+			onCloseCalls.get() shouldBe 0
+		}
+
+		should("close() keeps waiting past the idle timeout while the upload makes progress") {
+			val body = BlockingQueueInputStream()
+			body.put(ByteArray(8))
+			val pending = CompletableFuture<HttpResponse<String>>()
+			val onAbortCalls = AtomicInteger()
+			val underTest = HttpStreamingRowWriter(body, pending, onAbort = { onAbortCalls.incrementAndGet() }, closeIdleTimeoutMs = 300)
+			// A slow link: one byte every 100 ms, then the server answers once it has read the whole body.
+			thread {
+				val buf = ByteArray(1)
+				while (body.read(buf, 0, 1) != -1) Thread.sleep(100)
+				pending.complete(mockResponse(statusCode = 200, body = ""))
+			}
+
+			val elapsedMs = measureTimeMillis { underTest.close() }
+
+			elapsedMs shouldBeGreaterThan 300L
+			onAbortCalls.get() shouldBe 0
 		}
 
 		should("gives back its budget as soon as the request fails, so other streams can write") {
