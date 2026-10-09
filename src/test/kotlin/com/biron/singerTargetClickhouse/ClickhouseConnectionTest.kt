@@ -21,6 +21,8 @@ import io.mockk.slot
 import org.springframework.jdbc.core.JdbcTemplate
 import java.net.http.HttpResponse
 import java.util.concurrent.CompletableFuture
+import java.util.concurrent.ExecutionException
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 
 class ClickhouseConnectionTest : ShouldSpec({
@@ -412,8 +414,27 @@ class ClickhouseConnectionTest : ShouldSpec({
 			// request asynchronously. We're verifying the factory wires (url, auth, client) through
 			// without throwing.
 			val client = java.net.http.HttpClient.newHttpClient()
-			val writer = DefaultRowWriterFactory(client, java.net.URI.create("http://127.0.0.1:1/insert"), "Basic test")
+			val writer = DefaultRowWriterFactory(InsertBodyBudget(1024))(client, java.net.URI.create("http://127.0.0.1:1/insert"), "Basic test")
 			writer.shouldBeInstanceOf<HttpStreamingRowWriter>()
+		}
+	}
+
+	context("InsertBodyBudget") {
+		should("takes 1/8 of the max heap, capped at 64 MiB") {
+			InsertBodyBudget.forMaxHeap(256L * MIB).capacityBytes shouldBe 32L * MIB
+			InsertBodyBudget.forMaxHeap(4096L * MIB).capacityBytes shouldBe 64L * MIB
+		}
+
+		should("refuses a reservation that does not fit until bytes are released") {
+			val underTest = InsertBodyBudget(10)
+			underTest.tryReserve(8, 0) shouldBe true
+			underTest.tryReserve(4, 50) shouldBe false
+			underTest.release(8)
+			underTest.tryReserve(4, 0) shouldBe true
+		}
+
+		should("always grants a reservation when nothing is queued, even above capacity") {
+			InsertBodyBudget(10).tryReserve(100, 0) shouldBe true
 		}
 	}
 
@@ -534,6 +555,33 @@ class ClickhouseConnectionTest : ShouldSpec({
 
 			onCloseCalls.get() shouldBe 1
 		}
+
+		should("gives back its budget as soon as the request fails, so other streams can write") {
+			val budget = InsertBodyBudget(4)
+			val pending = CompletableFuture<HttpResponse<String>>()
+			val underTest = HttpStreamingRowWriter(BlockingQueueInputStream(budget), pending)
+			underTest.write("abcd".toByteArray())
+			budget.tryReserve(4, 0) shouldBe false
+
+			pending.completeExceptionally(RuntimeException("connection reset"))
+
+			budget.tryReserve(4, 0) shouldBe true
+		}
+
+		should("write() waiting on a full budget fails once its own request ends") {
+			val budget = InsertBodyBudget(4)
+			budget.tryReserve(4, 0) shouldBe true // another stream holds the whole budget
+			val pending = CompletableFuture<HttpResponse<String>>()
+			val underTest = HttpStreamingRowWriter(BlockingQueueInputStream(budget), pending)
+			val blockedWrite = CompletableFuture.runAsync { underTest.write("ab".toByteArray()) }
+			Thread.sleep(200)
+			blockedWrite.isDone shouldBe false
+
+			pending.completeExceptionally(RuntimeException("connection reset"))
+
+			shouldThrow<ExecutionException> { blockedWrite.get(5, TimeUnit.SECONDS) }
+				.cause?.message shouldContain "mid-stream"
+		}
 	}
 
 	context("BlockingQueueInputStream") {
@@ -580,8 +628,42 @@ class ClickhouseConnectionTest : ShouldSpec({
 			underTest.complete()
 			underTest.read() shouldBe -1
 		}
+
+		should("put() blocks while the budget is full, until the reader takes the queued bytes") {
+			val underTest = BlockingQueueInputStream(InsertBodyBudget(4))
+			underTest.put("abcd".toByteArray())
+			val blockedPut = CompletableFuture.runAsync { underTest.put("ef".toByteArray()) }
+			Thread.sleep(200)
+			blockedPut.isDone shouldBe false
+
+			underTest.read() shouldBe 'a'.code
+
+			blockedPut.get(5, TimeUnit.SECONDS)
+			underTest.complete()
+			String(underTest.readAllBytes()) shouldBe "bcdef"
+		}
+
+		should("put() checks that the request is alive while it waits") {
+			val underTest = BlockingQueueInputStream(InsertBodyBudget(1))
+			underTest.put("a".toByteArray())
+			shouldThrow<IllegalStateException> { underTest.put("b".toByteArray()) { error("request ended") } }
+				.message shouldBe "request ended"
+		}
+
+		should("abandon() gives back the budget of unread bytes and ends the stream") {
+			val budget = InsertBodyBudget(10)
+			val underTest = BlockingQueueInputStream(budget)
+			underTest.put("abcdef".toByteArray())
+
+			underTest.abandon()
+
+			budget.tryReserve(10, 0) shouldBe true
+			underTest.read() shouldBe -1
+		}
 	}
 })
+
+private const val MIB = 1024L * 1024
 
 private fun mockResponse(statusCode: Int, body: String): HttpResponse<String> = object : HttpResponse<String> {
 	override fun statusCode() = statusCode

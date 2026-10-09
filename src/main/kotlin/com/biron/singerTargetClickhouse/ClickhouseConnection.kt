@@ -16,6 +16,8 @@ import java.nio.charset.StandardCharsets
 import java.time.Duration
 import java.util.*
 import java.util.concurrent.*
+import java.util.concurrent.locks.ReentrantLock
+import kotlin.concurrent.withLock
 import kotlin.math.pow
 
 private val logger = KotlinLogging.logger {}
@@ -37,7 +39,7 @@ class ClickhouseConnection internal constructor(
 		removeColumnOp = DefaultColumnRemover,
 		updateColumnOp = DefaultColumnUpdater,
 		listColumnsParser = DefaultListColumnsResultParser,
-		rowWriterFactory = DefaultRowWriterFactory,
+		rowWriterFactory = DefaultRowWriterFactory(InsertBodyBudget.forMaxHeap()),
 	)
 
 	private val dataSource: DriverManagerDataSource = DriverManagerDataSource(
@@ -281,9 +283,59 @@ class ClickhouseConnection internal constructor(
 		}
 	}
 
-	internal object DefaultRowWriterFactory : RowWriterFactory {
+	/** Every writer it opens shares [budget], so the cap holds whatever the number of open insert streams. */
+	internal class DefaultRowWriterFactory(private val budget: InsertBodyBudget) : RowWriterFactory {
 		override fun invoke(httpClient: HttpClient, url: URI, authHeader: String): RowWriter =
-			HttpStreamingRowWriter.open(url = url, authHeader = authHeader, httpClient = httpClient)
+			HttpStreamingRowWriter.open(url = url, authHeader = authHeader, httpClient = httpClient, budget = budget)
+	}
+
+	/**
+	 * Caps the insert-body bytes queued but not yet taken by the HTTP client, summed over all
+	 * open insert streams. Without it nothing makes the target wait for ClickHouse: a tap dumping
+	 * a burst faster than ClickHouse ingests piles the backlog up on the heap until
+	 * OutOfMemoryError. Once the budget is full, writes block, which in turn stalls the parser
+	 * and then the tap on its output pipe, so everything moves at ClickHouse's pace.
+	 */
+	internal class InsertBodyBudget(val capacityBytes: Long) {
+		private val lock = ReentrantLock()
+		private val released = lock.newCondition()
+		private var queuedBytes = 0L
+
+		/**
+		 * Reserves [size] bytes, waiting at most [timeoutMs] for room. Always granted when nothing
+		 * is queued, so a chunk larger than the whole budget cannot wait forever.
+		 */
+		fun tryReserve(size: Int, timeoutMs: Long): Boolean {
+			lock.withLock {
+				var remainingNs = TimeUnit.MILLISECONDS.toNanos(timeoutMs)
+				while (queuedBytes > 0 && queuedBytes + size > capacityBytes) {
+					if (remainingNs <= 0) return false
+					remainingNs = released.awaitNanos(remainingNs)
+				}
+				queuedBytes += size
+				return true
+			}
+		}
+
+		fun release(size: Int) {
+			lock.withLock {
+				queuedBytes -= size
+				released.signalAll()
+			}
+		}
+
+		companion object {
+			private const val MAX_CAPACITY_BYTES = 64L * 1024 * 1024
+
+			/**
+			 * 1/8 of the max heap, leaving the rest to the parse queue, the row batches and their
+			 * serialization. Capped because a bigger buffer buys no throughput: once the target
+			 * outruns ClickHouse the buffer stays full either way, and it only has to absorb jitter.
+			 */
+			fun forMaxHeap(maxHeapBytes: Long = Runtime.getRuntime().maxMemory()): InsertBodyBudget =
+				InsertBodyBudget(minOf(maxHeapBytes / 8, MAX_CAPACITY_BYTES))
+					.also { logger.info { "insert buffers capped at ${it.capacityBytes / (1024 * 1024)} MiB" } }
+		}
 	}
 
 	/**
@@ -292,24 +344,54 @@ class ClickhouseConnection internal constructor(
 	 * HttpClient.BodyPublishers.ofInputStream pulls from arbitrary executor threads
 	 * and recycles them between batches — PipedInputStream would then raise
 	 * "Read end dead" on the next write after the original read thread died.
+	 *
+	 * Queued bytes count against [budget] until the reader takes them.
 	 */
-	internal class BlockingQueueInputStream : InputStream() {
+	internal class BlockingQueueInputStream(
+		private val budget: InsertBodyBudget = InsertBodyBudget(Long.MAX_VALUE),
+	) : InputStream() {
 		private val queue = LinkedBlockingQueue<ByteArray>()
+		private val enqueueLock = Any()
 		private var current: ByteArray = EMPTY
 		private var pos: Int = 0
 
 		@Volatile
 		private var completed: Boolean = false
 
-		fun put(bytes: ByteArray) {
+		/**
+		 * Blocks while [budget] is full. [checkAlive] runs between waits so that a request the
+		 * server already ended surfaces as an error instead of a hang.
+		 */
+		fun put(bytes: ByteArray, checkAlive: () -> Unit = {}) {
 			if (completed || bytes.isEmpty()) return
-			queue.put(bytes)
+			while (!budget.tryReserve(bytes.size, RESERVE_WAIT_MS)) checkAlive()
+			synchronized(enqueueLock) {
+				if (completed) budget.release(bytes.size) else queue.put(bytes)
+			}
 		}
 
 		fun complete() {
-			if (completed) return
-			completed = true
-			queue.put(EOF)
+			synchronized(enqueueLock) {
+				if (completed) return
+				completed = true
+				queue.put(EOF)
+			}
+		}
+
+		/**
+		 * Ends the stream and gives back the budget of everything still queued. Only once the
+		 * request is over: dropping bytes a live request still reads would truncate the insert.
+		 */
+		fun abandon() {
+			synchronized(enqueueLock) {
+				completed = true
+				while (true) {
+					val bytes = queue.poll() ?: break
+					if (bytes !== EOF) budget.release(bytes.size)
+				}
+				// Wakes up a reader still parked in take().
+				queue.put(EOF)
+			}
 		}
 
 		override fun read(): Int {
@@ -330,6 +412,7 @@ class ClickhouseConnection internal constructor(
 			while (pos >= current.size) {
 				val next = queue.take()
 				if (next === EOF) return false
+				budget.release(next.size)
 				current = next
 				pos = 0
 			}
@@ -337,6 +420,7 @@ class ClickhouseConnection internal constructor(
 		}
 
 		companion object {
+			private const val RESERVE_WAIT_MS = 1_000L
 			private val EMPTY = ByteArray(0)
 			private val EOF = ByteArray(0)
 		}
@@ -350,14 +434,20 @@ class ClickhouseConnection internal constructor(
 
 		private var closed = false
 
+		init {
+			// Once the request is over nobody reads the body anymore: give back its budget right
+			// away, otherwise a failed stream would block the writes of every other stream.
+			responseFuture.whenComplete { _, _ -> body.abandon() }
+		}
+
 		companion object {
 			private const val CLOSE_RESPONSE_TIMEOUT_SEC = 30L
 
 			// No per-request timeout: one insert stream can stay open for the whole ingestion
 			// of a stream (millions of rows). Idle protection is handled on the caller side by
 			// RecordProcessor's auto-end timeout, which closes the stream after inactivity.
-			fun open(url: URI, authHeader: String, httpClient: HttpClient): HttpStreamingRowWriter {
-				val body = BlockingQueueInputStream()
+			fun open(url: URI, authHeader: String, httpClient: HttpClient, budget: InsertBodyBudget): HttpStreamingRowWriter {
+				val body = BlockingQueueInputStream(budget)
 				val request = HttpRequest.newBuilder(url)
 					.header("Authorization", authHeader)
 					.header("Content-Type", "application/octet-stream")
@@ -369,8 +459,13 @@ class ClickhouseConnection internal constructor(
 		}
 
 		override fun write(bytes: ByteArray) {
-			// If the server rejected the request mid-stream, surface the error now instead of
-			// silently dropping rows into a queue nobody is draining.
+			failIfRequestEnded()
+			body.put(bytes, checkAlive = ::failIfRequestEnded)
+		}
+
+		// If the server rejected the request mid-stream, surface the error now instead of
+		// silently dropping rows into a queue nobody is draining.
+		private fun failIfRequestEnded() {
 			if (responseFuture.isDone) {
 				try {
 					val resp = responseFuture.get(0, TimeUnit.SECONDS)
@@ -379,7 +474,6 @@ class ClickhouseConnection internal constructor(
 					throw IllegalStateException("ClickHouse insert failed mid-stream", e.cause ?: e)
 				}
 			}
-			body.put(bytes)
 		}
 
 		override fun close() {
