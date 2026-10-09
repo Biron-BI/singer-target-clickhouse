@@ -409,10 +409,10 @@ class ClickhouseConnection internal constructor(
 
 		/**
 		 * `mutations_sync=2` ensures ALTER … DELETE returns only once the mutation has fully
-		 * applied, matching TS's `queryOptions.mutations_sync=2`. The `*_null_as_default=0`
-		 * trio preserves NULL values literally (otherwise ClickHouse would substitute column
-		 * defaults). `date_time_input_format=best_effort` accepts the variety of date formats
-		 * Singer taps emit.
+		 * applied on all replicas. The `*_null_as_default=0` trio preserves NULL values
+		 * literally (otherwise ClickHouse would substitute column defaults).
+		 * `date_time_input_format=best_effort` accepts the variety of date formats Singer taps
+		 * emit.
 		 *
 		 * The v2 JDBC driver routes URL parameters through `ClientConfigProperties`, which
 		 * logs a warning for any key it doesn't recognize as a *client* property. Server-side

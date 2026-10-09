@@ -98,20 +98,6 @@ class MainTest : ShouldSpec({
 			captured.toString(Charsets.UTF_8) shouldBe "recorded:from-stdin"
 		}
 
-		should("accepts the no-op --verbose flag") {
-			val cfg = writeConfigFile()
-			val runner = RecordingRunner()
-			RootCommand(runner.asRunner).parse(
-				arrayOf(
-					"--config", cfg.absolutePath,
-					"--input", makeInputFile("").absolutePath,
-					"--output", makeOutputFile().absolutePath,
-					"--verbose",
-				),
-			)
-			runner.calls.size shouldBe 1
-		}
-
 		should("defaults update-streams to empty when not provided") {
 			val cfg = writeConfigFile()
 			val runner = RecordingRunner()

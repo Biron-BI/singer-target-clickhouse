@@ -3,7 +3,6 @@ package com.biron.singerTargetClickhouse
 import com.biron.singer.core.logging.LoggingConfigurer
 import com.github.ajalt.clikt.core.CliktCommand
 import com.github.ajalt.clikt.core.ProgramResult
-import com.github.ajalt.clikt.parameters.options.flag
 import com.github.ajalt.clikt.parameters.options.multiple
 import com.github.ajalt.clikt.parameters.options.option
 import com.github.ajalt.clikt.parameters.options.required
@@ -48,10 +47,6 @@ class RootCommand internal constructor(
 		"-u", "--update-streams",
 		help = "Schema whose root and children tables will be dropped / recreated on SCHEMA messages",
 	).multiple()
-
-	/** no-op flag kept for TS-CLI parity; log verbosity is driven by config.logging_level */
-	@Suppress("unused")
-	private val verbose by option("--verbose").flag()
 
 	override fun run() {
 		val config = configPath.reader(StandardCharsets.UTF_8).use { TargetConfig.fromJson(it) }

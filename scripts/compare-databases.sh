@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Compare the contents of two ClickHouse databases — typically the two outputs
-# of scripts/benchmark.sh (bench_kotlin vs bench_ts) — to verify content parity.
+# of scripts/benchmark.sh (bench_baseline vs bench_candidate) — to verify
+# content parity.
 #
 # For each table present in both databases the script compares:
 #   - row count (after ReplacingMergeTree dedup via FINAL)
@@ -13,8 +14,8 @@
 # Usage: scripts/compare-databases.sh [options]
 #
 # Options:
-#   --db-a <name>       First database (default: bench_kotlin)
-#   --db-b <name>       Second database (default: bench_ts)
+#   --db-a <name>       First database (default: bench_baseline)
+#   --db-b <name>       Second database (default: bench_candidate)
 #   --ch-host <host>    ClickHouse host (default: localhost)
 #   --ch-port <port>    ClickHouse HTTP port (default: 8123)
 #   --ch-user <user>    ClickHouse user (default: default)
@@ -28,8 +29,8 @@
 set -euo pipefail
 export LC_ALL=C
 
-DB_A="bench_kotlin"
-DB_B="bench_ts"
+DB_A="bench_baseline"
+DB_B="bench_candidate"
 CH_HOST="localhost"
 CH_PORT="8123"
 CH_USER="default"
@@ -93,7 +94,7 @@ list_tables() {
            ORDER BY name FORMAT TSVRaw"
 }
 
-# Columns used in the content hash. Excludes per-impl versioning columns.
+# Columns used in the content hash. Excludes the versioning columns.
 list_hash_columns() {
   local db="$1" table="$2"
   ch_curl "SELECT name FROM system.columns
@@ -107,8 +108,7 @@ list_hash_columns() {
 # both with a different type. Empty output means the structures match. The
 # message is composed in SQL so we don't have to deal with bash's tab-IFS
 # collapsing empty middle columns. Versioning columns (`_ver`, `_root_ver`)
-# are excluded since they're an impl-specific concern, like in the
-# content-hash step.
+# are excluded since they're run-specific, like in the content-hash step.
 table_structure_diff() {
   local table="$1"
   ch_curl "

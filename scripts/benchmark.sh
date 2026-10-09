@@ -1,29 +1,41 @@
 #!/usr/bin/env bash
-# Benchmark the Kotlin port vs the published TS target on the same JSONL input.
+# Benchmark two versions of the target on the same JSONL input — typically a
+# modification (the working tree) against the version it starts from.
 #
-# Both implementations are invoked as Docker containers against the ClickHouse
-# instance on the host (default: http://localhost:8123, user `default`, no password).
-# The Kotlin image is built locally from the current working tree.
+# Each version is built into a Docker image and run against the ClickHouse
+# instance on the host (default: http://localhost:8123, user `default`, no
+# password), each into its own database (bench_baseline / bench_candidate).
+# Once all iterations are done, scripts/compare-databases.sh checks that both
+# versions produced the same content.
 #
-# Usage: scripts/benchmark.sh [options] <input.jsonl.gz>
+# Usage: scripts/benchmark.sh [options] --baseline <git-ref> <input.jsonl.gz>
 #
 # Options:
-#   -n <iters>          Number of iterations per implementation (default: 1)
-#   --skip-build        Skip rebuilding the Kotlin jar / image
-#   --skip-pull         Skip pulling the TS image
-#   --only <kotlin|ts>  Run only one implementation
+#   --baseline <ref>    Git ref of the reference version (required)
+#   --candidate <ref>   Git ref of the version under test (default: the working
+#                       tree, uncommitted changes included)
+#   -n <iters>          Number of iterations per version (default: 1)
+#   --skip-build        Reuse the existing working-tree image instead of rebuilding it
 #   --ch-host <host>    ClickHouse host (default: localhost)
 #   --ch-port <port>    ClickHouse HTTP port (default: 8123)
 #   --ch-user <user>    ClickHouse user (default: default)
 #   --ch-password <pw>  ClickHouse password (default: empty)
 #
+# Examples:
+#   scripts/benchmark.sh -n 3 --baseline master input.jsonl.gz
+#   scripts/benchmark.sh --baseline v3.1.0 --candidate my-branch input.jsonl.gz
+#
 # Notes:
+# - A git ref is built from a temporary `git worktree` into the image
+#   `target-clickhouse-bench:<sha>`. That image is reused as long as it exists,
+#   so benchmarking against the same baseline again doesn't rebuild it. The
+#   working tree is built in place into `target-clickhouse-bench:worktree`.
 # - Requires Linux-style `--network=host` for Docker (Linux only; Docker Desktop
 #   users on macOS/Windows would need `host.docker.internal` tweaks).
 # - The script drops & recreates the target databases before each run.
 # - CPU time is measured from the container's cgroup v2 `cpu.stat` (`usage_usec`,
 #   cumulative across all threads). `eff_cores` = cpu_ms / wall_ms tells you how
-#   many CPU cores the implementation uses on average — useful to plan how many
+#   many CPU cores the version uses on average — useful to plan how many
 #   targets you can run in parallel on a given host. Requires cgroups v2 with the
 #   systemd driver (Docker default on recent Ubuntu/Debian/Fedora).
 # - Background MergeTree merges are disabled on the ClickHouse server for the
@@ -41,8 +53,8 @@ PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 ITERATIONS=1
 SKIP_BUILD=0
-SKIP_PULL=0
-ONLY=""
+BASELINE_REF=""
+CANDIDATE_REF=""
 CH_HOST="localhost"
 CH_PORT="8123"
 CH_USER="default"
@@ -51,9 +63,9 @@ CH_PASSWORD=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -n) ITERATIONS="$2"; shift 2 ;;
+    --baseline) BASELINE_REF="$2"; shift 2 ;;
+    --candidate) CANDIDATE_REF="$2"; shift 2 ;;
     --skip-build) SKIP_BUILD=1; shift ;;
-    --skip-pull) SKIP_PULL=1; shift ;;
-    --only) ONLY="$2"; shift 2 ;;
     --ch-host) CH_HOST="$2"; shift 2 ;;
     --ch-port) CH_PORT="$2"; shift 2 ;;
     --ch-user) CH_USER="$2"; shift 2 ;;
@@ -71,8 +83,8 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if [[ -z "${INPUT:-}" ]]; then
-  echo "usage: $0 [options] <input.jsonl.gz>" >&2
+if [[ -z "${INPUT:-}" || -z "$BASELINE_REF" ]]; then
+  echo "usage: $0 [options] --baseline <git-ref> <input.jsonl.gz>" >&2
   exit 2
 fi
 if [[ ! -f "$INPUT" ]]; then
@@ -80,10 +92,15 @@ if [[ ! -f "$INPUT" ]]; then
   exit 2
 fi
 
-KOTLIN_IMAGE="target-clickhouse-kotlin:local"
-TS_IMAGE="ghcr.io/biron-bi/target-clickhouse:2.11.0"
-DB_KOTLIN="bench_kotlin"
-DB_TS="bench_ts"
+IMAGE_REPO="target-clickhouse-bench"
+DB_BASELINE="bench_baseline"
+DB_CANDIDATE="bench_candidate"
+LOG_FILE="${TMPDIR:-/tmp}/bench.log"
+
+# Temporary resources released by `cleanup` on exit.
+WORKTREES=()
+CONFIGS=()
+MERGES_STOPPED=0
 
 ch_curl() {
   local query="$1"
@@ -104,16 +121,66 @@ check_ch() {
   fi
 }
 
-build_kotlin_image() {
-  echo "[build] gradle bootJar"
-  (cd "$PROJECT_ROOT" && ./gradlew -q bootJar)
-  echo "[build] docker build $KOTLIN_IMAGE"
-  docker build --quiet -f docker/Dockerfile -t "$KOTLIN_IMAGE" "$PROJECT_ROOT" >/dev/null
+cleanup() {
+  if [[ "$MERGES_STOPPED" == 1 ]]; then
+    ch_curl "SYSTEM START MERGES" >/dev/null 2>&1 || true
+  fi
+  local dir
+  for dir in "${WORKTREES[@]}"; do
+    git -C "$PROJECT_ROOT" worktree remove --force "$dir" >/dev/null 2>&1 || true
+    rm -rf "$dir"
+  done
+  rm -f "${CONFIGS[@]}"
+}
+trap cleanup EXIT
+
+resolve_sha() {
+  git -C "$PROJECT_ROOT" rev-parse --verify --quiet "${1}^{commit}" || {
+    echo "unknown git ref: $1" >&2
+    exit 2
+  }
 }
 
-pull_ts_image() {
-  echo "[pull] $TS_IMAGE"
-  docker pull --quiet "$TS_IMAGE" >/dev/null
+image_exists() {
+  docker image inspect "$1" >/dev/null 2>&1
+}
+
+# Builds the jar + image of the working tree, in place.
+build_worktree_image() {
+  local image="$1"
+  if [[ "$SKIP_BUILD" == 1 ]]; then
+    if image_exists "$image"; then
+      echo "[build] reusing $image"
+      return
+    fi
+    echo "--skip-build: image $image doesn't exist yet" >&2
+    exit 1
+  fi
+  echo "[build] working tree -> $image"
+  (cd "$PROJECT_ROOT" && ./gradlew -q bootJar)
+  docker build --quiet -f "$PROJECT_ROOT/docker/Dockerfile" -t "$image" "$PROJECT_ROOT" >/dev/null
+}
+
+# Builds the jar + image of a commit from a temporary git worktree, unless the
+# image already exists.
+build_commit_image() {
+  local sha="$1" image="$2" dir
+  if image_exists "$image"; then
+    echo "[build] reusing $image"
+    return
+  fi
+  echo "[build] ${sha:0:7} -> $image"
+  dir="$(mktemp -d "${TMPDIR:-/tmp}/bench-worktree.XXXXXX")"
+  WORKTREES+=("$dir")
+  git -C "$PROJECT_ROOT" worktree add --quiet --detach "$dir" "$sha"
+  if [[ ! -f "$dir/docker/Dockerfile" ]]; then
+    echo "no docker/Dockerfile at ${sha:0:7}: can't build an image for it" >&2
+    exit 1
+  fi
+  # --no-watch-fs: the daemon would otherwise keep watching the throwaway worktree
+  (cd "$dir" && ./gradlew -q --no-watch-fs bootJar)
+  docker build --quiet -f "$dir/docker/Dockerfile" -t "$image" "$dir" >/dev/null
+  git -C "$PROJECT_ROOT" worktree remove --force "$dir"
 }
 
 write_config() {
@@ -194,7 +261,7 @@ run_once() {
   local image="$1" db="$2" config="$3"
   local cidfile cpufile freqfile start end rc
   reset_db "$db"
-  : >/tmp/bench.log
+  : >"$LOG_FILE"
 
   cidfile=$(mktemp -u "${TMPDIR:-/tmp}/bench-cid.XXXXXX")
   cpufile=$(mktemp "${TMPDIR:-/tmp}/bench-cpu.XXXXXX")
@@ -249,7 +316,7 @@ run_once() {
     --network=host \
     -v "$config:/config.json:ro" \
     "$image" --config /config.json \
-    >/dev/null 2>>/tmp/bench.log
+    >/dev/null 2>>"$LOG_FILE"
   rc="${PIPESTATUS[1]}"
   set -e
   end=$(date +%s%N)
@@ -257,8 +324,8 @@ run_once() {
   wait "$poller" 2>/dev/null || true
 
   if [[ "$rc" != "0" ]]; then
-    echo "container exited non-zero ($rc). see /tmp/bench.log:" >&2
-    tail -n 20 /tmp/bench.log >&2
+    echo "container exited non-zero ($rc). see $LOG_FILE:" >&2
+    tail -n 20 "$LOG_FILE" >&2
     rm -f "$cidfile" "$cpufile" "$freqfile"
     return 1
   fi
@@ -293,28 +360,48 @@ average() {
 
 check_ch
 
-if [[ "$SKIP_BUILD" == 0 && "$ONLY" != "ts" ]]; then
-  build_kotlin_image
-fi
-if [[ "$SKIP_PULL" == 0 && "$ONLY" != "kotlin" ]]; then
-  pull_ts_image
+BASELINE_SHA="$(resolve_sha "$BASELINE_REF")"
+BASELINE_IMAGE="${IMAGE_REPO}:${BASELINE_SHA:0:12}"
+BASELINE_DESC="$BASELINE_REF (${BASELINE_SHA:0:7})"
+if [[ -n "$CANDIDATE_REF" ]]; then
+  CANDIDATE_SHA="$(resolve_sha "$CANDIDATE_REF")"
+  CANDIDATE_IMAGE="${IMAGE_REPO}:${CANDIDATE_SHA:0:12}"
+  CANDIDATE_DESC="$CANDIDATE_REF (${CANDIDATE_SHA:0:7})"
+  if [[ "$CANDIDATE_SHA" == "$BASELINE_SHA" ]]; then
+    echo "warning: baseline and candidate are the same commit (${BASELINE_SHA:0:7})" >&2
+  fi
+else
+  CANDIDATE_IMAGE="${IMAGE_REPO}:worktree"
+  CANDIDATE_DESC="working tree (on $(git -C "$PROJECT_ROOT" rev-parse --short HEAD))"
 fi
 
-KOTLIN_CFG=$(write_config "$DB_KOTLIN")
-TS_CFG=$(write_config "$DB_TS")
+build_commit_image "$BASELINE_SHA" "$BASELINE_IMAGE"
+if [[ -n "$CANDIDATE_REF" ]]; then
+  build_commit_image "$CANDIDATE_SHA" "$CANDIDATE_IMAGE"
+else
+  build_worktree_image "$CANDIDATE_IMAGE"
+fi
+
+echo
+echo "baseline : $BASELINE_DESC -> $BASELINE_IMAGE"
+echo "candidate: $CANDIDATE_DESC -> $CANDIDATE_IMAGE"
+
+BASELINE_CFG=$(write_config "$DB_BASELINE")
+CANDIDATE_CFG=$(write_config "$DB_CANDIDATE")
+CONFIGS+=("$BASELINE_CFG" "$CANDIDATE_CFG")
 
 # Freeze background merges so CH's CPU doesn't compete with the target for
 # cores on this host. Re-enabled unconditionally on exit. This matches the
 # production topology where CH runs on a separate host and merges don't steal
 # target CPU.
 ch_curl "SYSTEM STOP MERGES" >/dev/null
-trap 'ch_curl "SYSTEM START MERGES" >/dev/null 2>&1 || true; rm -f "$KOTLIN_CFG" "$TS_CFG"' EXIT
+MERGES_STOPPED=1
 
-declare -a KOTLIN_WALL=() KOTLIN_CPU=()
-declare -a TS_WALL=() TS_CPU=()
+declare -a BASELINE_WALL=() BASELINE_CPU=()
+declare -a CANDIDATE_WALL=() CANDIDATE_CPU=()
 
 printf "\n%-12s %-6s %-10s %-10s %-10s %-9s %-9s %-7s %-10s %-10s\n" \
-  "impl" "iter" "wall_ms" "cpu_ms" "eff_cores" "mhz_avg" "mhz_min" "temp_C" "rows" "tables"
+  "version" "iter" "wall_ms" "cpu_ms" "eff_cores" "mhz_avg" "mhz_min" "temp_C" "rows" "tables"
 printf '%s\n' "---------------------------------------------------------------------------------------------------"
 
 record() {
@@ -329,16 +416,13 @@ record() {
 }
 
 for i in $(seq 1 "$ITERATIONS"); do
-  if [[ "$ONLY" != "ts" ]]; then
-    read -r k_wall k_cpu k_mhz_avg k_mhz_min k_temp < <(run_once "$KOTLIN_IMAGE" "$DB_KOTLIN" "$KOTLIN_CFG")
-    KOTLIN_WALL+=("$k_wall"); KOTLIN_CPU+=("$k_cpu")
-    record "kotlin" "$i" "$DB_KOTLIN" "$k_wall" "$k_cpu" "$k_mhz_avg" "$k_mhz_min" "$k_temp"
-  fi
-  if [[ "$ONLY" != "kotlin" ]]; then
-    read -r t_wall t_cpu t_mhz_avg t_mhz_min t_temp < <(run_once "$TS_IMAGE" "$DB_TS" "$TS_CFG")
-    TS_WALL+=("$t_wall"); TS_CPU+=("$t_cpu")
-    record "typescript" "$i" "$DB_TS" "$t_wall" "$t_cpu" "$t_mhz_avg" "$t_mhz_min" "$t_temp"
-  fi
+  read -r b_wall b_cpu b_mhz_avg b_mhz_min b_temp < <(run_once "$BASELINE_IMAGE" "$DB_BASELINE" "$BASELINE_CFG")
+  BASELINE_WALL+=("$b_wall"); BASELINE_CPU+=("$b_cpu")
+  record "baseline" "$i" "$DB_BASELINE" "$b_wall" "$b_cpu" "$b_mhz_avg" "$b_mhz_min" "$b_temp"
+
+  read -r c_wall c_cpu c_mhz_avg c_mhz_min c_temp < <(run_once "$CANDIDATE_IMAGE" "$DB_CANDIDATE" "$CANDIDATE_CFG")
+  CANDIDATE_WALL+=("$c_wall"); CANDIDATE_CPU+=("$c_cpu")
+  record "candidate" "$i" "$DB_CANDIDATE" "$c_wall" "$c_cpu" "$c_mhz_avg" "$c_mhz_min" "$c_temp"
 done
 
 summarize() {
@@ -346,7 +430,6 @@ summarize() {
   local label="$1"
   local -n wall_arr="$2"
   local -n cpu_arr="$3"
-  [[ ${#wall_arr[@]} -eq 0 ]] && return
   local w_avg c_avg
   w_avg=$(printf "%s\n" "${wall_arr[@]}" | average)
   c_avg=$(printf "%s\n" "${cpu_arr[@]}" | average)
@@ -358,25 +441,28 @@ summarize() {
 }
 
 echo
-summarize "kotlin" KOTLIN_WALL KOTLIN_CPU
-summarize "typescript" TS_WALL TS_CPU
+summarize "baseline" BASELINE_WALL BASELINE_CPU
+summarize "candidate" CANDIDATE_WALL CANDIDATE_CPU
 
-if [[ ${#KOTLIN_WALL[@]} -gt 0 && ${#TS_WALL[@]} -gt 0 ]]; then
-  wall_ratio=$(awk -v k="${kotlin_WALL_AVG:-0}" -v t="${typescript_WALL_AVG:-0}" \
-    'BEGIN { if (k>0) printf "%.2fx\n", t/k; else print "n/a" }')
-  cpu_ratio=$(awk -v k="${kotlin_CPU_AVG:-0}" -v t="${typescript_CPU_AVG:-0}" \
-    'BEGIN { if (k>0) printf "%.2fx\n", t/k; else print "n/a" }')
-  echo "wall speedup (ts / kotlin): $wall_ratio"
-  echo "cpu  ratio   (ts / kotlin): $cpu_ratio   (<1 means kotlin burns more CPU to get its wall-time win)"
+wall_ratio=$(awk -v b="${baseline_WALL_AVG:-0}" -v c="${candidate_WALL_AVG:-0}" \
+  'BEGIN { if (c>0) printf "%.2fx\n", b/c; else print "n/a" }')
+cpu_ratio=$(awk -v b="${baseline_CPU_AVG:-0}" -v c="${candidate_CPU_AVG:-0}" \
+  'BEGIN { if (c>0) printf "%.2fx\n", b/c; else print "n/a" }')
+echo "wall speedup (baseline / candidate): $wall_ratio   (>1 means the candidate is faster)"
+echo "cpu  ratio   (baseline / candidate): $cpu_ratio   (>1 means the candidate burns less CPU)"
 
-  r_kotlin=$(total_rows "$DB_KOTLIN")
-  r_ts=$(total_rows "$DB_TS")
-  if [[ "$r_kotlin" == "$r_ts" ]]; then
-    echo "row-count parity: OK (both $r_kotlin)"
-  else
-    echo "row-count parity: MISMATCH (kotlin=$r_kotlin, ts=$r_ts)"
-  fi
+echo
+parity_report="$("$PROJECT_ROOT/scripts/compare-databases.sh" \
+  --db-a "$DB_BASELINE" --db-b "$DB_CANDIDATE" \
+  --ch-host "$CH_HOST" --ch-port "$CH_PORT" --ch-user "$CH_USER" --ch-password "$CH_PASSWORD" 2>&1)" \
+  && parity_rc=0 || parity_rc=$?
+if [[ "$parity_rc" == 0 ]]; then
+  echo "content parity: OK ($(printf '%s\n' "$parity_report" | tail -n 1))"
+else
+  echo "content parity: MISMATCH"
+  printf '%s\n' "$parity_report" | sed 's/^/  /'
 fi
 
 echo
-echo "(container stderr captured at /tmp/bench.log)"
+echo "(container stderr of the last run captured at $LOG_FILE)"
+exit "$parity_rc"

@@ -84,9 +84,8 @@ sealed interface TargetMessage {
 }
 
 /**
- * Mirrors singer-node's SchemaKeyProperties: key properties for the current level plus,
- * recursively, children. Used to compute `_parent_X` columns in child tables when the
- * parent level has primary keys.
+ * Key properties for the current level plus, recursively, children. Used to compute
+ * `_parent_X` columns in child tables when the parent level has primary keys.
  */
 data class SchemaKeyProperties(
 	val props: List<String>,

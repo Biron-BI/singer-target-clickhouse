@@ -336,7 +336,8 @@ fun getSimpleColumnSqlType(ctx: JsonSchemaInspectorContext, propDef: JsonSchema,
 		}
 
 		"number" -> when (format) {
-			// the `.takeIf { it != 0 }` is a backward compatibility with the old TS-version
+			// precision/decimals = 0 mean "not set": precision 0 is invalid in ClickHouse, and
+			// existing tables were created with the 16/2 default for decimals = 0
 			null -> "Decimal(${propDef.precision?.takeIf { it != 0 } ?: 16}, ${propDef.decimals?.takeIf { it != 0 } ?: 2})"
 			"float64" -> "Float64"
 			"float32" -> "Float32"

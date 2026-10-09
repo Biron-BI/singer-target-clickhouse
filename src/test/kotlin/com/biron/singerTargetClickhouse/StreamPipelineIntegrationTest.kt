@@ -482,8 +482,8 @@ class StreamPipelineIntegrationTest : ShouldSpec({
 		}
 
 		// Verifies that a batch is committed after insert_stream_timeout_sec when no
-		// end-of-stream or state message is received. We replace the shell-based approach
-		// of the TS test with a PipedInputStream kept open from a coroutine.
+		// end-of-stream or state message is received. The input is a PipedInputStream kept
+		// open from a coroutine, so EOF doesn't flush the batch before the timeout.
 		should("should insert record after some time even if stream isn't ended nor state message were received") {
 			val insertTimeoutSec = 8
 			val cfg = toTargetConfig(
