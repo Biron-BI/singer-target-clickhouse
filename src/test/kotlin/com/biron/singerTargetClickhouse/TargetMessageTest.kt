@@ -193,15 +193,26 @@ class TargetMessageTest : ShouldSpec({
 		fun schemaLine(partitionBy: String) =
 			"""{"type":"SCHEMA","stream":"events",
 			   "schema":{"type":["object"],"properties":{"id":{"type":"string"},
+			     "day":{"type":["null","string"],"format":"date"},
+			     "occurred_at":{"type":["null","string"],"format":"date-time"},
 			     "attributes":{"type":["null","object"],"properties":{"timestamp":{"type":["null","integer"]}}}}},
 			   "key_properties":["id"],"partition_by":$partitionBy}"""
 
-		should("parses partition_by and resolves it on the root meta") {
-			val msg = aUnderTest().readSingle(
-				schemaLine("""{"property":["attributes","timestamp"],"type":"timestamp","converter":"YYYYMM"}"""),
-			).shouldBeInstanceOf<TargetMessage.Schema>()
+		context("parses partition_by and resolves it on the root meta") {
+			withData(
+				mapOf(
+					"timestamp" to (
+							"""{"property":["attributes","timestamp"],"type":"timestamp","converter":"YYYYMM"}""" to
+									"toYYYYMM(toDateTime(`attributes__timestamp`, 'UTC'))"
+							),
+					"date" to ("""{"property":["day"],"type":"date","converter":"YYYY"}""" to "toYear(`day`)"),
+					"date-time" to ("""{"property":["occurred_at"],"type":"date-time","converter":"YYYYMM"}""" to "toYYYYMM(`occurred_at`)"),
+				),
+			) { (partitionBy, expectedExpression) ->
+				val msg = aUnderTest().readSingle(schemaLine(partitionBy)).shouldBeInstanceOf<TargetMessage.Schema>()
 
-			msg.meta.partitionBy?.expression shouldBe "toYYYYMM(toDateTime(`attributes__timestamp`, 'UTC'))"
+				msg.meta.partitionBy?.expression shouldBe expectedExpression
+			}
 		}
 
 		should("reads a null partition_by as no partitioning") {
@@ -219,8 +230,8 @@ class TargetMessageTest : ShouldSpec({
 							),
 					"empty property" to ("""{"property":[],"type":"timestamp","converter":"YYYYMM"}""" to "property must be"),
 					"unknown type" to (
-							"""{"property":["attributes","timestamp"],"type":"date","converter":"YYYYMM"}""" to
-									"type must be one of [timestamp]"
+							"""{"property":["attributes","timestamp"],"type":"datetime","converter":"YYYYMM"}""" to
+									"type must be one of [timestamp, date, date-time]"
 							),
 					"unknown converter" to (
 							"""{"property":["attributes","timestamp"],"type":"timestamp","converter":"YYYYMMDD"}""" to

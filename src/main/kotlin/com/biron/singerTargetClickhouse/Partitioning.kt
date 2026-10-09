@@ -14,6 +14,12 @@ data class PartitionSpec(
 	enum class Type(val jsonValue: String) {
 		/** Integer Unix timestamp, in seconds. */
 		TIMESTAMP("timestamp"),
+
+		/** Date column: string with format `date` (or `x-excel-date`). */
+		DATE("date"),
+
+		/** DateTime or DateTime64 column: string with format `date-time` (or `date-time64`). */
+		DATE_TIME("date-time"),
 	}
 
 	enum class Converter(val function: String) {
@@ -42,8 +48,9 @@ data class PartitionSpec(
 data class PartitionBy(val column: String, val expression: String)
 
 /**
- * Only root columns can drive the partition: child tables do not have them. The date is computed
- * in UTC so that the partition of a row does not depend on the server timezone.
+ * Only root columns can drive the partition: child tables do not have them. A timestamp is converted
+ * in UTC so that the partition of a row does not depend on the server timezone. Date and DateTime
+ * columns are used as they are: a DateTime is read in the server timezone, as ClickHouse displays it.
  */
 internal fun resolvePartitionBy(
 	stream: String,
@@ -53,17 +60,38 @@ internal fun resolvePartitionBy(
 ): PartitionBy {
 	val prop = spec.property.joinToString(NESTED_SUB_OBJECT_SEPARATOR)
 	val path = spec.property.joinToString(".")
-	val (sqlIdentifier, schemaType) =
-		pkMappings.firstOrNull { it.prop == prop }?.let { it.sqlIdentifier to it.schemaType }
-			?: columns.firstOrNull { it.prop == prop && !it.nestedArray }?.let { it.sqlIdentifier to it.schemaType }
+	val column =
+		pkMappings.firstOrNull { it.prop == prop }?.let { PartitionColumn(it.sqlIdentifier, it.chType, it.schemaType, it.typeFormat) }
+			?: columns.firstOrNull { it.prop == prop && !it.nestedArray }
+				?.let { PartitionColumn(it.sqlIdentifier, it.chType, it.schemaType, it.typeFormat) }
 			?: error("[$stream]: partition_by property [$path] is not a column of the root table (properties inside arrays are not supported)")
 	val date = when (spec.type) {
 		PartitionSpec.Type.TIMESTAMP -> {
-			check(schemaType == "integer") {
-				"[$stream]: partition_by property [$path] must be an integer to be used as a timestamp, found ${schemaType ?: "no type"}"
+			check(column.schemaType == "integer") {
+				"[$stream]: partition_by property [$path] must be an integer to be used as a timestamp, found ${column.schemaType ?: "no type"}"
 			}
-			"toDateTime($sqlIdentifier, 'UTC')"
+			"toDateTime(${column.sqlIdentifier}, 'UTC')"
+		}
+
+		PartitionSpec.Type.DATE -> {
+			check(column.chType == "Date") {
+				"[$stream]: partition_by property [$path] must be a string with format date to be used as a date, found ${column.declaredType()}"
+			}
+			column.sqlIdentifier
+		}
+
+		PartitionSpec.Type.DATE_TIME -> {
+			check(column.chType == "DateTime" || column.chType == "DateTime64") {
+				"[$stream]: partition_by property [$path] must be a string with format date-time or date-time64 to be used as a date-time, " +
+						"found ${column.declaredType()}"
+			}
+			column.sqlIdentifier
 		}
 	}
-	return PartitionBy(sqlIdentifier.removeSurrounding("`"), "${spec.converter.function}($date)")
+	return PartitionBy(column.sqlIdentifier.removeSurrounding("`"), "${spec.converter.function}($date)")
+}
+
+private data class PartitionColumn(val sqlIdentifier: String, val chType: String?, val schemaType: String?, val typeFormat: String?) {
+	/** The type as the SCHEMA message declares it, e.g. `string with format date-time`. */
+	fun declaredType(): String = (schemaType ?: "no type") + typeFormat?.let { " with format $it" }.orEmpty()
 }

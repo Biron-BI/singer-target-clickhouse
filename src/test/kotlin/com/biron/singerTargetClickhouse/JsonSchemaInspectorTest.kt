@@ -507,6 +507,10 @@ class JsonSchemaInspectorTest : ShouldSpec({
 			properties = mapOf(
 				"id" to JsonSchema(type = listOf("integer")),
 				"true" to JsonSchema(type = listOf("integer")),
+				"day" to JsonSchema(type = listOf("null", "string"), format = "date"),
+				"excel_day" to JsonSchema(type = listOf("string"), format = "x-excel-date"),
+				"occurred_at" to JsonSchema(type = listOf("null", "string"), format = "date-time"),
+				"occurred_at64" to JsonSchema(type = listOf("string"), format = "date-time64"),
 				"attributes" to JsonSchema(
 					type = listOf("null", "object"),
 					properties = mapOf(
@@ -522,13 +526,16 @@ class JsonSchemaInspectorTest : ShouldSpec({
 			),
 		)
 
-		fun metaPartitionedBy(vararg property: String, converter: PartitionSpec.Converter = PartitionSpec.Converter.YYYYMM) =
-			buildMeta(
-				JsonSchemaInspectorContext(
-					"events", eventsSchema, listOf("id"),
-					partitionSpec = PartitionSpec(property.toList(), PartitionSpec.Type.TIMESTAMP, converter),
-				),
-			)
+		fun metaPartitionedBy(
+			vararg property: String,
+			type: PartitionSpec.Type = PartitionSpec.Type.TIMESTAMP,
+			converter: PartitionSpec.Converter = PartitionSpec.Converter.YYYYMM,
+		) = buildMeta(
+			JsonSchemaInspectorContext(
+				"events", eventsSchema, listOf("id"),
+				partitionSpec = PartitionSpec(property.toList(), type, converter),
+			),
+		)
 
 		should("resolves a nested property into an expression computed in UTC") {
 			val meta = metaPartitionedBy("attributes", "timestamp")
@@ -553,6 +560,21 @@ class JsonSchemaInspectorTest : ShouldSpec({
 			metaPartitionedBy("id").partitionBy?.expression shouldBe "toYYYYMM(toDateTime(`id`, 'UTC'))"
 		}
 
+		context("uses Date and DateTime columns as they are") {
+			withData(
+				mapOf(
+					"date" to (Triple("day", PartitionSpec.Type.DATE, PartitionSpec.Converter.YYYYMM) to "toYYYYMM(`day`)"),
+					"x-excel-date" to (Triple("excel_day", PartitionSpec.Type.DATE, PartitionSpec.Converter.YYYY) to "toYear(`excel_day`)"),
+					"date-time" to (Triple("occurred_at", PartitionSpec.Type.DATE_TIME, PartitionSpec.Converter.YYYYMM) to "toYYYYMM(`occurred_at`)"),
+					"date-time64" to (Triple("occurred_at64", PartitionSpec.Type.DATE_TIME, PartitionSpec.Converter.YYYY) to "toYear(`occurred_at64`)"),
+				),
+			) { (spec, expectedExpression) ->
+				val (property, type, converter) = spec
+				metaPartitionedBy(property, type = type, converter = converter).partitionBy shouldBe
+						PartitionBy(column = property, expression = expectedExpression)
+			}
+		}
+
 		should("leaves the column nullability as declared by the schema") {
 			metaPartitionedBy("attributes", "timestamp").simpleColumnMappings
 				.single { it.prop == "attributes${NESTED_SUB_OBJECT_SEPARATOR}timestamp" }.nullable shouldBe true
@@ -564,11 +586,29 @@ class JsonSchemaInspectorTest : ShouldSpec({
 					"unknown property" to (listOf("attributes", "missing") to "is not a column of the root table"),
 					"property inside an array" to (listOf("tags", "at") to "properties inside arrays are not supported"),
 					"non-integer property" to (listOf("attributes", "datetime") to "must be an integer to be used as a timestamp, found string"),
+					"date property as a timestamp" to (listOf("day") to "must be an integer to be used as a timestamp, found string"),
 				),
 			) { (property, expectedMessage) ->
 				shouldThrow<IllegalStateException> {
 					metaPartitionedBy(*property.toTypedArray())
 				}.message shouldContain expectedMessage
+			}
+		}
+
+		context("rejects a property whose type does not match a date type") {
+			withData(
+				mapOf(
+					"date on a date-time" to (Triple("occurred_at", PartitionSpec.Type.DATE, "date") to "string with format date-time"),
+					"date on an integer" to (Triple("id", PartitionSpec.Type.DATE, "date") to "integer"),
+					"date-time on a date" to (Triple("day", PartitionSpec.Type.DATE_TIME, "date-time or date-time64") to "string with format date"),
+					"date-time on a plain string" to (Triple("attributes.datetime", PartitionSpec.Type.DATE_TIME, "date-time or date-time64") to "string"),
+				),
+			) { (spec, found) ->
+				val (path, type, expectedFormat) = spec
+				shouldThrow<IllegalStateException> {
+					metaPartitionedBy(*path.split(".").toTypedArray(), type = type)
+				}.message shouldBe "[events]: partition_by property [$path] must be a string with format $expectedFormat " +
+						"to be used as a ${type.jsonValue}, found $found"
 			}
 		}
 	}

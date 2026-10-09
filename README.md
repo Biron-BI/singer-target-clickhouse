@@ -99,8 +99,8 @@ Several features are supported that are not standard to the singer Spec:
 * **All key properties** : Specify `all_key_properties: {props: [], children: {}}` in SCHEMA messages to specify primary keys for all
   children of a root table. This will allow children to create a foreign key to their parent (with the format `_parent_<column>`)
 * **Partition by** : Specify `partition_by: {"property": ["attributes", "timestamp"], "type": "timestamp", "converter": "YYYYMM"}`
-  in SCHEMA messages to partition the root table by the month (`YYYYMM`) or year (`YYYY`) of an integer Unix timestamp (in seconds,
-  computed in UTC). The end-of-run `OPTIMIZE … FINAL` then only rewrites the partitions that received rows instead of the whole
+  in SCHEMA messages to partition the root table by the month (`YYYYMM`) or year (`YYYY`) of an integer Unix timestamp (`timestamp`,
+  in seconds, computed in UTC), a `date` or a `date-time` property (in the server timezone). The end-of-run `OPTIMIZE … FINAL` then only rewrites the partitions that received rows instead of the whole
   table. The property must never change value for a given key. See [docs/partitioning.md](docs/partitioning.md)
 
 ## Sponsorship

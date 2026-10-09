@@ -45,28 +45,47 @@ space needed during a run drops to the size of those partitions.
   tables. The tap does not need to know how the target names the column:
   `["attributes", "timestamp"]` becomes `attributes__timestamp` or
   `attributes_timestamp` depending on `subtable_separator`.
-* `type`: how to read the property. Only `timestamp` is supported: an integer
-  Unix timestamp, in seconds.
+* `type`: how to read the property. It must match the property's type in the
+  schema:
+
+  | `type`      | property                                            | column                    |
+  |-------------|-----------------------------------------------------|---------------------------|
+  | `timestamp` | `integer`: a Unix timestamp, in seconds             | `Int64`                   |
+  | `date`      | `string` with format `date` (or `x-excel-date`)     | `Date`                    |
+  | `date-time` | `string` with format `date-time` (or `date-time64`) | `DateTime` (`DateTime64`) |
+
 * `converter`: the granularity of the partitions, `YYYYMM` (month) or `YYYY`
   (year).
 
-The target generates the partition key, computed in UTC so that the partition
-of a row never depends on the server timezone:
+The target generates the partition key:
 
-| converter | `PARTITION BY`                                         |
-|-----------|--------------------------------------------------------|
-| `YYYYMM`  | `toYYYYMM(toDateTime(attributes__timestamp, 'UTC'))`   |
-| `YYYY`    | `toYear(toDateTime(attributes__timestamp, 'UTC'))`     |
+| `type`                | converter | `PARTITION BY`                                       |
+|-----------------------|-----------|------------------------------------------------------|
+| `timestamp`           | `YYYYMM`  | `toYYYYMM(toDateTime(attributes__timestamp, 'UTC'))` |
+| `timestamp`           | `YYYY`    | `toYear(toDateTime(attributes__timestamp, 'UTC'))`   |
+| `date` or `date-time` | `YYYYMM`  | `toYYYYMM(created_at)`                               |
+| `date` or `date-time` | `YYYY`    | `toYear(created_at)`                                 |
+
+A timestamp is converted in UTC, so its partition never depends on the server
+timezone. A `DateTime` is read in the server timezone, as ClickHouse displays
+it: `2024-01-31T23:30:00Z` lands in `202402` on a server in `Europe/Paris`.
+Changing the server timezone afterwards would move the new versions of
+existing keys to other partitions (see [§3.1](#31-its-value-must-never-change-for-a-given-key)).
+A `Date` has no timezone.
 
 Like key columns, the partition column is created non-nullable, since
-ClickHouse refuses a Nullable partition key. A record without a value for it is
-stored with `0`, so it lands in the `197001` (or `1970`) partition. This is
-also what happens to a key column without a value: ClickHouse's JSON input
-turns `null` into the column default for non-Nullable columns.
+ClickHouse refuses a Nullable partition key. A record without a value for it:
+
+* with `timestamp`, is stored with `0`, so it lands in the `197001` (or `1970`)
+  partition. This is also what happens to a key column without a value:
+  ClickHouse's JSON input turns `null` into the column default for non-Nullable
+  integer columns.
+* with `date` or `date-time`, is refused by ClickHouse (`Cannot parse input`),
+  and the run fails with `could not save new records`.
 
 The run fails at the SCHEMA message if `partition_by` is malformed (unknown
 `type` or `converter`, `property` not a non-empty array of strings) or if the
-property is unknown, inside an array, or not an integer.
+property is unknown, inside an array, or its type does not match `type`.
 
 ## 3. Choosing the property
 
@@ -74,7 +93,7 @@ property is unknown, inside an array, or not an integer.
 
 ReplacingMergeTree only deduplicates rows **within a partition**: merges never
 combine parts of different partitions, and `OPTIMIZE … FINAL` merges each
-partition on its own. If two versions of the same key have timestamps in
+partition on its own. If two versions of the same key have values in
 different months (or years), they end up in two partitions and no `OPTIMIZE`
 will ever merge them.
 

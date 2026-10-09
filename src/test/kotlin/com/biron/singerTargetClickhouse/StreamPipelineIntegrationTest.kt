@@ -43,6 +43,7 @@ import java.util.concurrent.atomic.AtomicInteger
 import kotlin.io.path.Path
 import kotlin.io.path.inputStream
 import kotlin.io.path.readLines
+import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 
 
@@ -528,7 +529,7 @@ class StreamPipelineIntegrationTest : ShouldSpec({
 						jdbcTemplate.queryForMap("EXISTS $db.tickets").values.first() shouldBe 1
 					}
 
-					delay(1000)
+					delay(1.seconds)
 					jdbcTemplate.queryForList("select id from $db.tickets").shouldBeEmpty()
 
 					eventually((insertTimeoutSec + 10).seconds) {
@@ -809,6 +810,37 @@ class StreamPipelineIntegrationTest : ShouldSpec({
 					listOf("toYYYYMM(toDateTime(true, 'UTC'))")
 			queryRows("SELECT id, _partition_id FROM $db.logins ORDER BY id") shouldContainExactly
 					listOf("l1\t202401", "l2\t202403")
+		}
+
+		should("should partition by Date and DateTime columns, in the server timezone") {
+			runTarget("stream_partitioned_dates.jsonl")
+			// A second run must recognize the keys it generated.
+			runTarget("stream_partitioned_dates.jsonl")
+
+			partitionKeys() shouldContainExactly listOf("days\ttoYear(day)", "visits\ttoYYYYMM(occurred_at)")
+			queryRows(
+				"SELECT table, name, type FROM system.columns WHERE database = '$db' AND name IN ('day', 'occurred_at') ORDER BY table",
+			) shouldContainExactly listOf("days\tday\tDate", "visits\toccurred_at\tDateTime")
+			// The test server runs in UTC: 2024-02-01T00:30:00+02:00 is still January there.
+			queryRows("SELECT id, name, toString(occurred_at), _partition_id FROM $db.visits ORDER BY id") shouldContainExactly listOf(
+				"v1\tfirst v2\t2024-01-10 08:00:00\t202401",
+				"v2\tsecond\t2024-01-31 22:30:00\t202401",
+				"v3\tthird\t2024-03-05 12:00:00\t202403",
+			)
+			queryRows("SELECT id, toString(day), _partition_id FROM $db.days ORDER BY id") shouldContainExactly
+					listOf("d1\t2023-12-31\t2023", "d2\t2024-01-01\t2024")
+		}
+
+		should("should refuse a record without a value for a DateTime partition column") {
+			// Unlike an integer, ClickHouse's JSON input refuses null for a non-Nullable Date or DateTime column.
+			val error = shouldThrow<IllegalStateException> {
+				runTarget("stream_partitioned_visits_null_date_time.jsonl")
+			}
+
+			error.message shouldBe "could not save new records"
+			generateSequence(error.cause) { it.cause }.mapNotNull { it.message }.joinToString("\n") shouldContain
+					"Cannot parse input"
+			queryCount("visits") shouldBe 0
 		}
 
 		should("should load more than 100 months in a single insert") {

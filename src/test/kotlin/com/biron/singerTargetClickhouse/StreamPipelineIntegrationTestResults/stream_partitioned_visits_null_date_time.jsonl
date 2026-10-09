@@ -1,0 +1,2 @@
+{"type": "SCHEMA", "stream": "visits", "schema": {"type": ["null", "object"], "properties": {"id": {"type": ["string"]}, "occurred_at": {"type": ["null", "string"], "format": "date-time"}, "name": {"type": ["null", "string"]}}}, "key_properties": ["id"], "partition_by": {"property": ["occurred_at"], "type": "date-time", "converter": "YYYYMM"}}
+{"type": "RECORD", "stream": "visits", "record": {"id": "v4", "occurred_at": null, "name": "no date"}}

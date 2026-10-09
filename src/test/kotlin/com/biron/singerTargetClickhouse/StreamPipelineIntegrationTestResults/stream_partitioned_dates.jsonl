@@ -1,0 +1,9 @@
+{"type": "SCHEMA", "stream": "visits", "schema": {"type": ["null", "object"], "properties": {"id": {"type": ["string"]}, "occurred_at": {"type": ["null", "string"], "format": "date-time"}, "name": {"type": ["null", "string"]}}}, "key_properties": ["id"], "partition_by": {"property": ["occurred_at"], "type": "date-time", "converter": "YYYYMM"}}
+{"type": "RECORD", "stream": "visits", "record": {"id": "v1", "occurred_at": "2024-01-10T08:00:00Z", "name": "first"}}
+{"type": "RECORD", "stream": "visits", "record": {"id": "v2", "occurred_at": "2024-02-01T00:30:00+02:00", "name": "second"}}
+{"type": "RECORD", "stream": "visits", "record": {"id": "v3", "occurred_at": "2024-03-05 12:00:00", "name": "third"}}
+{"type": "RECORD", "stream": "visits", "record": {"id": "v1", "occurred_at": "2024-01-10T08:00:00Z", "name": "first v2"}}
+{"type": "SCHEMA", "stream": "days", "schema": {"type": ["null", "object"], "properties": {"id": {"type": ["string"]}, "day": {"type": ["null", "string"], "format": "date"}}}, "key_properties": ["id"], "partition_by": {"property": ["day"], "type": "date", "converter": "YYYY"}}
+{"type": "RECORD", "stream": "days", "record": {"id": "d1", "day": "2023-12-31"}}
+{"type": "RECORD", "stream": "days", "record": {"id": "d2", "day": "2024-01-01"}}
+{"type": "STATE", "value": {"bookmarks": {"visits": "2024-03-05"}}}
