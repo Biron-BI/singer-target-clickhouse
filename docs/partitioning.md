@@ -186,7 +186,7 @@ target reads the partition key of the existing root table
   without `partition_by`. If the SCHEMA message declares `partition_by`, a
   warning gives the expected `PARTITION BY` and the field is ignored: the
   partition column keeps its current type and the whole-table `OPTIMIZE FINAL`
-  runs as before.
+  runs as before. To partition it, see [§7](#7-migrating-an-existing-table).
 * **The table is partitioned:** its partitioning is kept, with or without
   `partition_by` in the SCHEMA message. The end-of-run OPTIMIZE is the
   partition-aware one, and the columns of the partition key are never made
@@ -204,3 +204,71 @@ ClickHouse 23.10 or later).
 Tables that are dropped and recreated (`clean_first: true` streams, or
 `--update-streams <stream>`) are created from the SCHEMA message, so without
 partitioning if it has no `partition_by`.
+
+## 7. Migrating an existing table
+
+ClickHouse cannot add a partition key to an existing table: its rows must be copied into a new, partitioned table, which then takes the
+place of the old one. Child tables are not touched ([§4](#4-child-tables-are-not-partitioned)):
+the copy keeps the `_ver` of every row, which their rows reference.
+
+The examples migrate the root table `events` of the database `klaviyo`, with the `partition_by` of [§2](#2-declaring-it).
+
+### 7.1 Before starting
+
+* No run may write to the stream until the swap (step 5): rows inserted into the old table once the copy has started would be lost.
+* Take the partition key from the target. On an unpartitioned table, every run logs the key it expects ([§6](#6-existing-tables)):
+
+  ```
+  [events]: table events is not partitioned, partition_by is ignored (expected PARTITION BY toYYYYMM(toDateTime(`attributes__timestamp`, 'UTC')))
+  ```
+
+### 7.2 Procedure
+
+```sql
+-- STEP 1 · partitioned copy. The `_archived_` prefix keeps the target from renaming it.
+-- A short old_parts_lifetime frees the space of merged parts quickly during the migration.
+CREATE TABLE klaviyo.`_archived_events_repartitioned` AS klaviyo.events
+    ENGINE = ReplacingMergeTree
+(
+    _ver
+)
+    PARTITION BY toYYYYMM
+(
+    toDateTime
+(
+    attributes__timestamp,
+    'UTC'
+))
+    ORDER BY id
+    SETTINGS old_parts_lifetime = 30;
+
+-- STEP 2 · copy the data (one block spans many months, hence the raised limit).
+INSERT INTO klaviyo.`_archived_events_repartitioned`
+SELECT *
+FROM klaviyo.events SETTINGS max_partitions_per_insert_block = 1000;
+
+-- STEP 3 · one merged part per partition, so later runs only rewrite the months they touch.
+OPTIMIZE
+TABLE klaviyo.`_archived_events_repartitioned` FINAL;
+
+-- STEP 4 · both lines must be identical. Stop here otherwise.
+SELECT 'old', count(), uniqExact(id), max(_ver)
+FROM klaviyo.events
+UNION ALL
+SELECT 'new', count(), uniqExact(id), max(_ver)
+FROM klaviyo.`_archived_events_repartitioned`;
+
+-- STEP 5 · atomic swap, then restore the default old_parts_lifetime.
+EXCHANGE
+TABLES klaviyo.events AND klaviyo.`_archived_events_repartitioned`;
+ALTER TABLE klaviyo.events RESET SETTING old_parts_lifetime;
+
+-- STEP 6 · drop the old data once satisfied, before migrating the next table.
+-- Until then, rollback = EXCHANGE TABLES again.
+DROP TABLE klaviyo.`_archived_events_repartitioned` SYNC SETTINGS max_table_size_to_drop = 0;
+```
+
+### 7.3 Root tables without `key_properties`
+
+Their engine is `MergeTree` and the target never runs `OPTIMIZE` on them:
+create the new table with `ENGINE = MergeTree` and the `ORDER BY` of the current table, skip step 3, and compare only `count()` in step 4.
