@@ -69,7 +69,14 @@ class StreamPipeline private constructor(
 		logger.info { "done reading lines" }
 
 		errSink.thrownOrNull()?.let { throw it }
-		finalizeAllInParallel(processors.values, config.finalizeConcurrency)
+		inParallel(processors.values) { it.finalizeProcessing() }
+		reclaimDeletedRows(state.runTables)
+	}
+
+	/** After the finalize step, whose OPTIMIZE already dropped the deleted rows of the parts it merged. */
+	private fun reclaimDeletedRows(tables: Set<String>) {
+		val reclaimer = DeletedRowsReclaimer(ch, config.deletedRowsReclaimRatio)
+		inParallel(reclaimer.tablesWithDeletedRows(tables)) { reclaimer.reclaim(it) }
 	}
 
 	private fun startParserThread(input: InputStream, queue: ArrayBlockingQueue<ParseSignal>): Thread {
@@ -127,13 +134,11 @@ class StreamPipeline private constructor(
 		}
 	}
 
-	private fun finalizeAllInParallel(processors: Collection<StreamProcessor>, configuredConcurrency: Int) {
-		if (processors.isEmpty()) return
+	private fun <T> inParallel(items: Collection<T>, action: (T) -> Unit) {
+		if (items.isEmpty()) return
 		runBlocking(Dispatchers.Default) {
 			coroutineScope {
-				processors.parMap(context = Dispatchers.IO, concurrency = configuredConcurrency.coerceAtLeast(1)) { processor ->
-					processor.finalizeProcessing()
-				}
+				items.parMap(context = Dispatchers.IO, concurrency = config.finalizeConcurrency.coerceAtLeast(1)) { action(it) }
 			}
 		}
 	}
@@ -169,6 +174,7 @@ class StreamPipeline private constructor(
 		processors[msg.stream]?.commitPendingChanges()
 		logger.info { "[${msg.stream}]: Received schema message." }
 		val meta = msg.meta
+		state.runTables += streamTableNames(meta)
 		if (state.consumeReplaceFor(meta.prop)) {
 			logger.info { "[${meta.prop}]: dropping root and children tables" }
 			dropStreamTablesQueries(meta).forEach { ch.runQuery(it) }
@@ -216,6 +222,9 @@ private class ProcessingState(
 	private val streamsToReplace: MutableList<String>,
 	val existingTables: MutableList<String>,
 ) {
+	/** Root and child tables of every SCHEMA message received: the only ones whose deleted rows the run may reclaim. */
+	val runTables: MutableSet<String> = linkedSetOf()
+
 	fun consumeReplaceFor(stream: String): Boolean =
 		streamsToReplace.remove(stream)
 

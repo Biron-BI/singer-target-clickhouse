@@ -369,23 +369,28 @@ class JsonSchemaTranslatorTest : ShouldSpec({
 	}
 
 	context("dropStreamTablesQueries deep") {
-		should("walks all descendant subtables depth-first") {
-			val deepMeta = simpleMeta.copy(
-				sqlTableName = "`root`",
-				children = listOf(
-					simpleMeta.copy(
-						sqlTableName = "`root__a`",
-						children = listOf(simpleMeta.copy(sqlTableName = "`root__a__x`")),
-					),
-					simpleMeta.copy(sqlTableName = "`root__b`"),
+		val deepMeta = simpleMeta.copy(
+			sqlTableName = "`root`",
+			children = listOf(
+				simpleMeta.copy(
+					sqlTableName = "`root__a`",
+					children = listOf(simpleMeta.copy(sqlTableName = "`root__a__x`")),
 				),
-			)
+				simpleMeta.copy(sqlTableName = "`root__b`"),
+			),
+		)
+
+		should("walks all descendant subtables depth-first") {
 			dropStreamTablesQueries(deepMeta) shouldContainExactly listOf(
 				"DROP TABLE IF EXISTS `root`",
 				"DROP TABLE IF EXISTS `root__a`",
 				"DROP TABLE IF EXISTS `root__a__x`",
 				"DROP TABLE IF EXISTS `root__b`",
 			)
+		}
+
+		should("streamTableNames lists the same tables, unquoted") {
+			streamTableNames(deepMeta) shouldContainExactly listOf("root", "root__a", "root__a__x", "root__b")
 		}
 	}
 })

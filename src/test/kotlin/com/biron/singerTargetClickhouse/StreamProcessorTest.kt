@@ -130,7 +130,7 @@ class StreamProcessorTest : ShouldSpec({
 	}
 
 	context("processRecord with cleaning column") {
-		should("issues an ALTER TABLE DELETE on first non-empty cleaning value") {
+		should("issues a lightweight DELETE on first non-empty cleaning value") {
 			val conn: TargetConnection = mockk {
 				every { getDatabase() } returns "db"
 			}
@@ -142,9 +142,10 @@ class StreamProcessorTest : ShouldSpec({
 
 			underTest.processRecord(mapToRow(meta, mapOf("id" to 1, "name" to "alice")), 0, abort)
 
-			val deletes = queries.queries.filter { it.contains("ALTER TABLE `order` DELETE") }
+			val deletes = queries.queries.filter { it.contains("DELETE FROM `order`") }
 			deletes shouldHaveSize 1
 			deletes[0] shouldContain "`name` = 'alice'"
+			deletes[0] shouldContain "SETTINGS lightweight_deletes_sync = 2"
 		}
 
 		should("issues a single DELETE per distinct cleaning value") {
@@ -161,7 +162,7 @@ class StreamProcessorTest : ShouldSpec({
 			underTest.processRecord(mapToRow(meta, mapOf("id" to 2, "name" to "alice")), 1, abort)
 			underTest.processRecord(mapToRow(meta, mapOf("id" to 3, "name" to "bob")), 2, abort)
 
-			val deletes = queries.queries.filter { it.contains("ALTER TABLE `order` DELETE") }
+			val deletes = queries.queries.filter { it.contains("DELETE FROM `order`") }
 			deletes shouldHaveSize 2
 			deletes.any { it.contains("'alice'") } shouldBe true
 			deletes.any { it.contains("'bob'") } shouldBe true
@@ -194,7 +195,7 @@ class StreamProcessorTest : ShouldSpec({
 
 			underTest.processRecord(mapToRow(meta, mapOf("id" to 1, "name" to "alice")), 0, abort)
 
-			queries.queries.none { it.contains("ALTER TABLE `order` DELETE") } shouldBe true
+			queries.queries.none { it.contains("DELETE FROM `order`") } shouldBe true
 		}
 
 		should("throws when the cleaning column is not present in the meta") {
@@ -242,7 +243,7 @@ class StreamProcessorTest : ShouldSpec({
 			underTest.processRecord(mapToRow(meta, mapOf("id" to 1, "name" to "")), 0, abort)
 			underTest.processRecord(mapToRow(meta, mapOf("id" to 2)), 1, abort)
 
-			queries.queries.none { it.contains("ALTER TABLE `order` DELETE") } shouldBe true
+			queries.queries.none { it.contains("DELETE FROM `order`") } shouldBe true
 		}
 	}
 
@@ -330,7 +331,7 @@ class StreamProcessorTest : ShouldSpec({
 			queries.queries shouldContain "OPTIMIZE TABLE `order` FINAL"
 		}
 
-		should("removes children orphans when meta has children") {
+		should("removes children orphans with a lightweight delete when meta has children") {
 			val conn: TargetConnection = mockk {
 				every { getDatabase() } returns "db"
 			}
@@ -340,8 +341,9 @@ class StreamProcessorTest : ShouldSpec({
 
 			underTest.finalizeProcessing()
 
-			queries.queries.any { it.contains("ALTER TABLE `order__tags` DELETE") } shouldBe true
-			queries.queries.any { it.contains("ALTER TABLE `order__tags__values` DELETE") } shouldBe true
+			val orphanDeletes = queries.queries.filter { it.contains("NOT IN (SELECT") }
+			orphanDeletes.map { it.lineSequence().first() } shouldBe listOf("DELETE FROM `order__tags`", "DELETE FROM `order__tags__values`")
+			orphanDeletes.forEach { it shouldContain "SETTINGS lightweight_deletes_sync = 2" }
 		}
 
 		should("skips OPTIMIZE and PK integrity check when startedClean=true") {

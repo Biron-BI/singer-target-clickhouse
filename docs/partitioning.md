@@ -14,9 +14,13 @@ When a stream declares `key_properties`, its root table is a
 receives and, once the stream is fully read, finalizes it:
 
 1. `OPTIMIZE TABLE <root> FINAL` physically removes the outdated versions;
-2. `ALTER TABLE <child> DELETE … NOT IN (SELECT … FROM <root>)` removes the
-   child rows of the versions that were just removed;
+2. `DELETE FROM <child> … NOT IN (SELECT … FROM <root>)` deletes the child
+   rows of the versions that were just removed;
 3. a primary key integrity check makes sure no key is stored twice.
+
+Lightweight deletes only mask rows. Once every stream is finalized, the run
+removes them from disk in the tables where they reach
+`deleted_rows_reclaim_ratio` of the rows (see [§5](#5-how-the-end-of-run-optimize-works)).
 
 A table created without `PARTITION BY` is one single partition, so step 1
 rewrites the whole table on every run, however few rows were inserted. While
@@ -141,9 +145,9 @@ key and `_root_ver`) keep their current DDL:
   Partitioning them the same way would require copying it into every child
   table.
 * They are plain `MergeTree` tables and are never optimized. Their cleanup is
-  the `ALTER TABLE … DELETE` mutation of step 2, which only rewrites the parts
-  of a child table that contain rows to delete. The other parts are cloned
-  through hard links.
+  the lightweight delete of step 2, which only writes a mask of the deleted
+  rows in the parts that contain some. The other parts are cloned through hard
+  links.
 
 ## 5. How the end-of-run OPTIMIZE works
 
@@ -174,6 +178,23 @@ followed by one `OPTIMIZE TABLE <root> PARTITION ID '…' FINAL` per partition:
   the stream processor with a new starting `_ver`, so the `_ver`-based variant
   would miss the rows inserted before the last `SCHEMA` message.
 * It is a single statement, with no extra scan of the table.
+
+A skipped partition keeps the rows that a lightweight delete only masked
+(cleaning column, `DELETED_RECORD` messages), and so do child tables (step 2):
+only a merge or a mutation removes them from disk. Once every stream is
+finalized, the run looks in `system.parts` for the tables of its streams, roots
+and children, that still have parts with deleted rows
+(`has_lightweight_delete`), whichever run deleted them: an earlier run that
+stopped before its end leaves its masked rows to the next one. For each of
+them, it counts the deleted rows, which only reads the mask of those parts, and
+runs `ALTER TABLE <table> APPLY DELETED MASK` when they reach
+`deleted_rows_reclaim_ratio` (5% by default) of the rows on disk of the whole
+table. The `APPLY` only rewrites the masked parts: the partitions merged by the
+OPTIMIZE already dropped theirs. Below the ratio, the rows wait for a merge or
+a later run: they may take up to that share of the table, which spares
+rewriting large parts to free a few rows. The ratio is over the whole table
+rather than over the masked parts, which would rewrite small parts holding a
+few deletes that their next merge drops for free.
 
 ## 6. Existing tables
 

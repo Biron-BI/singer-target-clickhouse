@@ -32,6 +32,7 @@ class DeletedRecordProcessorTest : ShouldSpec({
 			queries.queries shouldHaveSize 1
 			queries.queries[0] shouldContain "DELETE FROM `order`"
 			queries.queries[0] shouldContain "WHERE (`id`) IN ((1),(2))"
+			queries.queries[0] shouldContain "SETTINGS lightweight_deletes_sync = 2"
 		}
 
 		should("deleteBufferedData flushes the leftover buffer") {
@@ -61,6 +62,23 @@ class DeletedRecordProcessorTest : ShouldSpec({
 			underTest.deleteBufferedData()
 
 			queries.queries[0] shouldContain "WHERE (`id`) IN (('abc'))"
+		}
+
+		should("escapes quotes and backslashes in string PK values") {
+			val conn: TargetConnection = mockk()
+			val queries = conn.captureRunQueries()
+			val stringPk = id.copy(
+				chType = "String",
+				schemaType = "string",
+				valueExtractor = { (it as? Map<*, *>)?.get("id")?.toString() },
+			)
+			val meta = simpleMeta.copy(pkMappings = listOf(stringPk), simpleColumnMappings = emptyList())
+
+			val underTest = DeletedRecordProcessor(meta, conn, DeletedRecordProcessorConfig(batchSize = 100, translateValues = true))
+			underTest.pushDeletedRecord(mapToRow(meta, mapOf("id" to """o'brien\"""), translateValues = true))
+			underTest.deleteBufferedData()
+
+			queries.queries[0] shouldContain """WHERE (`id`) IN (('o\'brien\\'))"""
 		}
 
 		should("does not quote numeric PK values") {

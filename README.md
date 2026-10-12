@@ -81,10 +81,16 @@ The fields available to be specified in the config file.
 * `translate_values`: Whether fields should be parsed again to allow conversion of specific values, e.g. `True` accepted as `true`. Default
   `false`
 * `batch_size`: Amount of records to read before sending to clickhouse. Default `100`
-* `finalize_concurrency`: Amount of concurrent stream ingestion finalisation. Default `3`
+* `finalize_concurrency`: Amount of concurrent stream ingestion finalisation, and of concurrent `APPLY DELETED MASK` at the end of the
+  run (see `deleted_rows_reclaim_ratio`). Default `3`
 * `extra_active_tables`: List of tables that are considered active even if not present in ACTIVE_STREAMS message. Default `[]`
 * `insert_stream_timeout_sec`: HTTP receive timeout for an open insert stream, in seconds. Default `180`
-* `deletion_batch_size`: Amount of deletion records buffered before issuing the `ALTER … DELETE`. Default `100`
+* `deletion_batch_size`: Amount of `DELETED_RECORD` messages buffered before issuing a lightweight `DELETE`. The keys of a batch all go in
+  that single statement, which must fit in the server's `max_query_size` (256 KiB by default). Default `10000`
+* `deleted_rows_reclaim_ratio`: Lightweight deletes (`DELETED_RECORD` messages, cleaning column, child rows of replaced versions) only mask
+  rows, which stay on disk until their part is rewritten. At the end of the run, each table of the run's streams whose deleted rows make up at
+  least this share of its rows on disk gets `ALTER TABLE … APPLY DELETED MASK`, which only rewrites its parts holding deleted rows. Below
+  it, the rows wait for a merge or a later run. `0` removes them whenever there are any. Default `0.05`
 
 ## Singer specification extension
 
@@ -95,7 +101,9 @@ Several features are supported that are not standard to the singer Spec:
 * **Clean first** : Specify `clean_first: true` in SCHEMA messages to wipe table content before each ingestion.
 * **Cleaning column** : Specify `cleaning_column: "<column_name>"` in SCHEMA messages to wipe table content that matches column value during
   ingestion. For instance, if column "date" is specified as cleaning column, and the value "2022-01-01" is encountered in a record, all rows
-  with values "2022-01-01" are replaced with those contained in the stream
+  with values "2022-01-01" are replaced with those contained in the stream. Each SCHEMA message starts over: a value met again after a
+  re-sent SCHEMA also deletes the rows inserted for it earlier in the same run. Rows are deleted with a lightweight `DELETE`, which only
+  masks them: they are removed from disk by a merge, or at the end of a run once they reach `deleted_rows_reclaim_ratio` of the table
 * **All key properties** : Specify `all_key_properties: {props: [], children: {}}` in SCHEMA messages to specify primary keys for all
   children of a root table. This will allow children to create a foreign key to their parent (with the format `_parent_<column>`)
 * **Partition by** : Specify `partition_by: {"property": ["attributes", "timestamp"], "type": "timestamp", "converter": "YYYYMM"}`

@@ -5,9 +5,9 @@ import io.github.oshai.kotlinlogging.KotlinLogging
 private val logger = KotlinLogging.logger {}
 
 /**
- * One per Singer stream. Owns the live insert path (records, deletions, batch commits) and
- * the post-stream finalize step (ReplacingMergeTree optimize, child orphan cleanup, PK
- * integrity check).
+ * One per Singer stream, rebuilt by each SCHEMA message of the stream. Owns the live insert path
+ * (records, deletions, batch commits) and the post-stream finalize step (ReplacingMergeTree
+ * optimize, child orphan cleanup, PK integrity check).
  */
 interface StreamProcessor {
 	fun processRecord(row: RecordRow, messageCount: Int, abort: (Throwable) -> Unit)
@@ -50,6 +50,12 @@ internal class DefaultStreamProcessor private constructor(
 ) : StreamProcessor {
 	private var maxVer: Long = initialMaxVer
 	private var pendingRowCount: Int = 0
+
+	/**
+	 * Cleaning values already deleted by this processor. Each SCHEMA message builds a new processor,
+	 * so a value met again after a re-sent SCHEMA deletes the rows inserted for it earlier in the
+	 * same run, which is the intended behavior.
+	 */
 	private val cleaningValuesSeen: MutableSet<String> = mutableSetOf()
 
 	override fun processRecord(row: RecordRow, messageCount: Int, abort: (Throwable) -> Unit) {
@@ -121,9 +127,9 @@ internal class DefaultStreamProcessor private constructor(
 		validateCleaningColumnTyped(cleaningColumn)
 		logger.info { "[${meta.prop}]: cleaning column: deleting based on $value" }
 		clickhouse.runQuery(
-			"""ALTER TABLE ${meta.sqlTableName} DELETE
+			"""DELETE FROM ${meta.sqlTableName}
 			   WHERE `$cleaningColumn` = ${sqlStringLiteral(value)}
-			   SETTINGS mutations_sync=2""".trimIndent(),
+			   SETTINGS lightweight_deletes_sync = 2""".trimIndent(),
 		)
 	}
 
@@ -141,10 +147,10 @@ internal class DefaultStreamProcessor private constructor(
 		val parentColumns = meta.pkMappings.map { escapeIdentifier(formatRootPKColumn(it.prop)) } + "_root_ver"
 		val rootColumns = meta.pkMappings.map { it.sqlIdentifier } + "_ver"
 		clickhouse.runQuery(
-			"""ALTER TABLE ${currentNode.sqlTableName} DELETE
+			"""DELETE FROM ${currentNode.sqlTableName}
 			   WHERE (${parentColumns.joinToString(",")})
 			     NOT IN (SELECT ${rootColumns.joinToString(",")} FROM ${meta.sqlTableName})
-			   SETTINGS mutations_sync=2""".trimIndent(),
+			   SETTINGS lightweight_deletes_sync = 2""".trimIndent(),
 		)
 		currentNode.children.forEach { deleteChildDuplicates(it) }
 	}

@@ -19,6 +19,10 @@ fun translateCH(database: String, meta: SourceMeta, recursive: Boolean): List<St
 fun dropStreamTablesQueries(meta: SourceMeta): List<String> =
 	listOf("DROP TABLE IF EXISTS ${meta.sqlTableName}") + meta.children.flatMap(::dropStreamTablesQueries)
 
+/** Names of the root and child tables of a stream, as ClickHouse lists them. */
+fun streamTableNames(meta: SourceMeta): List<String> =
+	listOf(unescape(meta.sqlTableName)) + meta.children.flatMap(::streamTableNames)
+
 fun toQualifiedType(mapping: ColumnMap): String =
 	wrapModifiers(mapping.chType, mapping.nullable, mapping.lowCardinality, mapping.nestedArray)
 

@@ -43,7 +43,6 @@ import java.util.concurrent.atomic.AtomicInteger
 import kotlin.io.path.Path
 import kotlin.io.path.inputStream
 import kotlin.io.path.readLines
-import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 
 
@@ -135,6 +134,10 @@ class StreamPipelineIntegrationTest : ShouldSpec({
 
 	fun queryCount(table: String): Int =
 		jdbcTemplate.queryForObject<Int>("select count(*) from $db.$table")
+
+	/** Rows stored in the active parts, including the ones a lightweight delete only masked. */
+	fun rowsOnDisk(table: String): Int =
+		jdbcTemplate.queryForObject<Int>("SELECT sum(rows) FROM system.parts WHERE database = '$db' AND table = '$table' AND active")
 
 	fun Any?.asArrayString(): String = when (this) {
 		is java.sql.Array -> (array as Array<*>).joinToString(prefix = "[", postfix = "]") { "'$it'" }
@@ -663,6 +666,45 @@ class StreamPipelineIntegrationTest : ShouldSpec({
 					listOf("5\tbob", "9\thelen", "10\tbill")
 		}
 
+		should("should remove from disk the rows deleted through the cleaning column, even by a processor replaced by a later SCHEMA") {
+			runTarget("stream_cleaningColumn_no_pk.jsonl")
+			// Deletes bob, then re-sends the SCHEMA message: the last processor of the stream deleted nothing itself.
+			// No record follows that SCHEMA: a bob there would also delete 8 bob, on purpose (see cleaningValuesSeen).
+			runTarget("stream_cleaningColumn_no_pk_schema_resent.jsonl")
+
+			queryRows("select id, name from $db.users order by id") shouldContainExactly listOf("6\tjohn", "7\tbill", "8\tbob")
+			rowsOnDisk("users") shouldBe 3
+		}
+
+		should("should remove from disk the rows deleted by an earlier run that stopped before its end") {
+			runTarget("stream_cleaningColumn_no_pk.jsonl")
+			// What an aborted run leaves behind: a lightweight delete, and no finalize step to reclaim it.
+			jdbcTemplate.execute("DELETE FROM $db.users WHERE name = 'john' SETTINGS lightweight_deletes_sync = 2")
+			rowsOnDisk("users") shouldBe 3
+
+			runTarget("stream_cleaningColumn_no_pk_schema_only.jsonl")
+
+			queryRows("select id, name from $db.users order by id") shouldContainExactly listOf("5\tbob", "7\tbill")
+			rowsOnDisk("users") shouldBe 2
+		}
+
+		should("should leave on disk the deleted rows below deleted_rows_reclaim_ratio") {
+			runTarget("stream_cleaningColumn_no_pk_schema_only.jsonl")
+			// A single part, so no merge can drop the deleted rows: 4 of its 100 rows are deleted.
+			jdbcTemplate.execute("INSERT INTO $db.users SELECT number, 'x' FROM numbers(100)")
+			jdbcTemplate.execute("DELETE FROM $db.users WHERE id < 4 SETTINGS lightweight_deletes_sync = 2")
+
+			runTarget("stream_cleaningColumn_no_pk_schema_only.jsonl")
+			rowsOnDisk("users") shouldBe 100
+
+			runTarget(
+				"stream_cleaningColumn_no_pk_schema_only.jsonl",
+				configFile = writeConfig(baseConfig.copy(deletedRowsReclaimRatio = 0.04)),
+			)
+			rowsOnDisk("users") shouldBe 96
+			queryCount("users") shouldBe 96
+		}
+
 		should("should handle record when schema specifiesPK") {
 			runTarget("stream_short_with_all_pk.jsonl")
 
@@ -724,6 +766,12 @@ class StreamPipelineIntegrationTest : ShouldSpec({
 
 			queryRows("select id, name, age from $db.users order by id") shouldContainExactly
 					listOf("1\talice\t30", "3\tcarol\t40")
+		}
+
+		should("should handle DELETED_RECORD whose string key contains a quote or a backslash") {
+			runTarget("stream_deleted_record_string_pk.jsonl")
+
+			queryRows("select code, name from $db.users order by code") shouldContainExactly listOf("plain\tcarol")
 		}
 
 		should("should throw when a RECORD arrives before its SCHEMA") {
@@ -865,6 +913,8 @@ class StreamPipelineIntegrationTest : ShouldSpec({
 
 				eventsContent() shouldContainExactly contentAfterUpdate
 				eventsContent(unpartitionedDb) shouldContainExactly contentAfterUpdate
+				// The child rows of the replaced versions are deleted, then removed from disk.
+				rowsOnDisk("events__tags") shouldBe queryCount("events__tags")
 			} finally {
 				jdbcTemplate.execute("DROP DATABASE IF EXISTS $unpartitionedDb")
 			}
@@ -903,6 +953,33 @@ class StreamPipelineIntegrationTest : ShouldSpec({
 			queryRows("SELECT attributes__name FROM $db.events WHERE id = 'e1'") shouldContainExactly listOf("signup again")
 		}
 
+		should("should remove from disk the rows deleted through the cleaning column in a partition that received no row") {
+			runTarget("stream_partitioned_visits_cleaning.jsonl")
+			// Deletes v1 (202401) and v2 (202402), inserts v4 in 202402 only: the end-of-run OPTIMIZE skips 202401.
+			runTarget("stream_partitioned_visits_cleaning_2.jsonl")
+
+			queryRows("SELECT id, source FROM $db.visits ORDER BY id") shouldContainExactly listOf("v3\tweb", "v4\tcrm")
+			rowsOnDisk("visits") shouldBe 2
+		}
+
+		should("should weigh the deleted rows against the whole table, not against the parts holding them") {
+			runTarget("stream_partitioned_events.jsonl")
+			// Parts of different partitions never merge: 1 deleted row out of the 1 006 of the table, though
+			// most of its small 202401 part.
+			jdbcTemplate.execute(
+				"""
+				INSERT INTO $db.events (id, attributes__timestamp, attributes__name, _ver)
+				SELECT concat('old', toString(number)), 1673000000, 'old', 1 FROM numbers(1000)
+				""".trimIndent(),
+			)
+			jdbcTemplate.execute("DELETE FROM $db.events WHERE id = 'e1' SETTINGS lightweight_deletes_sync = 2")
+
+			runTarget("stream_partitioned_events_schema_only.jsonl")
+
+			rowsOnDisk("events") shouldBe 1006
+			queryCount("events") shouldBe 1005
+		}
+
 		should("should store a record without a value for the partition column with timestamp 0, like a missing key value") {
 			// ClickHouse's JSON input turns null into the column default for a non-Nullable column,
 			// whatever input_format_null_as_default says.
@@ -939,6 +1016,7 @@ class StreamPipelineIntegrationTest : ShouldSpec({
 			runTarget("stream_partitioned_events_yearly.jsonl")
 			fun tablesState() = partitionKeys() + eventsContent() +
 					queryRows("SELECT table, name, type FROM system.columns WHERE database = '$db' ORDER BY table, name")
+
 			val before = tablesState()
 
 			shouldThrow<IllegalStateException> {
@@ -970,4 +1048,5 @@ private data class TestTargetConfig(
 	val insertStreamTimeoutSec: Int? = 180,
 	val translateValues: Boolean = false,
 	val subtableSeparator: String? = null,
+	val deletedRowsReclaimRatio: Double? = null,
 )

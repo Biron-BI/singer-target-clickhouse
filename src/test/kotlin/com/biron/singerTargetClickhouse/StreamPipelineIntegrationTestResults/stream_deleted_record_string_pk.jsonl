@@ -1,0 +1,64 @@
+{
+  "type": "SCHEMA",
+  "stream": "users",
+  "schema": {
+    "properties": {
+      "code": {
+        "type": [
+          "string"
+        ]
+      },
+      "name": {
+        "type": [
+          "null",
+          "string"
+        ]
+      }
+    },
+    "type": [
+      "null",
+      "object"
+    ]
+  },
+  "key_properties": [
+    "code"
+  ]
+}
+{
+  "type": "RECORD",
+  "stream": "users",
+  "record": {
+    "code": "o'brien",
+    "name": "alice"
+  }
+}
+{
+  "type": "RECORD",
+  "stream": "users",
+  "record": {
+    "code": "back\\slash",
+    "name": "bob"
+  }
+}
+{
+  "type": "RECORD",
+  "stream": "users",
+  "record": {
+    "code": "plain",
+    "name": "carol"
+  }
+}
+{
+  "type": "DELETED_RECORD",
+  "stream": "users",
+  "record": {
+    "code": "o'brien"
+  }
+}
+{
+  "type": "DELETED_RECORD",
+  "stream": "users",
+  "record": {
+    "code": "back\\slash"
+  }
+}

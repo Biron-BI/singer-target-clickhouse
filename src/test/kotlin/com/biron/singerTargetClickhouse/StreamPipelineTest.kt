@@ -171,7 +171,7 @@ class StreamPipelineTest : ShouldSpec({
 			factory: RecordingStreamProcessorFactory,
 			vararg lines: String,
 			streamsToReplace: List<String> = emptyList(),
-			setup: TargetConnection.() -> Unit = {},
+			setup: TargetConnection.() -> Unit = { captureRunQueries() },
 		): Pair<TargetConnection, StringWriter> {
 			val conn: TargetConnection = mockk {
 				every { listTables() } returns emptyList()
@@ -237,6 +237,21 @@ class StreamPipelineTest : ShouldSpec({
 			runWith(factory, schemaUsers, schemaOrders)
 
 			factory.produced.forEach { it.finalizeCount shouldBe 1 }
+		}
+
+		should("reclaims the deleted rows of the run's tables once every stream is finalized") {
+			val factory = RecordingStreamProcessorFactory()
+			var finalizedFirst = false
+			lateinit var queries: RunQueryCapture
+			runWith(factory, schemaUsers, schemaOrders, setup = {
+				queries = captureRunQueries { q ->
+					if (q.contains("system.parts")) finalizedFirst = factory.produced.all { it.finalizeCount == 1 }
+					QueryResult(emptyList(), rows = 0)
+				}
+			})
+
+			queries.queries.single() shouldContain "AND table IN ('users', 'orders')"
+			finalizedFirst shouldBe true
 		}
 
 		should("does not finalize when a record-handler exception aborts the run") {

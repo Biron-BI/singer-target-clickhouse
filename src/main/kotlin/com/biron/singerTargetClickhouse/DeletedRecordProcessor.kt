@@ -41,13 +41,13 @@ class DeletedRecordProcessor(
 		clickhouse.runQuery(
 			"""DELETE FROM ${meta.sqlTableName}
 			   WHERE ($pkIds) IN ($values)
-			   SETTINGS mutations_sync=2""".trimIndent(),
+			   SETTINGS lightweight_deletes_sync = 2""".trimIndent(),
 		)
 		buffered.clear()
 	}
 
 	private fun formatForSql(value: Any?, mapping: PkMap): String =
-		if (mapping.chType in QUOTE_TYPES) "'$value'" else value.toString()
+		if (mapping.chType in QUOTE_TYPES) sqlStringLiteral(value.toString()) else value.toString()
 
 	companion object {
 		private val QUOTE_TYPES = setOf("String", "FixedString", "DateTime", "Date", "DateTime64", "Date32", "UUID")

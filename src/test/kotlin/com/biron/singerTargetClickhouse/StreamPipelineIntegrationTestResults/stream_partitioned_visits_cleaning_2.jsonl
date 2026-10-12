@@ -1,0 +1,50 @@
+{
+  "type": "SCHEMA",
+  "stream": "visits",
+  "schema": {
+    "type": [
+      "null",
+      "object"
+    ],
+    "properties": {
+      "id": {
+        "type": [
+          "string"
+        ]
+      },
+      "occurred_at": {
+        "type": [
+          "null",
+          "string"
+        ],
+        "format": "date-time"
+      },
+      "source": {
+        "type": [
+          "null",
+          "string"
+        ]
+      }
+    }
+  },
+  "key_properties": [
+    "id"
+  ],
+  "partition_by": {
+    "property": [
+      "occurred_at"
+    ],
+    "type": "date-time",
+    "converter": "YYYYMM"
+  },
+  "cleaning_column": "source"
+}
+{
+  "type": "RECORD",
+  "stream": "visits",
+  "record": {
+    "id": "v4",
+    "occurred_at": "2024-02-20T08:00:00Z",
+    "source": "crm"
+  }
+}

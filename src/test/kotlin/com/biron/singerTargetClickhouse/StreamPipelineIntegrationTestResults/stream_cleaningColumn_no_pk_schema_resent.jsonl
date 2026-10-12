@@ -1,0 +1,60 @@
+{
+  "type": "SCHEMA",
+  "stream": "users",
+  "schema": {
+    "properties": {
+      "id": {
+        "type": [
+          "null",
+          "integer"
+        ]
+      },
+      "name": {
+        "type": [
+          "null",
+          "string"
+        ]
+      }
+    },
+    "type": [
+      "null",
+      "object"
+    ]
+  },
+  "key_properties": [],
+  "cleaning_column": "name"
+}
+{
+  "type": "RECORD",
+  "stream": "users",
+  "record": {
+    "id": 8,
+    "name": "bob"
+  }
+}
+{
+  "type": "SCHEMA",
+  "stream": "users",
+  "schema": {
+    "properties": {
+      "id": {
+        "type": [
+          "null",
+          "integer"
+        ]
+      },
+      "name": {
+        "type": [
+          "null",
+          "string"
+        ]
+      }
+    },
+    "type": [
+      "null",
+      "object"
+    ]
+  },
+  "key_properties": [],
+  "cleaning_column": "name"
+}

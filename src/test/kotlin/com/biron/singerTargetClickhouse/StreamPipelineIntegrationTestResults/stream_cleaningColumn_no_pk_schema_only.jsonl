@@ -1,0 +1,26 @@
+{
+  "type": "SCHEMA",
+  "stream": "users",
+  "schema": {
+    "properties": {
+      "id": {
+        "type": [
+          "null",
+          "integer"
+        ]
+      },
+      "name": {
+        "type": [
+          "null",
+          "string"
+        ]
+      }
+    },
+    "type": [
+      "null",
+      "object"
+    ]
+  },
+  "key_properties": [],
+  "cleaning_column": "name"
+}
